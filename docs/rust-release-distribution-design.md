@@ -126,8 +126,16 @@ Add explicit binstall metadata so `cargo binstall gpt-image-2-skill` resolves Gi
 ```toml
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
+bin-dir = "{ name }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "txz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
 bin-dir = "{ bin }{ binary-ext }"
-pkg-fmt = "auto"
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "zip"
 ```
 
 This keeps `cargo install` and `cargo binstall` aligned:

@@ -26,8 +26,16 @@ tempfile = "3.23.0"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
+bin-dir = "{ name }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "txz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
 bin-dir = "{ bin }{ binary-ext }"
-pkg-fmt = "auto"
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "zip"
 
 [package.metadata.wix]
 upgrade-guid = "B3C143C7-8E3F-4268-B986-0C948A6142D5"
