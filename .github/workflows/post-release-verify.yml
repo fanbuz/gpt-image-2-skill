@@ -1,8 +1,6 @@
 name: Post Release Verify
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       version:
@@ -59,6 +57,19 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      - name: Wait for npm package visibility
+        shell: bash
+        run: |
+          version="${VERSION#v}"
+          for attempt in $(seq 1 20); do
+            if npm view "gpt-image-2-skill@${version}" version >/tmp/gpt-image-2-skill-npm-version.txt 2>/dev/null; then
+              cat /tmp/gpt-image-2-skill-npm-version.txt
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Timed out waiting for gpt-image-2-skill@${version} to appear on npm"
+          exit 1
       - name: Install from npm
         shell: bash
         run: npm install --global "gpt-image-2-skill@${VERSION#v}"

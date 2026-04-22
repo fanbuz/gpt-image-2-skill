@@ -15,7 +15,7 @@ The release system will use:
 - `cargo-dist` for GitHub Release assets, shell installer, PowerShell installer, Homebrew formula publishing, and MSI generation
 - a custom npm workflow for root package + platform package matrix publishing
 
-The Python CLI stays in the repo as a reference implementation during migration. The Rust CLI becomes the public distribution surface.
+The Rust CLI is the public distribution surface for crates.io, GitHub Releases, Homebrew, npm, and the bundled Skill runtime.
 
 ## CLI Classification
 
@@ -47,7 +47,7 @@ The Python CLI stays in the repo as a reference implementation during migration.
 
 ## Repository Shape
 
-Use a virtual Cargo workspace at repo root. This fits the current mixed-language repo and gives clean space for Rust, npm, and legacy Python.
+Use a virtual Cargo workspace at repo root. This fits the current mixed-language repo and keeps Rust, npm, release scripts, and the bundled Skill in one release system.
 
 ```text
 Cargo.toml
@@ -137,7 +137,7 @@ This keeps `cargo install` and `cargo binstall` aligned:
 
 ## Command Contract
 
-The Rust CLI keeps the current Python command surface:
+The Rust CLI keeps the established command surface:
 
 ```text
 gpt-image-2-skill --json doctor
@@ -152,7 +152,7 @@ Compatibility rules:
 
 - stdout keeps the current JSON envelope
 - stderr keeps `--json-events` JSONL progress
-- flags stay stable across the migration
+- flags stay stable across releases
 - exit codes stay stable
 - the bundled Skill calls the binary once it exists
 
@@ -228,19 +228,19 @@ Design choices:
 
 ### Package naming
 
-Recommended naming:
+Published naming:
 
-- root package: `@wangnov/gpt-image-2-skill`
+- root package: `gpt-image-2-skill`
 - platform packages:
-  - `@wangnov/gpt-image-2-skill-darwin-arm64`
-  - `@wangnov/gpt-image-2-skill-darwin-x64`
-  - `@wangnov/gpt-image-2-skill-linux-arm64-gnu`
-  - `@wangnov/gpt-image-2-skill-linux-x64-gnu`
-  - `@wangnov/gpt-image-2-skill-linux-x64-musl`
-  - `@wangnov/gpt-image-2-skill-windows-arm64-msvc`
-  - `@wangnov/gpt-image-2-skill-windows-x64-msvc`
+  - `gpt-image-2-skill-darwin-arm64`
+  - `gpt-image-2-skill-darwin-x64`
+  - `gpt-image-2-skill-linux-arm64-gnu`
+  - `gpt-image-2-skill-linux-x64-gnu`
+  - `gpt-image-2-skill-linux-x64-musl`
+  - `gpt-image-2-skill-windows-arm64-msvc`
+  - `gpt-image-2-skill-windows-x64-msvc`
 
-The suffix map should stay stable even if the final npm scope changes.
+The suffix map should stay stable across future versions.
 
 ### Package behavior
 
@@ -376,11 +376,12 @@ Hand-written publish workflow.
 
 Responsibilities:
 
-- trigger after the GitHub Release is available
+- accept a `tag` input from the release workflow
 - download release assets
 - build platform npm packages
 - publish platform packages
 - publish root package
+- dispatch post-release verification after npm publish completes
 
 ### `.github/workflows/post-release-verify.yml`
 
@@ -388,10 +389,12 @@ Hand-written verification workflow.
 
 Responsibilities:
 
+- accept a `version` input from the npm publish workflow
 - confirm GitHub Release exists
 - confirm crates.io index sees the new version
 - confirm npm root/platform packages expose the same version
 - confirm Homebrew tap received the formula update
+- wait for npm registry visibility before install smoke tests
 
 ## Homebrew Design
 
@@ -410,7 +413,7 @@ Release requirements:
 
 V1 includes:
 
-- Rust CLI with command-line parity for the current Python surface
+- Rust CLI with stable machine-readable command parity
 - crates.io publishing
 - `cargo binstall` via GitHub Release assets
 - shell installer
@@ -443,9 +446,9 @@ V1.1 includes:
 
 ## Current External Constraints
 
-- crates.io search does not currently show an existing `gpt-image-2-skill` crate
-- npm registry currently returns `404` for `gpt-image-2-skill`
-- npm registry currently returns `404` for `@wangnov/gpt-image-2-skill`
+- crates.io hosts `gpt-image-2-skill`
+- npm hosts `gpt-image-2-skill`
+- npm hosts the platform packages for macOS, Linux, and Windows
 - `Wangnov/homebrew-tap` already exists and is public
 
 ## Source Notes
