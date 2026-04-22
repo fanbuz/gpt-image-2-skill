@@ -127,7 +127,6 @@ npm 首发通过 GitHub Actions 中的 `NPM_TOKEN` 完成，并保留 `--provena
 
 ## 文档
 
-- 设计与分发：`docs/rust-release-distribution-design.md`
 - Skill 说明：`skills/gpt-image-2-skill/SKILL.md`
 - Release 流程：`scripts/release/prepare.sh`、`scripts/release/publish.sh`、`scripts/release/verify.sh`
 - Skill 冒烟验证：`scripts/smoke_skill_install.cjs`
@@ -255,7 +254,6 @@ The first npm publish uses `NPM_TOKEN` in GitHub Actions and keeps `--provenance
 
 ## Docs
 
-- Design and distribution: `docs/rust-release-distribution-design.md`
 - Skill spec: `skills/gpt-image-2-skill/SKILL.md`
 - Release flow: `scripts/release/prepare.sh`, `scripts/release/publish.sh`, `scripts/release/verify.sh`
 - Skill smoke test: `scripts/smoke_skill_install.cjs`
