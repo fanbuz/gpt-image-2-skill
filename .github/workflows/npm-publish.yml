@@ -9,6 +9,11 @@ on:
         description: Release tag such as v0.2.0
         required: true
         type: string
+      dry_run:
+        description: Validate npm packaging without publishing
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -20,12 +25,13 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       TAG_NAME: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ env.TAG_NAME }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
@@ -38,7 +44,23 @@ jobs:
       - name: Build npm matrix
         run: |
           node scripts/npm/build-matrix.mjs --release-dir .release-assets --version "${TAG_NAME#v}"
+      - name: Dry run npm publish
+        if: ${{ env.DRY_RUN == 'true' }}
+        run: |
+          for package_dir in \
+            packages/npm/gpt-image-2-skill-darwin-arm64 \
+            packages/npm/gpt-image-2-skill-darwin-x64 \
+            packages/npm/gpt-image-2-skill-linux-arm64-gnu \
+            packages/npm/gpt-image-2-skill-linux-x64-gnu \
+            packages/npm/gpt-image-2-skill-linux-x64-musl \
+            packages/npm/gpt-image-2-skill-windows-arm64-msvc \
+            packages/npm/gpt-image-2-skill-windows-x64-msvc
+          do
+            npm publish "$package_dir" --access public --dry-run
+          done
+          npm publish packages/npm/gpt-image-2-skill --access public --dry-run
       - name: Publish platform packages
+        if: ${{ env.DRY_RUN != 'true' }}
         run: |
           for package_dir in \
             packages/npm/gpt-image-2-skill-darwin-arm64 \
@@ -52,8 +74,10 @@ jobs:
             npm publish "$package_dir" --access public --provenance
           done
       - name: Publish root package
+        if: ${{ env.DRY_RUN != 'true' }}
         run: npm publish packages/npm/gpt-image-2-skill --access public --provenance
       - name: Dispatch post release verify
+        if: ${{ env.DRY_RUN != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
