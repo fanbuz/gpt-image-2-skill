@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/gpt-image-2-skill"]
+members = ["crates/gpt-image-2-core", "crates/gpt-image-2-skill", "apps/gpt-image-2-app/src-tauri"]
 resolver = "2"
 
 [workspace.package]

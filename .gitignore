@@ -5,6 +5,7 @@ assets/*
 !assets/logo.png
 target/
 node_modules/
+apps/gpt-image-2-app/src-tauri/gen/
 .npm/
 packages/npm/gpt-image-2-skill-linux-arm64-gnu/bin/gpt-image-2-skill
 packages/npm/gpt-image-2-skill-linux-x64-gnu/bin/gpt-image-2-skill
