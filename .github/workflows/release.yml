@@ -41,6 +41,10 @@ permissions:
 # will be marked as a prerelease.
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag such as v0.2.4
+        required: true
   pull_request:
   push:
     tags:
@@ -78,8 +82,14 @@ jobs:
       # (PRs run on the *source* but secrets are usually on the *target* -- that's *good*
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            dist plan --output-format=json > plan-dist-manifest.json
+          else
+            dist host --steps=create --tag="$RELEASE_TAG" --output-format=json > plan-dist-manifest.json
+          fi
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
