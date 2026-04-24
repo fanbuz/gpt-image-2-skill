@@ -64,7 +64,7 @@ function regionModeHint(mode: EditRegionMode) {
   if (mode === "native-mask") return "遮罩会精确作用在目标图上";
   if (mode === "reference-hint")
     return "会额外发送一张选区标记图；用户上传图片顺序保持不变";
-  return "请使用多图参考，或换一个支持局部编辑的服务商";
+  return "请使用多图参考，或换一个支持局部编辑的凭证";
 }
 
 export function EditScreen({ config }: { config?: ServerConfig }) {
@@ -234,8 +234,8 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
       return;
     }
     if (regionUnavailable) {
-      toast.error("当前服务商不支持局部编辑", {
-        description: "请切换到「多图参考」，或换一个支持局部编辑的服务商。",
+      toast.error("当前凭证不支持局部编辑", {
+        description: "请切换到「多图参考」，或换一个支持局部编辑的凭证。",
       });
       return;
     }
@@ -387,7 +387,8 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
     : undefined;
   const saveSelected = () => saveImages([selectedPath], "图片");
   const saveAll = () => saveImages(outputPaths, "图片");
-  const hasOutputs = outputs.some((output) => output.url) || outputPaths.length > 0;
+  const hasOutputs =
+    outputs.some((output) => output.url) || outputPaths.length > 0;
   const outputSubtitle = usesRegion
     ? "设为目标图并涂抹要修改的区域，再点击右侧开始。"
     : "上传一张或多张参考图，写清楚希望如何融合或改动。";
@@ -751,7 +752,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
 
       <div className="edit-settings parameter-shelf border-t border-border bg-raised xl:border-l xl:border-t-0">
         <div className="parameter-scroll px-4 py-3.5">
-          <Field label="服务商" id={providerSelectId}>
+          <Field label="凭证" id={providerSelectId}>
             <div className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-sunken px-2.5 focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-faint)] transition-colors">
               <Icon
                 name="cpu"
@@ -767,7 +768,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
                 className="flex-1 border-none bg-transparent text-[13px] font-medium outline-none disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {providerNames.length === 0 && (
-                  <option value="">（无可用 provider）</option>
+                  <option value="">（无可用凭证）</option>
                 )}
                 {providerNames.map((name) => (
                   <option key={name} value={name}>
@@ -867,9 +868,9 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
                 ? usesRegion
                   ? "再提交局部编辑"
                   : "再提交参考编辑"
-              : usesRegion
-                ? "开始局部编辑"
-                : "开始参考编辑"}
+                : usesRegion
+                  ? "开始局部编辑"
+                  : "开始参考编辑"}
           </Button>
           <div className="mt-2 flex justify-between text-[11px] text-faint">
             <span>

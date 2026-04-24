@@ -124,7 +124,7 @@ export function HistoryScreen() {
         >
           <span />
           <span className="t-caps">任务</span>
-          <span className="t-caps">服务商</span>
+          <span className="t-caps">凭证</span>
           <span className="t-caps">输出</span>
           <span className="t-caps">状态</span>
           <span />

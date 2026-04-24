@@ -864,7 +864,7 @@ fn write_edit_inputs(
     };
     let edit_region_mode = edit_region_mode_for_request(request);
     if edit_region_mode == "none" && (mask_path.is_some() || selection_hint_path.is_some()) {
-        return Err("当前服务商不支持局部编辑。请切换到「多图参考」或更换服务商。".to_string());
+        return Err("当前凭证不支持局部编辑。请切换到「多图参考」或更换凭证。".to_string());
     }
     if edit_region_mode == "reference-hint"
         && let Some(path) = &selection_hint_path
@@ -1177,8 +1177,16 @@ fn set_default_provider(name: String) -> Result<Value, String> {
 
 #[tauri::command]
 fn upsert_provider(name: String, cfg: ProviderInput) -> Result<Value, String> {
-    let (provider, set_default) = convert_provider_input(&name, cfg)?;
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err("凭证名称不能为空。".to_string());
+    }
     let mut config = load_config()?;
+    if matches!(name.as_str(), "auto" | "openai" | "codex") || config.providers.contains_key(&name)
+    {
+        return Err(format!("凭证「{name}」已存在，已配置的凭证不能覆盖。"));
+    }
+    let (provider, set_default) = convert_provider_input(&name, cfg)?;
     config.providers.insert(name.clone(), provider);
     if set_default || config.default_provider.is_none() {
         config.default_provider = Some(name);

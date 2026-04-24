@@ -87,7 +87,7 @@ const TITLES: Record<ScreenId, { title: string; subtitle: string }> = {
   generate: { title: "图像生成", subtitle: "写提示词，生成候选并保存图片" },
   edit: { title: "图像编辑", subtitle: "上传参考图、涂抹遮罩、描述变更" },
   history: { title: "任务", subtitle: "查看正在运行、已完成和失败的生成记录" },
-  providers: { title: "服务商", subtitle: "管理生成图片时使用的服务" },
+  providers: { title: "凭证", subtitle: "管理生成图片时使用的接入信息" },
   settings: { title: "设置", subtitle: "外观、队列与通知偏好" },
 };
 

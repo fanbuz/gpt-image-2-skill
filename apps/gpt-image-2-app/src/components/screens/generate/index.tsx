@@ -195,7 +195,8 @@ export function GenerateScreen({
   const saveSelected = () => saveImages([selectedPath], "图片");
   const saveAll = () => saveImages(outputPaths, "图片");
 
-  const hasOutputs = outputs.some((output) => output.url) || outputPaths.length > 0;
+  const hasOutputs =
+    outputs.some((output) => output.url) || outputPaths.length > 0;
 
   return (
     <div className="generate-layout">
@@ -244,11 +245,7 @@ export function GenerateScreen({
                 kbd="⌘↵"
                 disabled={isSubmitting || !provider || Boolean(parameterError)}
               >
-                {isSubmitting
-                  ? "提交中…"
-                  : isTracking
-                    ? "再生成一批"
-                    : "生成"}
+                {isSubmitting ? "提交中…" : isTracking ? "再生成一批" : "生成"}
               </Button>
             </div>
           </div>
@@ -433,7 +430,7 @@ export function GenerateScreen({
       </div>
 
       <div className="parameter-scroll border-t border-border bg-raised px-4 py-3.5 lg:border-l lg:border-t-0">
-        <Field label="服务商" id={providerSelectId}>
+        <Field label="凭证" id={providerSelectId}>
           <div className="flex items-center gap-1.5 px-2.5 h-9 bg-sunken border border-border rounded-md focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-faint)] transition-colors">
             <Icon
               name="cpu"
@@ -449,7 +446,7 @@ export function GenerateScreen({
               className="flex-1 bg-transparent border-none outline-none text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-60"
             >
               {providerNames.length === 0 && (
-                <option value="">（无可用 provider）</option>
+                <option value="">（无可用凭证）</option>
               )}
               {providerNames.map((p) => (
                 <option key={p} value={p}>

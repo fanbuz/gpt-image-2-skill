@@ -219,7 +219,7 @@ export function JobMetadataDrawer({
           className="grid mb-4 gap-y-2"
           style={{ gridTemplateColumns: "100px 1fr" }}
         >
-          <span className="t-tiny pt-0.5">服务商</span>
+          <span className="t-tiny pt-0.5">凭证</span>
           <span className="text-[12px]">{job.provider}</span>
           {typeof meta.size === "string" && (
             <>

@@ -64,7 +64,7 @@ export function CommandPalette({
       },
       {
         group: "跳转",
-        label: "服务商",
+        label: "凭证",
         icon: "providers",
         action: () => setScreen("providers"),
       },
@@ -76,13 +76,13 @@ export function CommandPalette({
       },
       {
         group: "操作",
-        label: "使用默认服务商开始新生成",
+        label: "使用默认凭证开始新生成",
         icon: "sparkle",
         action: () => setScreen("generate"),
       },
       {
         group: "操作",
-        label: "测试默认服务商连接",
+        label: "测试默认凭证连接",
         icon: "play",
         action: () => setScreen("providers"),
       },
