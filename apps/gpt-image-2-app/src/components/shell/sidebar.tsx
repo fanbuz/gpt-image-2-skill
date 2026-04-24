@@ -3,7 +3,7 @@ import { cn } from "@/lib/cn";
 import { Icon, type IconName } from "@/components/icon";
 import type { ServerConfig } from "@/lib/types";
 import { defaultProviderLabel, effectiveDefaultProvider } from "@/lib/providers";
-import logoUrl from "@/assets/logo.svg";
+import logoUrl from "@/assets/logo.png";
 
 export type ScreenId = "generate" | "edit" | "history" | "providers";
 
@@ -68,7 +68,12 @@ export function Sidebar({
     >
       <div className="h-14 px-4 flex items-center border-b border-border-faint">
         <div className="flex items-center gap-2">
-          <img src={logoUrl} alt="" className="h-7 w-7 shrink-0 rounded-md shadow-sm" draggable={false} />
+          <img
+            src={logoUrl}
+            alt=""
+            className="h-8 w-8 shrink-0 rounded-md object-contain shadow-sm"
+            draggable={false}
+          />
           <div className="leading-tight">
             <div className="text-[13px] font-semibold">GPT Image 2</div>
             <div className="text-[10.5px] text-faint">Codex Skill · v0.2.4</div>
