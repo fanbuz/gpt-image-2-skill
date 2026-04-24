@@ -1,20 +1,22 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     fs,
     path::{Path, PathBuf},
     process::Command,
+    sync::{Arc, Mutex},
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use gpt_image_2_core::{
     AppConfig, CredentialRef, KEYCHAIN_SERVICE, ProviderConfig, default_config_path,
-    default_keychain_account, history_db_path, jobs_dir, list_history_jobs, load_app_config,
-    redact_app_config, run_json, save_app_config, shared_config_dir, show_history_job,
-    write_keychain_secret,
+    default_keychain_account, delete_history_job, history_db_path, jobs_dir, list_history_jobs,
+    load_app_config, redact_app_config, run_json, save_app_config, shared_config_dir,
+    show_history_job, upsert_history_job, write_keychain_secret,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tauri::Emitter;
 
 fn app_error(error: gpt_image_2_core::AppError) -> String {
     format!("{}: {}", error.code, error.message)
@@ -35,6 +37,7 @@ fn config_for_ui(config: &AppConfig) -> Value {
             json!({
                 "type": "codex",
                 "model": "gpt-5.4",
+                "supports_n": false,
                 "credentials": {},
                 "builtin": true,
                 "supports_n": false,
@@ -46,6 +49,7 @@ fn config_for_ui(config: &AppConfig) -> Value {
                 "type": "openai-compatible",
                 "api_base": "https://api.openai.com/v1",
                 "model": "gpt-image-2",
+                "supports_n": true,
                 "credentials": {
                     "api_key": {"source": "env", "env": "OPENAI_API_KEY"}
                 },
@@ -121,7 +125,7 @@ enum CredentialInput {
     },
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct GenerateRequest {
     prompt: String,
     #[serde(default)]
@@ -142,13 +146,13 @@ struct GenerateRequest {
     moderation: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct UploadFile {
     name: String,
     bytes: Vec<u8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct EditRequest {
     prompt: String,
     #[serde(default)]
@@ -174,6 +178,50 @@ struct EditRequest {
     mask: Option<UploadFile>,
     #[serde(default)]
     selection_hint: Option<UploadFile>,
+}
+
+#[derive(Clone)]
+struct JobQueueState {
+    inner: Arc<Mutex<JobQueueInner>>,
+}
+
+impl Default for JobQueueState {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(JobQueueInner {
+                max_parallel: 2,
+                running: 0,
+                queue: VecDeque::new(),
+                events: BTreeMap::new(),
+                next_seq: BTreeMap::new(),
+            })),
+        }
+    }
+}
+
+struct JobQueueInner {
+    max_parallel: usize,
+    running: usize,
+    queue: VecDeque<QueuedJob>,
+    events: BTreeMap<String, Vec<Value>>,
+    next_seq: BTreeMap<String, u64>,
+}
+
+#[derive(Clone)]
+enum QueuedTask {
+    Generate(GenerateRequest),
+    Edit(EditRequest),
+}
+
+#[derive(Clone)]
+struct QueuedJob {
+    id: String,
+    command: String,
+    provider: String,
+    created_at: String,
+    dir: PathBuf,
+    metadata: Value,
+    task: QueuedTask,
 }
 
 fn convert_provider_input(
@@ -322,32 +370,136 @@ fn provider_edit_region_mode(provider: Option<&str>) -> String {
     }
 }
 
+fn selected_provider_name(provider: Option<&str>) -> String {
+    provider
+        .map(str::trim)
+        .filter(|name| !name.is_empty() && *name != "auto")
+        .map(ToString::to_string)
+        .or_else(|| {
+            load_config()
+                .ok()
+                .and_then(|config| config.default_provider)
+                .filter(|name| !name.is_empty() && name != "auto")
+        })
+        .unwrap_or_else(|| "auto".to_string())
+}
+
 fn requested_n(n: Option<u8>) -> Result<u8, String> {
-    match n.unwrap_or(1) {
-        1..=10 => Ok(n.unwrap_or(1)),
-        _ => Err("Output count must be between 1 and 10.".to_string()),
+    let requested = n.unwrap_or(1);
+    if requested == 0 {
+        return Err("Output count must be at least 1.".to_string());
     }
+    Ok(requested.min(16))
+}
+
+fn push_provider_arg(args: &mut Vec<String>, provider: Option<&str>) {
+    if let Some(provider) = provider
+        && !provider.trim().is_empty()
+    {
+        args.push("--provider".to_string());
+        args.push(provider.to_string());
+    }
+}
+
+fn generate_args(request: &GenerateRequest, out: &Path, include_n: bool) -> Vec<String> {
+    let mut args = Vec::new();
+    push_provider_arg(&mut args, request.provider.as_deref());
+    args.extend([
+        "images".to_string(),
+        "generate".to_string(),
+        "--prompt".to_string(),
+        request.prompt.clone(),
+        "--out".to_string(),
+        out.display().to_string(),
+    ]);
+    push_optional(&mut args, "--size", request.size.as_deref());
+    push_optional(&mut args, "--format", request.format.as_deref());
+    push_optional(&mut args, "--quality", request.quality.as_deref());
+    push_optional(&mut args, "--background", request.background.as_deref());
+    push_optional(&mut args, "--moderation", request.moderation.as_deref());
+    if include_n && let Some(n) = request.n {
+        args.push("--n".to_string());
+        args.push(n.to_string());
+    }
+    if let Some(compression) = request.compression {
+        args.push("--compression".to_string());
+        args.push(compression.to_string());
+    }
+    args
+}
+
+fn edit_args(
+    request: &EditRequest,
+    ref_paths: &[PathBuf],
+    mask_path: Option<&Path>,
+    out: &Path,
+    include_n: bool,
+) -> Vec<String> {
+    let mut args = Vec::new();
+    push_provider_arg(&mut args, request.provider.as_deref());
+    args.extend([
+        "images".to_string(),
+        "edit".to_string(),
+        "--prompt".to_string(),
+        request.prompt.clone(),
+        "--out".to_string(),
+        out.display().to_string(),
+    ]);
+    for path in ref_paths {
+        args.push("--ref-image".to_string());
+        args.push(path.display().to_string());
+    }
+    if let Some(path) = mask_path {
+        args.push("--mask".to_string());
+        args.push(path.display().to_string());
+    }
+    push_optional(&mut args, "--size", request.size.as_deref());
+    push_optional(&mut args, "--format", request.format.as_deref());
+    push_optional(&mut args, "--quality", request.quality.as_deref());
+    push_optional(&mut args, "--background", request.background.as_deref());
+    push_optional(
+        &mut args,
+        "--input-fidelity",
+        request.input_fidelity.as_deref(),
+    );
+    push_optional(&mut args, "--moderation", request.moderation.as_deref());
+    if include_n && let Some(n) = request.n {
+        args.push("--n".to_string());
+        args.push(n.to_string());
+    }
+    if let Some(compression) = request.compression {
+        args.push("--compression".to_string());
+        args.push(compression.to_string());
+    }
+    args
 }
 
 fn batch_output_path(dir: &Path, format: Option<&str>, index: u8) -> PathBuf {
     dir.join(format!("out-{}.{}", index + 1, output_extension(format)))
 }
 
-fn run_cli_batch(args_list: Vec<Vec<String>>) -> Result<Vec<Value>, String> {
-    thread::scope(|scope| {
-        let handles = args_list
-            .into_iter()
-            .map(|args| scope.spawn(move || cli_json_result(&args)))
-            .collect::<Vec<_>>();
-        let mut payloads = Vec::with_capacity(handles.len());
-        for handle in handles {
-            let payload = handle
-                .join()
-                .map_err(|_| "Batch image request worker panicked.".to_string())??;
-            payloads.push(payload);
+fn collect_history_ids(payload: &Value) -> Vec<String> {
+    let mut ids = Vec::new();
+    if let Some(id) = payload
+        .get("history")
+        .and_then(|history| history.get("job_id"))
+        .and_then(Value::as_str)
+        && !id.is_empty()
+    {
+        ids.push(id.to_string());
+    }
+    if let Some(job_ids) = payload
+        .get("history")
+        .and_then(|history| history.get("job_ids"))
+        .and_then(Value::as_array)
+    {
+        for id in job_ids.iter().filter_map(Value::as_str) {
+            if !id.is_empty() && !ids.iter().any(|existing| existing == id) {
+                ids.push(id.to_string());
+            }
         }
-        Ok(payloads)
-    })
+    }
+    ids
 }
 
 fn output_files_from_payload(payload: &Value) -> Vec<Value> {
@@ -396,13 +548,43 @@ fn normalize_batch_output(files: Vec<Value>) -> Value {
     })
 }
 
-fn merge_batch_payloads(command: &str, payloads: &[Value]) -> Value {
+fn merge_batch_payloads(command: &str, payloads: Vec<Value>) -> Value {
+    let first = payloads.first().cloned().unwrap_or_else(|| json!({}));
     let files = payloads
         .iter()
         .flat_map(output_files_from_payload)
         .collect::<Vec<_>>();
-    let first = payloads.first().cloned().unwrap_or_else(|| json!({}));
+    let mut history_job_ids = Vec::new();
+    let mut revised_prompts = Vec::new();
+
+    for payload in &payloads {
+        history_job_ids.extend(collect_history_ids(payload));
+        if let Some(prompts) = payload
+            .get("response")
+            .and_then(|response| response.get("revised_prompts"))
+            .and_then(Value::as_array)
+        {
+            revised_prompts.extend(prompts.iter().cloned());
+        }
+    }
+
+    history_job_ids.sort();
+    history_job_ids.dedup();
+    let primary_history_job_id = history_job_ids.first().cloned();
     let output = normalize_batch_output(files);
+    let image_count = output
+        .get("files")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let mut response = first.get("response").cloned().unwrap_or_else(|| json!({}));
+    if let Value::Object(response) = &mut response {
+        response.insert("image_count".to_string(), json!(image_count));
+        response.insert("batch_count".to_string(), json!(payloads.len()));
+        response.insert("batch_request_count".to_string(), json!(payloads.len()));
+        response.insert("revised_prompts".to_string(), json!(revised_prompts));
+    }
+
     json!({
         "ok": true,
         "command": command,
@@ -410,16 +592,28 @@ fn merge_batch_payloads(command: &str, payloads: &[Value]) -> Value {
         "provider_selection": first.get("provider_selection").cloned().unwrap_or(Value::Null),
         "auth": first.get("auth").cloned().unwrap_or(Value::Null),
         "request": first.get("request").cloned().unwrap_or(Value::Null),
-        "response": {
-            "image_count": output.get("files").and_then(Value::as_array).map(Vec::len).unwrap_or(0),
-            "batch_request_count": payloads.len(),
-        },
+        "response": response,
         "output": output,
+        "history": {
+            "job_id": primary_history_job_id,
+            "job_ids": history_job_ids,
+        },
         "batch": {
             "mode": "parallel-single-output",
             "request_count": payloads.len(),
         },
+        "events": {
+            "count": payloads.len(),
+        }
     })
+}
+
+fn cleanup_child_history(payload: &Value, app_job_id: &str) {
+    for id in collect_history_ids(payload) {
+        if id != app_job_id {
+            let _ = delete_history_job(&id);
+        }
+    }
 }
 
 fn job_from_payload(payload: &Value, fallback_id: &str, command: &str, request: Value) -> Value {
@@ -457,6 +651,352 @@ fn chrono_like_now() -> String {
         .unwrap_or_default()
         .as_secs();
     format!("{secs}")
+}
+
+fn run_payloads_concurrently(arg_sets: Vec<Vec<String>>) -> Result<Vec<Value>, String> {
+    let handles = arg_sets
+        .into_iter()
+        .map(|args| thread::spawn(move || cli_json_result(&args)))
+        .collect::<Vec<_>>();
+    let mut payloads = Vec::new();
+    let mut errors = Vec::new();
+    for handle in handles {
+        match handle.join() {
+            Ok(Ok(payload)) => payloads.push(payload),
+            Ok(Err(error)) => errors.push(error),
+            Err(_) => errors.push("Image worker panicked.".to_string()),
+        }
+    }
+    if errors.is_empty() {
+        Ok(payloads)
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+fn run_generate_request(
+    mut request: GenerateRequest,
+    fallback_id: String,
+    dir: PathBuf,
+) -> Result<Value, String> {
+    if request.prompt.trim().is_empty() {
+        return Err("Prompt is required.".to_string());
+    }
+    let output_count = requested_n(request.n)?;
+    if request.n.is_some() {
+        request.n = Some(output_count);
+    }
+    let provider_supports_n = provider_supports_n(request.provider.as_deref());
+    let payload = if provider_supports_n || output_count == 1 {
+        let out = dir.join(format!(
+            "out.{}",
+            output_extension(request.format.as_deref())
+        ));
+        cli_json_result(&generate_args(&request, &out, provider_supports_n))?
+    } else {
+        let arg_sets = (0..output_count)
+            .map(|index| {
+                generate_args(
+                    &request,
+                    &batch_output_path(&dir, request.format.as_deref(), index),
+                    false,
+                )
+            })
+            .collect::<Vec<_>>();
+        merge_batch_payloads("images generate", run_payloads_concurrently(arg_sets)?)
+    };
+    let request_meta = serde_json::to_value(&request).unwrap_or_else(|_| json!({}));
+    let job = job_from_payload(&payload, &fallback_id, "images generate", request_meta);
+    Ok(json!({
+        "job_id": job.get("id").cloned().unwrap_or(Value::Null),
+        "job": job,
+        "events": [{
+            "seq": 1,
+            "kind": "local",
+            "type": "job.completed",
+            "data": {"status": "completed", "output": payload.get("output")}
+        }],
+        "payload": payload,
+    }))
+}
+
+fn write_edit_inputs(
+    request: &EditRequest,
+    dir: &Path,
+) -> Result<(Vec<PathBuf>, Option<PathBuf>, String), String> {
+    let mut ref_paths = Vec::new();
+    for (index, upload) in request.refs.iter().enumerate() {
+        let ext = Path::new(&upload.name)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("png");
+        let path = dir.join(format!("ref-{index}.{ext}"));
+        fs::write(&path, &upload.bytes).map_err(|error| error.to_string())?;
+        ref_paths.push(path);
+    }
+    let mask_path = if let Some(mask) = &request.mask {
+        let path = dir.join("mask.png");
+        fs::write(&path, &mask.bytes).map_err(|error| error.to_string())?;
+        Some(path)
+    } else {
+        None
+    };
+    let selection_hint_path = if let Some(hint) = &request.selection_hint {
+        let path = dir.join("selection-hint.png");
+        fs::write(&path, &hint.bytes).map_err(|error| error.to_string())?;
+        Some(path)
+    } else {
+        None
+    };
+    let edit_region_mode = edit_region_mode_for_request(request);
+    if edit_region_mode == "none" && (mask_path.is_some() || selection_hint_path.is_some()) {
+        return Err("当前服务商不支持局部编辑。请切换到「多图参考」或更换服务商。".to_string());
+    }
+    if edit_region_mode == "reference-hint"
+        && let Some(path) = &selection_hint_path
+    {
+        ref_paths.push(path.clone());
+    }
+    Ok((ref_paths, mask_path, edit_region_mode))
+}
+
+fn edit_region_mode_for_request(request: &EditRequest) -> String {
+    if request.mask.is_some() || request.selection_hint.is_some() {
+        provider_edit_region_mode(request.provider.as_deref())
+    } else {
+        "none".to_string()
+    }
+}
+
+fn edit_request_metadata(request: &EditRequest) -> Value {
+    let edit_region_mode = edit_region_mode_for_request(request);
+    json!({
+        "prompt": request.prompt,
+        "provider": request.provider,
+        "size": request.size,
+        "format": request.format,
+        "quality": request.quality,
+        "background": request.background,
+        "n": request.n,
+        "compression": request.compression,
+        "input_fidelity": request.input_fidelity,
+        "moderation": request.moderation,
+        "ref_count": request.refs.len(),
+        "has_mask": request.mask.is_some(),
+        "selection_hint": request.selection_hint.is_some(),
+        "edit_region_mode": edit_region_mode,
+    })
+}
+
+fn run_edit_request(
+    mut request: EditRequest,
+    fallback_id: String,
+    dir: PathBuf,
+) -> Result<Value, String> {
+    if request.prompt.trim().is_empty() {
+        return Err("Prompt is required.".to_string());
+    }
+    if request.refs.is_empty() {
+        return Err("At least one reference image is required.".to_string());
+    }
+    let output_count = requested_n(request.n)?;
+    if request.n.is_some() {
+        request.n = Some(output_count);
+    }
+    let (ref_paths, mask_path, edit_region_mode) = write_edit_inputs(&request, &dir)?;
+    let provider_supports_n = provider_supports_n(request.provider.as_deref());
+    let payload = if provider_supports_n || output_count == 1 {
+        let out = dir.join(format!(
+            "out.{}",
+            output_extension(request.format.as_deref())
+        ));
+        cli_json_result(&edit_args(
+            &request,
+            &ref_paths,
+            if edit_region_mode == "native-mask" {
+                mask_path.as_deref()
+            } else {
+                None
+            },
+            &out,
+            provider_supports_n,
+        ))?
+    } else {
+        let arg_sets = (0..output_count)
+            .map(|index| {
+                edit_args(
+                    &request,
+                    &ref_paths,
+                    if edit_region_mode == "native-mask" {
+                        mask_path.as_deref()
+                    } else {
+                        None
+                    },
+                    &batch_output_path(&dir, request.format.as_deref(), index),
+                    false,
+                )
+            })
+            .collect::<Vec<_>>();
+        merge_batch_payloads("images edit", run_payloads_concurrently(arg_sets)?)
+    };
+    let request_meta = edit_request_metadata(&request);
+    let job = job_from_payload(&payload, &fallback_id, "images edit", request_meta);
+    Ok(json!({
+        "job_id": job.get("id").cloned().unwrap_or(Value::Null),
+        "job": job,
+        "events": [{
+            "seq": 1,
+            "kind": "local",
+            "type": "job.completed",
+            "data": {"status": "completed", "output": payload.get("output")}
+        }],
+        "payload": payload,
+    }))
+}
+
+fn append_updated_at(metadata: &mut Value) {
+    if let Value::Object(object) = metadata {
+        object.insert("updated_at".to_string(), json!(chrono_like_now()));
+    }
+}
+
+fn output_path_from_payload(payload: &Value) -> Option<String> {
+    payload
+        .get("output")
+        .and_then(|output| output.get("path"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .or_else(|| {
+            payload
+                .get("output")
+                .and_then(|output| output.get("files"))
+                .and_then(Value::as_array)
+                .and_then(|files| files.first())
+                .and_then(|file| file.get("path"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string)
+        })
+}
+
+fn job_snapshot(
+    id: &str,
+    command: &str,
+    provider: &str,
+    status: &str,
+    created_at: &str,
+    metadata: Value,
+    output_path: Option<String>,
+    outputs: Value,
+    error: Value,
+) -> Value {
+    json!({
+        "id": id,
+        "command": command,
+        "provider": provider,
+        "status": status,
+        "created_at": created_at,
+        "updated_at": chrono_like_now(),
+        "metadata": metadata,
+        "outputs": outputs,
+        "output_path": output_path,
+        "error": error,
+    })
+}
+
+fn persist_job(job: &Value) -> Result<(), String> {
+    let id = job
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "Job id is missing.".to_string())?;
+    let command = job
+        .get("command")
+        .and_then(Value::as_str)
+        .unwrap_or("images generate");
+    let provider = job
+        .get("provider")
+        .and_then(Value::as_str)
+        .unwrap_or("auto");
+    let status = job
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("queued");
+    let created_at = job.get("created_at").and_then(Value::as_str);
+    let output_path = job
+        .get("output_path")
+        .and_then(Value::as_str)
+        .map(PathBuf::from);
+    let mut metadata = job.get("metadata").cloned().unwrap_or_else(|| json!({}));
+    append_updated_at(&mut metadata);
+    if let Value::Object(object) = &mut metadata {
+        if let Some(outputs) = job.get("outputs")
+            && !outputs.is_null()
+        {
+            object.insert(
+                "output".to_string(),
+                json!({
+                    "path": job.get("output_path").cloned().unwrap_or(Value::Null),
+                    "files": outputs,
+                }),
+            );
+        }
+        if let Some(error) = job.get("error")
+            && !error.is_null()
+        {
+            object.insert("error".to_string(), error.clone());
+        }
+    }
+    upsert_history_job(
+        id,
+        command,
+        provider,
+        status,
+        output_path.as_deref(),
+        created_at,
+        metadata,
+    )
+    .map_err(app_error)
+}
+
+fn queue_snapshot_locked(inner: &JobQueueInner) -> Value {
+    json!({
+        "max_parallel": inner.max_parallel,
+        "running": inner.running,
+        "queued": inner.queue.len(),
+        "queued_job_ids": inner.queue.iter().map(|job| job.id.clone()).collect::<Vec<_>>(),
+    })
+}
+
+fn append_queue_event(
+    inner: &mut JobQueueInner,
+    job_id: &str,
+    kind: &str,
+    event_type: &str,
+    data: Value,
+) -> Value {
+    let seq = inner.next_seq.entry(job_id.to_string()).or_insert(0);
+    *seq += 1;
+    let event = json!({
+        "seq": *seq,
+        "kind": kind,
+        "type": event_type,
+        "data": data,
+    });
+    let events = inner.events.entry(job_id.to_string()).or_default();
+    events.push(event.clone());
+    if events.len() > 200 {
+        events.remove(0);
+    }
+    event
+}
+
+fn emit_queue_event(app: &tauri::AppHandle, job_id: &str, event: &Value) {
+    let _ = app.emit(
+        "gpt-image-2-job-event",
+        json!({
+            "job_id": job_id,
+            "event": event,
+        }),
+    );
 }
 
 #[tauri::command]
@@ -572,90 +1112,365 @@ fn history_list() -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn history_show(job_id: String) -> Result<Value, String> {
+fn history_show(job_id: String, state: tauri::State<'_, JobQueueState>) -> Result<Value, String> {
+    let events = state
+        .inner
+        .lock()
+        .ok()
+        .and_then(|inner| inner.events.get(&job_id).cloned())
+        .unwrap_or_default();
     Ok(json!({
         "history_file": history_db_path().display().to_string(),
         "job": show_history_job(&job_id).map_err(app_error)?,
-        "events": [],
+        "events": events,
     }))
 }
 
 #[tauri::command]
 fn history_delete(job_id: String) -> Result<Value, String> {
-    cli_json_result(&["history".to_string(), "delete".to_string(), job_id])
+    let deleted = delete_history_job(&job_id).map_err(app_error)?;
+    Ok(json!({
+        "ok": true,
+        "command": "history delete",
+        "job_id": job_id,
+        "deleted": deleted,
+    }))
+}
+
+fn completed_job_for_queue(queued: &QueuedJob, response: &Value) -> Value {
+    let payload = response.get("payload").unwrap_or(response);
+    let provider = payload
+        .get("provider")
+        .and_then(Value::as_str)
+        .unwrap_or(&queued.provider);
+    let outputs = payload
+        .get("output")
+        .and_then(|output| output.get("files"))
+        .cloned()
+        .or_else(|| {
+            response
+                .get("job")
+                .and_then(|job| job.get("outputs"))
+                .cloned()
+        })
+        .unwrap_or_else(|| json!([]));
+    let output_path = output_path_from_payload(payload).or_else(|| {
+        response
+            .get("job")
+            .and_then(|job| job.get("output_path"))
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+    });
+    job_snapshot(
+        &queued.id,
+        &queued.command,
+        provider,
+        "completed",
+        &queued.created_at,
+        queued.metadata.clone(),
+        output_path,
+        outputs,
+        Value::Null,
+    )
+}
+
+fn failed_job_for_queue(queued: &QueuedJob, message: String) -> Value {
+    job_snapshot(
+        &queued.id,
+        &queued.command,
+        &queued.provider,
+        "failed",
+        &queued.created_at,
+        queued.metadata.clone(),
+        None,
+        json!([]),
+        json!({"message": message}),
+    )
+}
+
+fn finish_queued_job(
+    app: tauri::AppHandle,
+    state: JobQueueState,
+    queued: QueuedJob,
+    result: Result<Value, String>,
+) {
+    let (job, event_type, event_data) = match result {
+        Ok(response) => {
+            let payload = response.get("payload").unwrap_or(&response);
+            cleanup_child_history(payload, &queued.id);
+            let job = completed_job_for_queue(&queued, &response);
+            let data = json!({
+                "status": "completed",
+                "output": payload.get("output").cloned().unwrap_or(Value::Null),
+                "job": job,
+            });
+            (job, "job.completed", data)
+        }
+        Err(message) => {
+            let job = failed_job_for_queue(&queued, message.clone());
+            (
+                job,
+                "job.failed",
+                json!({
+                    "status": "failed",
+                    "error": {"message": message},
+                }),
+            )
+        }
+    };
+    let _ = persist_job(&job);
+    let event = {
+        let mut inner = match state.inner.lock() {
+            Ok(inner) => inner,
+            Err(_) => return,
+        };
+        inner.running = inner.running.saturating_sub(1);
+        append_queue_event(&mut inner, &queued.id, "local", event_type, event_data)
+    };
+    emit_queue_event(&app, &queued.id, &event);
+    start_queued_jobs(app, state);
+}
+
+fn start_queued_jobs(app: tauri::AppHandle, state: JobQueueState) {
+    loop {
+        let (queued, event, running_job) = {
+            let mut inner = match state.inner.lock() {
+                Ok(inner) => inner,
+                Err(_) => return,
+            };
+            if inner.running >= inner.max_parallel {
+                return;
+            }
+            let Some(queued) = inner.queue.pop_front() else {
+                return;
+            };
+            inner.running += 1;
+            let running_job = job_snapshot(
+                &queued.id,
+                &queued.command,
+                &queued.provider,
+                "running",
+                &queued.created_at,
+                queued.metadata.clone(),
+                None,
+                json!([]),
+                Value::Null,
+            );
+            let event = append_queue_event(
+                &mut inner,
+                &queued.id,
+                "local",
+                "job.running",
+                json!({"status": "running"}),
+            );
+            (queued, event, running_job)
+        };
+        let _ = persist_job(&running_job);
+        emit_queue_event(&app, &queued.id, &event);
+        let worker_app = app.clone();
+        let worker_state = state.clone();
+        thread::spawn(move || {
+            let result = match queued.task.clone() {
+                QueuedTask::Generate(request) => {
+                    run_generate_request(request, queued.id.clone(), queued.dir.clone())
+                }
+                QueuedTask::Edit(request) => {
+                    run_edit_request(request, queued.id.clone(), queued.dir.clone())
+                }
+            };
+            finish_queued_job(worker_app, worker_state, queued, result);
+        });
+    }
+}
+
+fn enqueue_job(
+    app: tauri::AppHandle,
+    state: JobQueueState,
+    queued: QueuedJob,
+) -> Result<Value, String> {
+    let job = job_snapshot(
+        &queued.id,
+        &queued.command,
+        &queued.provider,
+        "queued",
+        &queued.created_at,
+        queued.metadata.clone(),
+        None,
+        json!([]),
+        Value::Null,
+    );
+    persist_job(&job)?;
+    let job_id = queued.id.clone();
+    let (event, queue) = {
+        let mut inner = state
+            .inner
+            .lock()
+            .map_err(|_| "Job queue lock was poisoned.".to_string())?;
+        inner.queue.push_back(queued);
+        let position = inner.queue.len();
+        let event = append_queue_event(
+            &mut inner,
+            &job_id,
+            "local",
+            "job.queued",
+            json!({"status": "queued", "position": position}),
+        );
+        let queue = queue_snapshot_locked(&inner);
+        (event, queue)
+    };
+    emit_queue_event(&app, &job_id, &event);
+    start_queued_jobs(app, state);
+    Ok(json!({
+        "job_id": job_id,
+        "job": job,
+        "events": [event],
+        "queue": queue,
+        "queued": true,
+    }))
+}
+
+#[tauri::command]
+fn queue_status(state: tauri::State<'_, JobQueueState>) -> Result<Value, String> {
+    let inner = state
+        .inner
+        .lock()
+        .map_err(|_| "Job queue lock was poisoned.".to_string())?;
+    Ok(queue_snapshot_locked(&inner))
+}
+
+#[tauri::command]
+fn set_queue_concurrency(
+    max_parallel: usize,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, JobQueueState>,
+) -> Result<Value, String> {
+    let max_parallel = max_parallel.clamp(1, 8);
+    let queue_state = state.inner().clone();
+    let queue = {
+        let mut inner = queue_state
+            .inner
+            .lock()
+            .map_err(|_| "Job queue lock was poisoned.".to_string())?;
+        inner.max_parallel = max_parallel;
+        queue_snapshot_locked(&inner)
+    };
+    start_queued_jobs(app, queue_state);
+    Ok(queue)
+}
+
+#[tauri::command]
+fn cancel_job(
+    job_id: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, JobQueueState>,
+) -> Result<Value, String> {
+    let queue_state = state.inner().clone();
+    let (queued, event) = {
+        let mut inner = queue_state
+            .inner
+            .lock()
+            .map_err(|_| "Job queue lock was poisoned.".to_string())?;
+        let Some(position) = inner.queue.iter().position(|job| job.id == job_id) else {
+            return Err("Only queued jobs can be canceled for now.".to_string());
+        };
+        let queued = inner
+            .queue
+            .remove(position)
+            .ok_or_else(|| "Queued job was not found.".to_string())?;
+        let event = append_queue_event(
+            &mut inner,
+            &job_id,
+            "local",
+            "job.canceled",
+            json!({"status": "canceled"}),
+        );
+        (queued, event)
+    };
+    let job = job_snapshot(
+        &queued.id,
+        &queued.command,
+        &queued.provider,
+        "canceled",
+        &queued.created_at,
+        queued.metadata,
+        None,
+        json!([]),
+        Value::Null,
+    );
+    persist_job(&job)?;
+    emit_queue_event(&app, &job_id, &event);
+    Ok(json!({
+        "job_id": job_id,
+        "job": job,
+        "events": [event],
+        "canceled": true,
+    }))
+}
+
+#[tauri::command]
+fn enqueue_generate_image(
+    request: GenerateRequest,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, JobQueueState>,
+) -> Result<Value, String> {
+    if request.prompt.trim().is_empty() {
+        return Err("Prompt is required.".to_string());
+    }
+    requested_n(request.n)?;
+    let (id, dir) = unique_job_dir()?;
+    let provider = selected_provider_name(request.provider.as_deref());
+    let metadata = serde_json::to_value(&request).unwrap_or_else(|_| json!({}));
+    enqueue_job(
+        app,
+        state.inner().clone(),
+        QueuedJob {
+            id,
+            command: "images generate".to_string(),
+            provider,
+            created_at: chrono_like_now(),
+            dir,
+            metadata,
+            task: QueuedTask::Generate(request),
+        },
+    )
+}
+
+#[tauri::command]
+fn enqueue_edit_image(
+    request: EditRequest,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, JobQueueState>,
+) -> Result<Value, String> {
+    if request.prompt.trim().is_empty() {
+        return Err("Prompt is required.".to_string());
+    }
+    if request.refs.is_empty() {
+        return Err("At least one reference image is required.".to_string());
+    }
+    requested_n(request.n)?;
+    let (id, dir) = unique_job_dir()?;
+    let provider = selected_provider_name(request.provider.as_deref());
+    let metadata = edit_request_metadata(&request);
+    enqueue_job(
+        app,
+        state.inner().clone(),
+        QueuedJob {
+            id,
+            command: "images edit".to_string(),
+            provider,
+            created_at: chrono_like_now(),
+            dir,
+            metadata,
+            task: QueuedTask::Edit(request),
+        },
+    )
 }
 
 #[tauri::command]
 async fn generate_image(request: GenerateRequest) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        if request.prompt.trim().is_empty() {
-            return Err("Prompt is required.".to_string());
-        }
         let (fallback_id, dir) = unique_job_dir()?;
-        let count = requested_n(request.n)?;
-        let use_native_n = count == 1 || provider_supports_n(request.provider.as_deref());
-        let make_args = |out: PathBuf, n: Option<u8>| {
-            let mut args = Vec::new();
-            if let Some(provider) = request.provider.as_deref()
-                && !provider.is_empty()
-            {
-                args.push("--provider".to_string());
-                args.push(provider.to_string());
-            }
-            args.extend([
-                "images".to_string(),
-                "generate".to_string(),
-                "--prompt".to_string(),
-                request.prompt.clone(),
-                "--out".to_string(),
-                out.display().to_string(),
-            ]);
-            push_optional(&mut args, "--size", request.size.as_deref());
-            push_optional(&mut args, "--format", request.format.as_deref());
-            push_optional(&mut args, "--quality", request.quality.as_deref());
-            push_optional(&mut args, "--background", request.background.as_deref());
-            push_optional(&mut args, "--moderation", request.moderation.as_deref());
-            if let Some(n) = n {
-                args.push("--n".to_string());
-                args.push(n.to_string());
-            }
-            if let Some(compression) = request.compression {
-                args.push("--compression".to_string());
-                args.push(compression.to_string());
-            }
-            args
-        };
-        let payload = if use_native_n {
-            let out = dir.join(format!(
-                "out.{}",
-                output_extension(request.format.as_deref())
-            ));
-            cli_json_result(&make_args(out, request.n))?
-        } else {
-            let args_list = (0..count)
-                .map(|index| {
-                    make_args(
-                        batch_output_path(&dir, request.format.as_deref(), index),
-                        None,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let payloads = run_cli_batch(args_list)?;
-            merge_batch_payloads("images generate", &payloads)
-        };
-        let request_meta = serde_json::to_value(&request).unwrap_or_else(|_| json!({}));
-        let job = job_from_payload(&payload, &fallback_id, "images generate", request_meta);
-        Ok(json!({
-            "job_id": job.get("id").cloned().unwrap_or(Value::Null),
-            "job": job,
-            "events": [{
-                "seq": 1,
-                "kind": "local",
-                "type": "job.completed",
-                "data": {"status": "completed", "output": payload.get("output")}
-            }],
-            "payload": payload,
-        }))
+        run_generate_request(request, fallback_id, dir)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -664,142 +1479,8 @@ async fn generate_image(request: GenerateRequest) -> Result<Value, String> {
 #[tauri::command]
 async fn edit_image(request: EditRequest) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        if request.prompt.trim().is_empty() {
-            return Err("Prompt is required.".to_string());
-        }
-        if request.refs.is_empty() {
-            return Err("At least one reference image is required.".to_string());
-        }
         let (fallback_id, dir) = unique_job_dir()?;
-        let mut ref_paths = Vec::new();
-        for (index, upload) in request.refs.iter().enumerate() {
-            let ext = Path::new(&upload.name)
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .unwrap_or("png");
-            let path = dir.join(format!("ref-{index}.{ext}"));
-            fs::write(&path, &upload.bytes).map_err(|error| error.to_string())?;
-            ref_paths.push(path);
-        }
-        let mask_path = if let Some(mask) = &request.mask {
-            let path = dir.join("mask.png");
-            fs::write(&path, &mask.bytes).map_err(|error| error.to_string())?;
-            Some(path)
-        } else {
-            None
-        };
-        let selection_hint_path = if let Some(hint) = &request.selection_hint {
-            let path = dir.join("selection-hint.png");
-            fs::write(&path, &hint.bytes).map_err(|error| error.to_string())?;
-            Some(path)
-        } else {
-            None
-        };
-        let edit_region_mode = if mask_path.is_some() || selection_hint_path.is_some() {
-            provider_edit_region_mode(request.provider.as_deref())
-        } else {
-            "none".to_string()
-        };
-        if edit_region_mode == "none" && (mask_path.is_some() || selection_hint_path.is_some()) {
-            return Err("当前服务商不支持局部编辑。请切换到「多图参考」或更换服务商。".to_string());
-        }
-        if edit_region_mode == "reference-hint" && selection_hint_path.is_some() {
-            ref_paths.push(selection_hint_path.clone().unwrap());
-        }
-        let count = requested_n(request.n)?;
-        let use_native_n = count == 1 || provider_supports_n(request.provider.as_deref());
-        let make_args = |out: PathBuf, n: Option<u8>| {
-            let mut args = Vec::new();
-            if let Some(provider) = request.provider.as_deref()
-                && !provider.is_empty()
-            {
-                args.push("--provider".to_string());
-                args.push(provider.to_string());
-            }
-            args.extend([
-                "images".to_string(),
-                "edit".to_string(),
-                "--prompt".to_string(),
-                request.prompt.clone(),
-                "--out".to_string(),
-                out.display().to_string(),
-            ]);
-            for path in &ref_paths {
-                args.push("--ref-image".to_string());
-                args.push(path.display().to_string());
-            }
-            if edit_region_mode == "native-mask"
-                && let Some(path) = &mask_path
-            {
-                args.push("--mask".to_string());
-                args.push(path.display().to_string());
-            }
-            push_optional(&mut args, "--size", request.size.as_deref());
-            push_optional(&mut args, "--format", request.format.as_deref());
-            push_optional(&mut args, "--quality", request.quality.as_deref());
-            push_optional(&mut args, "--background", request.background.as_deref());
-            push_optional(
-                &mut args,
-                "--input-fidelity",
-                request.input_fidelity.as_deref(),
-            );
-            push_optional(&mut args, "--moderation", request.moderation.as_deref());
-            if let Some(n) = n {
-                args.push("--n".to_string());
-                args.push(n.to_string());
-            }
-            if let Some(compression) = request.compression {
-                args.push("--compression".to_string());
-                args.push(compression.to_string());
-            }
-            args
-        };
-        let payload = if use_native_n {
-            let out = dir.join(format!(
-                "out.{}",
-                output_extension(request.format.as_deref())
-            ));
-            cli_json_result(&make_args(out, request.n))?
-        } else {
-            let args_list = (0..count)
-                .map(|index| {
-                    make_args(
-                        batch_output_path(&dir, request.format.as_deref(), index),
-                        None,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let payloads = run_cli_batch(args_list)?;
-            merge_batch_payloads("images edit", &payloads)
-        };
-        let request_meta = json!({
-            "prompt": request.prompt,
-            "provider": request.provider,
-            "size": request.size,
-            "format": request.format,
-            "quality": request.quality,
-            "background": request.background,
-            "n": request.n,
-            "compression": request.compression,
-            "input_fidelity": request.input_fidelity,
-            "moderation": request.moderation,
-            "ref_count": request.refs.len(),
-            "has_mask": request.mask.is_some(),
-            "selection_hint": request.selection_hint.is_some(),
-            "edit_region_mode": edit_region_mode,
-        });
-        let job = job_from_payload(&payload, &fallback_id, "images edit", request_meta);
-        Ok(json!({
-            "job_id": job.get("id").cloned().unwrap_or(Value::Null),
-            "job": job,
-            "events": [{
-                "seq": 1,
-                "kind": "local",
-                "type": "job.completed",
-                "data": {"status": "completed", "output": payload.get("output")}
-            }],
-            "payload": payload,
-        }))
+        run_edit_request(request, fallback_id, dir)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -914,6 +1595,7 @@ fn open_system_path(path: &Path, reveal: bool) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(JobQueueState::default())
         .invoke_handler(tauri::generate_handler![
             config_path,
             get_config,
@@ -926,6 +1608,11 @@ pub fn run() {
             history_list,
             history_show,
             history_delete,
+            queue_status,
+            set_queue_concurrency,
+            cancel_job,
+            enqueue_generate_image,
+            enqueue_edit_image,
             generate_image,
             edit_image,
             open_path,

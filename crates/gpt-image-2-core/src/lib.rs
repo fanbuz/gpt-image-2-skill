@@ -12,7 +12,7 @@ use reqwest::StatusCode;
 use reqwest::blocking::multipart::{Form, Part};
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, Row, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use url::Url;
@@ -806,6 +806,7 @@ pub fn redact_app_config(config: &AppConfig) -> Value {
                     "api_base": provider.api_base,
                     "endpoint": provider.endpoint,
                     "model": provider.model,
+                    "supports_n": provider.supports_n,
                     "credentials": credentials,
                 }),
             )
@@ -3703,13 +3704,37 @@ fn record_history_job(
     output_path: Option<&Path>,
     metadata: Value,
 ) -> Result<String, AppError> {
-    let conn = open_history_db()?;
-    let timestamp = now_iso();
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
     let job_id = format!("job-{}-{}", unique, std::process::id());
+    upsert_history_job(
+        &job_id,
+        command_name,
+        provider,
+        status,
+        output_path,
+        None,
+        metadata,
+    )?;
+    Ok(job_id)
+}
+
+pub fn upsert_history_job(
+    job_id: &str,
+    command_name: &str,
+    provider: &str,
+    status: &str,
+    output_path: Option<&Path>,
+    created_at: Option<&str>,
+    metadata: Value,
+) -> Result<(), AppError> {
+    let conn = open_history_db()?;
+    let timestamp = created_at
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(now_iso);
     conn.execute(
         "INSERT OR REPLACE INTO jobs (id, command, provider, status, output_path, created_at, metadata)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -3727,7 +3752,51 @@ fn record_history_job(
         AppError::new("history_write_failed", "Unable to record history job.")
             .with_detail(json!({"error": error.to_string()}))
     })?;
-    Ok(job_id)
+    Ok(())
+}
+
+pub fn delete_history_job(job_id: &str) -> Result<usize, AppError> {
+    let conn = open_history_db()?;
+    conn.execute("DELETE FROM jobs WHERE id = ?1", params![job_id])
+        .map_err(|error| {
+            AppError::new("history_delete_failed", "Unable to delete history job.")
+                .with_detail(json!({"error": error.to_string()}))
+        })
+}
+
+fn history_row_to_value(row: &Row<'_>) -> rusqlite::Result<Value> {
+    let output_path = row.get::<_, Option<String>>(4)?;
+    let created_at = row.get::<_, String>(5)?;
+    let metadata = serde_json::from_str::<Value>(&row.get::<_, String>(6)?).unwrap_or(Value::Null);
+    let output = metadata.get("output").cloned().unwrap_or_else(|| json!({}));
+    let outputs = output
+        .get("files")
+        .cloned()
+        .or_else(|| {
+            metadata
+                .get("image_output")
+                .and_then(|value| value.get("files"))
+                .cloned()
+        })
+        .unwrap_or_else(|| json!([]));
+    let updated_at = metadata
+        .get("updated_at")
+        .and_then(Value::as_str)
+        .unwrap_or(&created_at)
+        .to_string();
+    let error = metadata.get("error").cloned().unwrap_or(Value::Null);
+    Ok(json!({
+        "id": row.get::<_, String>(0)?,
+        "command": row.get::<_, String>(1)?,
+        "provider": row.get::<_, String>(2)?,
+        "status": row.get::<_, String>(3)?,
+        "output_path": output_path,
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "metadata": metadata,
+        "outputs": outputs,
+        "error": error,
+    }))
 }
 
 pub fn list_history_jobs() -> Result<Vec<Value>, AppError> {
@@ -3735,26 +3804,16 @@ pub fn list_history_jobs() -> Result<Vec<Value>, AppError> {
     let mut stmt = conn
         .prepare("SELECT id, command, provider, status, output_path, created_at, metadata FROM jobs ORDER BY created_at DESC LIMIT 100")
         .map_err(|error| AppError::new("history_query_failed", "Unable to query history.").with_detail(json!({"error": error.to_string()})))?;
-    stmt.query_map([], |row| {
-        Ok(json!({
-            "id": row.get::<_, String>(0)?,
-            "command": row.get::<_, String>(1)?,
-            "provider": row.get::<_, String>(2)?,
-            "status": row.get::<_, String>(3)?,
-            "output_path": row.get::<_, Option<String>>(4)?,
-            "created_at": row.get::<_, String>(5)?,
-            "metadata": serde_json::from_str::<Value>(&row.get::<_, String>(6)?).unwrap_or(Value::Null),
-        }))
-    })
-    .map_err(|error| {
-        AppError::new("history_query_failed", "Unable to query history.")
-            .with_detail(json!({"error": error.to_string()}))
-    })?
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(|error| {
-        AppError::new("history_query_failed", "Unable to read history rows.")
-            .with_detail(json!({"error": error.to_string()}))
-    })
+    stmt.query_map([], history_row_to_value)
+        .map_err(|error| {
+            AppError::new("history_query_failed", "Unable to query history.")
+                .with_detail(json!({"error": error.to_string()}))
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            AppError::new("history_query_failed", "Unable to read history rows.")
+                .with_detail(json!({"error": error.to_string()}))
+        })
 }
 
 pub fn show_history_job(job_id: &str) -> Result<Value, AppError> {
@@ -3762,21 +3821,11 @@ pub fn show_history_job(job_id: &str) -> Result<Value, AppError> {
     let mut stmt = conn
         .prepare("SELECT id, command, provider, status, output_path, created_at, metadata FROM jobs WHERE id = ?1")
         .map_err(|error| AppError::new("history_query_failed", "Unable to query history.").with_detail(json!({"error": error.to_string()})))?;
-    stmt.query_row(params![job_id], |row| {
-        Ok(json!({
-            "id": row.get::<_, String>(0)?,
-            "command": row.get::<_, String>(1)?,
-            "provider": row.get::<_, String>(2)?,
-            "status": row.get::<_, String>(3)?,
-            "output_path": row.get::<_, Option<String>>(4)?,
-            "created_at": row.get::<_, String>(5)?,
-            "metadata": serde_json::from_str::<Value>(&row.get::<_, String>(6)?).unwrap_or(Value::Null),
-        }))
-    })
-    .map_err(|error| {
-        AppError::new("history_not_found", "History job was not found.")
-            .with_detail(json!({"job_id": job_id, "error": error.to_string()}))
-    })
+    stmt.query_row(params![job_id], history_row_to_value)
+        .map_err(|error| {
+            AppError::new("history_not_found", "History job was not found.")
+                .with_detail(json!({"job_id": job_id, "error": error.to_string()}))
+        })
 }
 
 fn run_history_command(_cli: &Cli, command: &HistoryCommand) -> Result<CommandOutcome, AppError> {
@@ -3801,13 +3850,7 @@ fn run_history_command(_cli: &Cli, command: &HistoryCommand) -> Result<CommandOu
             })
         }
         HistorySubcommand::Delete(args) => {
-            let conn = open_history_db()?;
-            let count = conn
-                .execute("DELETE FROM jobs WHERE id = ?1", params![args.job_id])
-                .map_err(|error| {
-                    AppError::new("history_delete_failed", "Unable to delete history job.")
-                        .with_detail(json!({"error": error.to_string()}))
-                })?;
+            let count = delete_history_job(&args.job_id)?;
             Ok(CommandOutcome {
                 payload: json!({"ok": true, "command": "history delete", "job_id": args.job_id, "deleted": count}),
                 exit_status: 0,
