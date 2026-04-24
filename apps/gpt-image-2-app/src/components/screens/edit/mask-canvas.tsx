@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useId,
   useRef,
   useState,
   type KeyboardEvent,
@@ -46,7 +45,6 @@ export function MaskCanvas({
   const [painting, setPainting] = useState(false);
   const [cursor, setCursor] = useState({ x: 512, y: 512 });
   const [imageSize, setImageSize] = useState({ width: 1024, height: 1024 });
-  const hintId = useId();
   const W = imageSize.width;
   const H = imageSize.height;
 
@@ -229,8 +227,7 @@ export function MaskCanvas({
         height={H}
         tabIndex={0}
         role="application"
-        aria-label={`选区绘制画布（${mode === "erase" ? "擦除模式" : "绘制模式"}）`}
-        aria-describedby={hintId}
+        aria-label={`选区绘制画布（${mode === "erase" ? "擦除模式" : "绘制模式"}）。拖动指针涂抹；键盘可用方向键移动，空格绘制，Delete 清除。`}
         onKeyDown={handleKey}
         onPointerDown={(e) => {
           (e.target as Element).setPointerCapture(e.pointerId);
@@ -267,12 +264,6 @@ export function MaskCanvas({
           transform: "translate(-50%, -50%)",
         }}
       />
-      <div
-        id={hintId}
-        className="image-overlay absolute bottom-2.5 left-2.5 max-w-[calc(100%-20px)] rounded px-2 py-1 t-mono text-[10.5px] pointer-events-none"
-      >
-        拖动指针涂抹；键盘可用方向键移动，空格绘制，Delete 清除
-      </div>
     </div>
   );
 }

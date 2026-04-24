@@ -7,6 +7,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
+import { Tooltip } from "@/components/ui/tooltip";
 import { Icon } from "@/components/icon";
 import {
   ImageSizeInput,
@@ -455,7 +456,18 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
         {usesRegion ? (
           <div className="border-b border-border-faint p-4">
             <FieldLabel hint={targetRef ? "涂抹目标图" : "请先上传目标图"}>
-              局部选区
+              <span className="inline-flex items-center gap-1.5">
+                局部选区
+                <Tooltip text="拖动指针涂抹；键盘可用方向键移动，空格绘制，Delete 清除">
+                  <button
+                    type="button"
+                    aria-label="查看局部选区操作提示"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border bg-raised text-faint transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]"
+                  >
+                    <Icon name="info" size={11} aria-hidden="true" />
+                  </button>
+                </Tooltip>
+              </span>
             </FieldLabel>
             <div className="mb-2.5 mt-1.5 flex items-center gap-1.5">
               <Segmented
