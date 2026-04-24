@@ -123,6 +123,15 @@ export const api = {
   async cancelJob(_id: string) {
     return undefined;
   },
+  async openPath(path: string) {
+    await invoke("open_path", { path });
+  },
+  async revealPath(path: string) {
+    await invoke("reveal_path", { path });
+  },
+  async exportFilesToDownloads(paths: string[]) {
+    return invoke<string[]>("export_files_to_downloads", { paths });
+  },
   async createGenerate(body: GenerateRequest) {
     const result = await invoke<TauriJobResponse>("generate_image", { request: body });
     rememberJobOutputs(result.job, result.payload);
@@ -155,6 +164,9 @@ export const api = {
     const path = outputPaths.get(`${jobId}:${index}`) ?? (index === 0 ? outputPaths.get(`${jobId}:0`) : undefined);
     return path ? convertFileSrc(path) : "";
   },
+  outputPath(jobId: string, index = 0) {
+    return outputPaths.get(`${jobId}:${index}`) ?? (index === 0 ? outputPaths.get(`${jobId}:0`) : undefined);
+  },
   fileUrl(path?: string | null) {
     return path ? convertFileSrc(path) : "";
   },
@@ -163,5 +175,18 @@ export const api = {
     const path = outputPath ?? (index === 0 ? job.output_path : undefined);
     const rememberedPath = outputPaths.get(`${job.id}:${index}`) ?? (index === 0 ? outputPaths.get(`${job.id}:0`) : undefined);
     return path ? convertFileSrc(path) : rememberedPath ? convertFileSrc(rememberedPath) : "";
+  },
+  jobOutputPath(job: Job, index = 0) {
+    const outputPath = job.outputs.find((output) => output.index === index)?.path;
+    return outputPath ?? (index === 0 ? job.output_path : undefined);
+  },
+  jobOutputPaths(job: Job) {
+    const paths = job.outputs
+      .slice()
+      .sort((a, b) => a.index - b.index)
+      .map((output) => output.path)
+      .filter(Boolean);
+    if (paths.length > 0) return paths;
+    return job.output_path ? [job.output_path] : [];
   },
 };

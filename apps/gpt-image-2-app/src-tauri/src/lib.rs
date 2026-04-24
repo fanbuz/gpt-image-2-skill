@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
+    process::Command,
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -738,8 +739,110 @@ async fn edit_image(request: EditRequest) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn reveal_path(path: String) -> bool {
-    Path::new(&path).exists()
+fn open_path(path: String) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    if !path.exists() {
+        return Err("文件不存在，可能已被移动或删除。".to_string());
+    }
+    open_system_path(&path, false)
+}
+
+#[tauri::command]
+fn reveal_path(path: String) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    if !path.exists() {
+        return Err("文件不存在，可能已被移动或删除。".to_string());
+    }
+    open_system_path(&path, true)
+}
+
+#[tauri::command]
+fn export_files_to_downloads(paths: Vec<String>) -> Result<Vec<String>, String> {
+    if paths.is_empty() {
+        return Err("没有可保存的图片。".to_string());
+    }
+    let export_dir = downloads_export_dir()?;
+    fs::create_dir_all(&export_dir).map_err(|error| format!("无法创建保存目录：{error}"))?;
+
+    let mut saved = Vec::new();
+    for path in paths {
+        let source = PathBuf::from(path);
+        if !source.is_file() {
+            return Err("图片文件不存在，可能已被移动或删除。".to_string());
+        }
+        let file_name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| "图片文件名无效。".to_string())?;
+        let destination = unique_destination(&export_dir, file_name);
+        fs::copy(&source, &destination).map_err(|error| format!("保存图片失败：{error}"))?;
+        saved.push(destination.display().to_string());
+    }
+    Ok(saved)
+}
+
+fn downloads_export_dir() -> Result<PathBuf, String> {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .ok_or_else(|| "找不到下载目录。".to_string())?;
+    Ok(home.join("Downloads").join("GPT Image 2"))
+}
+
+fn unique_destination(dir: &Path, file_name: &str) -> PathBuf {
+    let original = Path::new(file_name);
+    let stem = original
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("image");
+    let extension = original.extension().and_then(|value| value.to_str());
+    let mut candidate = dir.join(file_name);
+    let mut index = 2;
+    while candidate.exists() {
+        let next_name = match extension {
+            Some(ext) if !ext.is_empty() => format!("{stem}-{index}.{ext}"),
+            _ => format!("{stem}-{index}"),
+        };
+        candidate = dir.join(next_name);
+        index += 1;
+    }
+    candidate
+}
+
+fn open_system_path(path: &Path, reveal: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let status = if reveal && path.is_file() {
+        Command::new("open").arg("-R").arg(path).status()
+    } else {
+        Command::new("open").arg(path).status()
+    };
+
+    #[cfg(target_os = "windows")]
+    let status = if reveal && path.is_file() {
+        Command::new("explorer")
+            .arg(format!("/select,{}", path.display()))
+            .status()
+    } else {
+        Command::new("explorer").arg(path).status()
+    };
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let status = if reveal && path.is_file() {
+        let parent = path.parent().unwrap_or(path);
+        Command::new("xdg-open").arg(parent).status()
+    } else {
+        Command::new("xdg-open").arg(path).status()
+    };
+
+    status
+        .map_err(|error| format!("无法打开：{error}"))
+        .and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                Err("系统没有成功打开文件。".to_string())
+            }
+        })
 }
 
 pub fn run() {
@@ -758,7 +861,9 @@ pub fn run() {
             history_delete,
             generate_image,
             edit_image,
+            open_path,
             reveal_path,
+            export_files_to_downloads,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gpt-image-2-app");

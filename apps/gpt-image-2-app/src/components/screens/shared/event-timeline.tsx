@@ -15,6 +15,17 @@ const KIND_COLOR: Record<JobEvent["kind"], string> = {
   sse: "#1a6fe0",
 };
 
+function eventTitle(type: string) {
+  const map: Record<string, string> = {
+    "request.submitted": "已开始",
+    "job.completed": "已完成",
+    "job.failed": "失败",
+    "job.cancelled": "已取消",
+    output_saved: "已保存图片",
+  };
+  return map[type] ?? type.replaceAll("_", " ");
+}
+
 export function EventTimeline({ events, mode = "card" }: { events: JobEvent[]; mode?: Tweaks["timeline"] }) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -22,7 +33,7 @@ export function EventTimeline({ events, mode = "card" }: { events: JobEvent[]; m
   }, [events.length]);
 
   if (events.length === 0) {
-    return <Empty icon="sparkle" title="等待运行" subtitle="请求、服务端事件与本地进度会在此依次出现。" />;
+    return <Empty icon="sparkle" title="等待开始" subtitle="生成开始后，这里会显示当前进度和结果状态。" />;
   }
 
   if (mode === "log") {
@@ -36,7 +47,7 @@ export function EventTimeline({ events, mode = "card" }: { events: JobEvent[]; m
           <div key={ev.seq} className="mb-1 animate-fade-in">
             <span className="text-faint">[{String(ev.seq).padStart(2, "0")}]</span>{" "}
             <span style={{ color: KIND_COLOR[ev.kind] }}>{ev.kind}</span>{" "}
-            <span className="text-foreground">{ev.type}</span>{" "}
+            <span className="text-foreground">{eventTitle(ev.type)}</span>{" "}
             <span>
               {ev.data.message ||
                 JSON.stringify(
@@ -61,7 +72,7 @@ export function EventTimeline({ events, mode = "card" }: { events: JobEvent[]; m
               <span className="text-[11.5px] font-mono text-faint min-w-5">
                 {String(ev.seq).padStart(2, "0")}
               </span>
-              <span className="text-[12px] font-medium">{ev.type}</span>
+              <span className="text-[12px] font-medium">{eventTitle(ev.type)}</span>
               <span className="text-[11.5px] text-muted flex-1 truncate">{ev.data.message}</span>
               {typeof ev.data.percent === "number" && ev.data.percent < 100 && (
                 <span className="t-mono text-faint">{ev.data.percent}%</span>
@@ -107,13 +118,7 @@ export function EventTimeline({ events, mode = "card" }: { events: JobEvent[]; m
               </div>
               <div className="flex-1 min-w-0 pt-[3px]">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-[13px] font-semibold">{ev.type}</span>
-                  <span
-                    className="text-[10px] font-mono px-1 py-px rounded bg-sunken uppercase tracking-wider"
-                    style={{ color: KIND_COLOR[ev.kind] }}
-                  >
-                    {ev.kind}
-                  </span>
+                  <span className="text-[13px] font-semibold">{eventTitle(ev.type)}</span>
                   <span className="flex-1" />
                   <span className="t-mono text-faint text-[10.5px]">#{String(ev.seq).padStart(2, "0")}</span>
                 </div>
@@ -121,7 +126,7 @@ export function EventTimeline({ events, mode = "card" }: { events: JobEvent[]; m
                 {ev.data.output?.path && (
                   <div className="mt-1.5 px-2 py-1.5 bg-sunken border border-border rounded text-[11px] font-mono text-muted inline-flex items-center gap-1.5 max-w-full">
                     <Icon name="folder" size={11} />
-                    <span className="truncate">{ev.data.output.path}</span>
+                    <span className="truncate">图片已保存到本次结果文件夹</span>
                   </div>
                 )}
                 {typeof ev.data.percent === "number" && ev.data.percent < 100 && (

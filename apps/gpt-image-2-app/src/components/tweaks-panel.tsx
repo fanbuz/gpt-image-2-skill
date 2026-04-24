@@ -91,7 +91,7 @@ export function TweaksPanel({ visible, onClose }: { visible: boolean; onClose: (
         </div>
 
         <div>
-          <div className="t-tiny mb-1.5">事件时间线</div>
+          <div className="t-tiny mb-1.5">进度显示</div>
           <Segmented
             value={tweaks.timeline}
             onChange={(v) => setTweaks({ timeline: v })}

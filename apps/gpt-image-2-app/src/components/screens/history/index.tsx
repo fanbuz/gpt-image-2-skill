@@ -56,7 +56,7 @@ export function HistoryScreen() {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="按提示词或任务 ID 搜索…"
+            placeholder="搜索提示词…"
             icon="search"
             size="sm"
             wrapperClassName="max-w-[320px] flex-1"
@@ -98,7 +98,7 @@ export function HistoryScreen() {
 
         <div className="px-4 py-2.5 border-t border-border-faint text-[11px] text-faint flex items-center gap-1.5">
           <Icon name="folder" size={11} />
-          <span className="t-mono truncate">$CODEX_HOME/gpt-image-2-skill/jobs/</span>
+          <span className="truncate">图片会自动保存在本机记录里；选中作品后可以保存到下载文件夹。</span>
           <div className="flex-1" />
           {!drawerOpen && (
             <Button variant="ghost" size="sm" icon="chevleft" onClick={() => setDrawerOpen(true)}>

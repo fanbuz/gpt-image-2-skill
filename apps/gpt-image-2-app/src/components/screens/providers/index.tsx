@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Icon } from "@/components/icon";
@@ -35,8 +36,30 @@ export function ProvidersScreen({ config }: { config?: ServerConfig }) {
     try {
       const r = await test.mutateAsync(name);
       setTestMap((m) => ({ ...m, [name]: { status: r.ok ? "ok" : "err", message: r.message } }));
+      if (r.ok) toast.success("连接正常", { description: `${name} 可以使用。` });
+      if (!r.ok) toast.error("连接失败", { description: r.message });
     } catch (e) {
       setTestMap((m) => ({ ...m, [name]: { status: "err", message: (e as Error).message } }));
+      toast.error("连接失败", { description: (e as Error).message });
+    }
+  };
+
+  const makeDefault = async (name: string) => {
+    try {
+      await setDefault.mutateAsync(name);
+      toast.success("默认服务商已更新", { description: `之后会优先使用 ${name}。` });
+    } catch (error) {
+      toast.error("设置失败", { description: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
+  const removeProvider = async (name: string) => {
+    try {
+      await deleteProv.mutateAsync(name);
+      toast.success("服务商已删除", { description: name });
+      setSelected(undefined);
+    } catch (error) {
+      toast.error("删除失败", { description: error instanceof Error ? error.message : String(error) });
     }
   };
 
@@ -77,7 +100,7 @@ export function ProvidersScreen({ config }: { config?: ServerConfig }) {
         </div>
         <div className="px-3.5 py-2.5 border-t border-border-faint text-[11px] text-faint flex items-center gap-1.5">
           <Icon name="folder" size={11} />
-          <span className="t-mono truncate">$CODEX_HOME/gpt-image-2-skill/config.json</span>
+          <span className="truncate">服务商配置会保存在本机，并和 CLI、Skill 共用。</span>
         </div>
       </div>
 
@@ -88,12 +111,11 @@ export function ProvidersScreen({ config }: { config?: ServerConfig }) {
           isDefault={selected === effectiveDefault}
           testStatus={currentTest?.status}
           testMessage={currentTest?.message}
-          onSetDefault={() => selected && setDefault.mutate(selected)}
+          onSetDefault={() => selected && makeDefault(selected)}
           onTest={() => selected && runTest(selected)}
           onDelete={() => {
             if (!selected) return;
-            deleteProv.mutate(selected);
-            setSelected(undefined);
+            removeProvider(selected);
           }}
         />
       </div>

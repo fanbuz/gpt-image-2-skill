@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
@@ -40,33 +41,40 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
 
   const submit = async () => {
     if (!name) return;
-    await upsert.mutateAsync({
-      name,
-      cfg: {
-        type: kind,
-        api_base: kind === "codex" ? undefined : apiBase || undefined,
-        model: model || undefined,
-        supports_n: kind === "codex" ? false : supportsN,
-        credentials:
-          kind === "codex"
-            ? {
-                ...(codexAccountId ? { account_id: { source: "file" as const, value: codexAccountId } } : {}),
-                ...(codexAccessToken ? { access_token: { source: "file" as const, value: codexAccessToken } } : {}),
-                ...(codexRefreshToken ? { refresh_token: { source: "file" as const, value: codexRefreshToken } } : {}),
-              }
-            : {
-                api_key:
-                  keySource === "file"
-                    ? { source: "file", value: apiKey }
-                    : keySource === "env"
-                      ? { source: "env", env: envName }
-                      : { source: "keychain", value: apiKey, account: keychainAccount || undefined },
-              },
-        set_default: true,
-      },
-    });
-    reset();
-    onOpenChange(false);
+    try {
+      await upsert.mutateAsync({
+        name,
+        cfg: {
+          type: kind,
+          api_base: kind === "codex" ? undefined : apiBase || undefined,
+          model: model || undefined,
+          supports_n: kind === "codex" ? false : supportsN,
+          credentials:
+            kind === "codex"
+              ? {
+                  ...(codexAccountId ? { account_id: { source: "file" as const, value: codexAccountId } } : {}),
+                  ...(codexAccessToken ? { access_token: { source: "file" as const, value: codexAccessToken } } : {}),
+                  ...(codexRefreshToken ? { refresh_token: { source: "file" as const, value: codexRefreshToken } } : {}),
+                }
+              : {
+                  api_key:
+                    keySource === "file"
+                      ? { source: "file", value: apiKey }
+                      : keySource === "env"
+                        ? { source: "env", env: envName }
+                        : { source: "keychain", value: apiKey, account: keychainAccount || undefined },
+                },
+          set_default: true,
+        },
+      });
+      toast.success("服务商已添加", { description: `${name} 已设为默认服务商。` });
+      reset();
+      onOpenChange(false);
+    } catch (error) {
+      toast.error("添加失败", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
   };
 
   return (
@@ -86,7 +94,7 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
       }
     >
       <div className="grid gap-3.5">
-        <Field label="名称" hint="config.json 里的键">
+        <Field label="名称" hint="会显示在服务商列表里">
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如 my-image-api" autoFocus />
         </Field>
         <Field label="类型">
@@ -105,7 +113,7 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
           />
         </Field>
         {kind !== "codex" && (
-          <Field label="Base URL">
+          <Field label="服务地址">
             <Input value={apiBase} onChange={(e) => setApiBase(e.target.value)} placeholder="https://example.com/v1" monospace />
           </Field>
         )}
@@ -114,20 +122,20 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
         </Field>
         <Field
           label="批量策略"
-          hint={kind === "codex" ? "Codex 固定并发单张请求" : "关闭后会并发单张请求"}
+          hint={kind === "codex" ? "Codex 会由 App 自动并行生成多张" : "不确定时选「App 自动并行」最稳"}
         >
           {kind === "codex" ? (
             <div className="flex h-8 items-center justify-between rounded-md border border-border bg-sunken px-2.5 text-[12px]">
-              <span className="font-semibold">不支持 -n</span>
-              <span className="text-faint">批量并发</span>
+              <span className="font-semibold">App 自动并行</span>
+              <span className="text-faint">适合批量生成</span>
             </div>
           ) : (
             <Segmented
               value={supportsN ? "yes" : "no"}
               onChange={(value) => setSupportsN(value === "yes")}
               options={[
-                { value: "no", label: "批量并发" },
-                { value: "yes", label: "支持 -n 参数" },
+                { value: "no", label: "App 自动并行" },
+                { value: "yes", label: "服务商一次返回多张" },
               ]}
             />
           )}
@@ -135,8 +143,8 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
       </div>
       {kind === "codex" && (
         <div className="mt-1 grid gap-3.5">
-          <Field label="ChatGPT Account ID">
-            <Input value={codexAccountId} onChange={(e) => setCodexAccountId(e.target.value)} placeholder="account-id，可留空使用 auth.json" monospace />
+          <Field label="账号 ID">
+            <Input value={codexAccountId} onChange={(e) => setCodexAccountId(e.target.value)} placeholder="可留空，使用本机已登录账号" monospace />
           </Field>
           <Field label="Access Token">
             <Input value={codexAccessToken} onChange={(e) => setCodexAccessToken(e.target.value)} placeholder="eyJ…" type="password" monospace />
@@ -148,15 +156,15 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
       )}
       {kind !== "codex" && (
         <div className="mt-1 grid gap-3.5">
-          <Field label="API Key 来源">
+          <Field label="密钥保存方式">
             <Segmented
               value={keySource}
               onChange={(v) => setKeySource(v as CredentialSource)}
               className="w-full overflow-x-auto"
               options={[
-                { value: "file", label: "file", icon: "filedot" },
-                { value: "env", label: "env", icon: "envkey" },
-                { value: "keychain", label: "keychain", icon: "keychain" },
+                { value: "file", label: "配置文件", icon: "filedot" },
+                { value: "env", label: "环境变量", icon: "envkey" },
+                { value: "keychain", label: "钥匙串", icon: "keychain" },
               ]}
             />
           </Field>
@@ -172,7 +180,7 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
           )}
           {keySource === "keychain" && (
             <>
-              <Field label="Keychain Account">
+              <Field label="钥匙串条目">
                 <Input value={keychainAccount} onChange={(e) => setKeychainAccount(e.target.value)} placeholder={`providers/${name || "my-provider"}/api_key`} monospace />
               </Field>
               <Field label="API Key">

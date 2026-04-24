@@ -23,14 +23,14 @@ export function responseOutputPath(response: TauriJobResponse) {
 export function outputCountDescription(actual: number, requested: number) {
   if (actual < 1) return "未发现输出文件";
   if (requested > 1 && actual !== requested) {
-    return `请求 ${requested} 个，provider 返回 ${actual} 个`;
+    return `计划生成 ${requested} 张，已收到 ${actual} 张`;
   }
-  return actual > 1 ? `已保存 ${actual} 个输出` : "输出已保存";
+  return actual > 1 ? `已生成并保存 ${actual} 张图片` : "图片已生成并保存";
 }
 
 export function outputCountMismatchMessage(actual: number, requested: number) {
   if (requested <= 1 || actual === requested) return null;
-  return `已向 provider 请求 ${requested} 个输出，但 API 响应体里只有 ${actual} 个可保存图片。`;
+  return `这次计划生成 ${requested} 张，但只收到 ${actual} 张。`;
 }
 
 export function submittedEvent(message: string): JobEvent {
@@ -54,7 +54,7 @@ export function completedEvent(response: TauriJobResponse): JobEvent {
     data: {
       status: "completed",
       output: { path: responseOutputPath(response) },
-      message: "输出已保存到本地任务目录。",
+      message: "图片已保存，可以继续查看或另存到下载文件夹。",
     },
   };
 }

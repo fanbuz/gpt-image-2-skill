@@ -29,6 +29,14 @@ export function OutputTile({
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if ((e.key === "Enter" || e.key === " ") && onSelect) {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
       className={[
         "relative overflow-hidden aspect-square rounded-lg cursor-pointer transition-all",
         "border-[1.5px]",
@@ -39,7 +47,7 @@ export function OutputTile({
       {showImage ? (
         <img
           src={output.url}
-          alt={`output-${output.index}`}
+          alt={`候选 ${letter.toUpperCase()}`}
           className="w-full h-full object-cover"
           onError={() => setImageFailed(true)}
         />
@@ -73,11 +81,13 @@ export function OutputTile({
         </div>
         {output.selected && <Icon name="check" size={12} />}
       </div>
-      {hover && (
+      {(hover || output.selected) && (
         <div className="absolute top-2 right-2 flex gap-1 animate-fade-in">
           {onOpen && (
             <button
               onClick={(e) => { e.stopPropagation(); onOpen(); }}
+              title="打开图片"
+              aria-label="打开图片"
               className="w-[26px] h-[26px] rounded-[4px] bg-black/60 backdrop-blur-sm text-white border-none flex items-center justify-center"
             >
               <Icon name="external" size={13} />
@@ -86,6 +96,8 @@ export function OutputTile({
           {onDownload && (
             <button
               onClick={(e) => { e.stopPropagation(); onDownload(); }}
+              title="保存图片"
+              aria-label="保存图片"
               className="w-[26px] h-[26px] rounded-[4px] bg-black/60 backdrop-blur-sm text-white border-none flex items-center justify-center"
             >
               <Icon name="download" size={13} />

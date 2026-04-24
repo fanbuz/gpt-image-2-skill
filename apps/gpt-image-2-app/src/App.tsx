@@ -23,10 +23,10 @@ function readInitialScreen(): ScreenId {
 }
 
 const TITLES: Record<ScreenId, { title: string; subtitle: string }> = {
-  generate: { title: "图像生成", subtitle: "用提示词生成候选，实时观察事件流" },
+  generate: { title: "图像生成", subtitle: "写提示词，生成候选并保存图片" },
   edit: { title: "图像编辑", subtitle: "上传参考图、涂抹遮罩、描述变更" },
-  history: { title: "历史与队列", subtitle: "按提示词、服务商、状态检索既往任务" },
-  providers: { title: "服务商", subtitle: "配置 API 端点、模型、凭据来源" },
+  history: { title: "历史与图库", subtitle: "查看、保存和管理生成过的图片" },
+  providers: { title: "服务商", subtitle: "管理生成图片时使用的服务" },
 };
 
 export default function App() {

@@ -20,6 +20,7 @@ import { completedEvent, errorMessage, failedEvent, outputCountDescription, outp
 import { BACKGROUND_OPTIONS, normalizeOutputCount, QUALITY_OPTIONS, validateImageSize, validateOutputCount } from "@/lib/image-options";
 import { effectiveOutputCount, providerSupportsMultipleOutputs, requestOutputCount } from "@/lib/provider-capabilities";
 import { effectiveDefaultProvider, providerNames as readProviderNames } from "@/lib/providers";
+import { copyText, openPath, revealPath, saveImages } from "@/lib/user-actions";
 import type { JobEvent, ServerConfig } from "@/lib/types";
 
 const PRESETS = [
@@ -44,6 +45,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
   const [n, setN] = useState(4);
   const [jobId, setJobId] = useState<string | null>(null);
   const [outputCount, setOutputCount] = useState(0);
+  const [selectedOutput, setSelectedOutput] = useState(0);
   const [pendingOutputCount, setPendingOutputCount] = useState<number | null>(null);
   const [localEvents, setLocalEvents] = useState<JobEvent[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
@@ -94,9 +96,10 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
     setRunError(null);
     setJobId(null);
     setOutputCount(0);
+    setSelectedOutput(0);
     setRunNotice(null);
     setPendingOutputCount(plannedN);
-    setLocalEvents([submittedEvent(`已提交到 Tauri core，正在请求 ${plannedN} 个输出。`)]);
+    setLocalEvents([submittedEvent(`已开始生成 ${plannedN} 张候选图。`)]);
     try {
       const res = await mutate.mutateAsync({
         prompt,
@@ -132,9 +135,20 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
     return Array.from({ length: outputCount }).map((_, index) => ({
       index,
       url: api.outputUrl(jobId, index),
-      selected: index === 0,
+      selected: index === selectedOutput,
     }));
+  }, [jobId, outputCount, selectedOutput]);
+
+  const outputPaths = useMemo(() => {
+    if (!jobId || outputCount < 1) return [];
+    return Array.from({ length: outputCount })
+      .map((_, index) => api.outputPath(jobId, index))
+      .filter((path): path is string => Boolean(path));
   }, [jobId, outputCount]);
+  const selectedPath = jobId ? api.outputPath(jobId, selectedOutput) ?? outputPaths[0] : undefined;
+  const resultFolder = selectedPath?.replace(/[\\/][^\\/]+$/, "");
+  const saveSelected = () => saveImages([selectedPath], "图片");
+  const saveAll = () => saveImages(outputPaths, "图片");
 
   const timelineEvents = events.length > 0 ? events : localEvents;
   const hasOutputs = outputs.some((output) => output.url) || events.some(e => e.type === "output_saved" || e.type === "job.completed");
@@ -180,16 +194,26 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
         </div>
 
         <div className="px-7 pb-6 pt-3 max-w-[820px] mx-auto w-full flex-1">
-          <div className="flex items-center gap-2.5 mb-3">
+          <div className="flex flex-wrap items-center gap-2.5 mb-3">
             <div className="t-h3">
               {isWorking ? `生成中 · 请求 ${displayN} 个候选` : hasOutputs ? `候选 · ${outputs.length}` : "候选"}
             </div>
-            {hasOutputs && outputs[0]?.selected && <Badge tone="accent" icon="check">已选 A</Badge>}
+            {hasOutputs && <Badge tone="accent" icon="check">已选 {String.fromCharCode(65 + selectedOutput)}</Badge>}
             <div className="flex-1" />
             {hasOutputs && (
               <>
-                <Button variant="ghost" size="sm" icon="download">保存</Button>
-                <Button variant="ghost" size="sm" icon="reload">重新生成</Button>
+                <Button variant="ghost" size="sm" icon="download" onClick={saveSelected}>
+                  保存选中
+                </Button>
+                {outputs.length > 1 && (
+                  <Button variant="ghost" size="sm" icon="download" onClick={saveAll}>
+                    保存全部
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" icon="folder" onClick={() => revealPath(selectedPath)}>
+                  打开文件夹
+                </Button>
+                <Button variant="ghost" size="sm" icon="reload" onClick={handleRun}>重新生成</Button>
               </>
             )}
           </div>
@@ -208,7 +232,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
               <Empty
                 icon="image"
                 title="从一句话开始"
-                subtitle="写下画面，点「生成」会并行返回候选。请求、服务端事件和本地保存进度会进入右侧时间线。"
+                subtitle="写下画面，点「生成」后会在这里看到候选图。图片会自动保存，也可以一键另存到下载文件夹。"
               />
             </Card>
           ) : (
@@ -227,14 +251,20 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
                   </div>
                 ))}
               {hasOutputs && outputs.map((o) => (
-                <OutputTile key={o.index} output={o} />
+                <OutputTile
+                  key={o.index}
+                  output={o}
+                  onSelect={() => setSelectedOutput(o.index)}
+                  onDownload={() => saveImages([api.outputPath(jobId!, o.index)], "图片")}
+                  onOpen={() => openPath(api.outputPath(jobId!, o.index))}
+                />
               ))}
             </div>
           )}
 
           {runNotice && !isWorking && (
             <div className="mt-3 rounded-lg border border-[color:var(--warn-border,var(--border))] bg-sunken px-3 py-2 text-[12px] leading-relaxed text-muted">
-              {runNotice} 后台如果显示生成了更多图片，说明兼容层没有把所有图片序列化回 OpenAI 响应。
+              {runNotice} 已保留收到的图片；如果需要补齐，可以点「重新生成」。
             </div>
           )}
 
@@ -242,12 +272,15 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
             <div className="mt-4 px-3 py-2.5 bg-raised border border-border rounded-lg flex items-center gap-2.5">
               <Icon name="folder" size={14} style={{ color: "var(--text-faint)" }} />
               <div className="flex-1 min-w-0">
-                <div className="t-tiny">输出目录</div>
-                <div className="t-mono text-[11.5px] truncate">
-                  $CODEX_HOME/gpt-image-2-skill/jobs/{jobId}/
-                </div>
+                <div className="text-[12px] font-semibold">本次结果已自动保存</div>
+                <div className="t-small">可以继续编辑，也可以保存一份到「下载/GPT Image 2」。</div>
               </div>
-              <Button variant="ghost" size="sm" icon="copy">复制</Button>
+              <Button variant="ghost" size="sm" icon="folder" onClick={() => revealPath(selectedPath)}>
+                打开
+              </Button>
+              <Button variant="ghost" size="sm" icon="copy" onClick={() => copyText(resultFolder, "保存位置")}>
+                复制位置
+              </Button>
             </div>
           )}
         </div>
@@ -295,14 +328,14 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
           </div>
           <Field
             label="输出数量"
-            hint={supportsMultipleOutputs ? "请求数量，实际以 provider 返回为准" : "此 provider 固定单张"}
+            hint={supportsMultipleOutputs ? "可以一次生成多张候选" : "这个服务一次只返回一张"}
           >
             {supportsMultipleOutputs ? (
               <OutputCountInput value={n} onChange={setN} />
             ) : (
               <div className="flex h-9 items-center justify-between rounded-md border border-border bg-sunken px-2.5 text-[12px]">
                 <span className="font-semibold">1</span>
-                <span className="text-faint">Codex 单张输出</span>
+                <span className="text-faint">会自动单张生成</span>
               </div>
             )}
           </Field>
@@ -310,7 +343,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
 
         <div className="px-4 py-3.5 flex-1 overflow-auto flex flex-col">
           <div className="flex items-center gap-2 mb-2.5">
-            <div className="t-h3">事件时间线</div>
+            <div className="t-h3">进度</div>
             {isWorking && <Spinner size={12} />}
             <div className="flex-1" />
             {timelineEvents.length > 0 && <span className="t-tiny font-mono">{timelineEvents.length} 条</span>}

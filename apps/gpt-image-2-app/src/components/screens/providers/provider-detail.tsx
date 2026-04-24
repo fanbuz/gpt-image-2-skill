@@ -79,18 +79,18 @@ export function ProviderDetail({
 
       <Card style={{ marginBottom: 14 }} padding={0}>
         <div className="px-4 py-3 border-b border-border-faint">
-          <div className="t-caps">端点</div>
+          <div className="t-caps">服务设置</div>
         </div>
         <div className="p-4">
           <div className="grid gap-y-2.5 gap-x-4 text-[12.5px]" style={{ gridTemplateColumns: "140px 1fr" }}>
             <span className="t-tiny pt-0.5">类型</span>
             <span>{providerKindLabel(prov.type)}</span>
-            <span className="t-tiny pt-0.5">Base URL</span>
+            <span className="t-tiny pt-0.5">服务地址</span>
             <span className="t-mono">{prov.api_base ?? <span className="text-faint">— 使用内置</span>}</span>
             <span className="t-tiny pt-0.5">模型</span>
             <span className="t-mono">{prov.model ?? "—"}</span>
-            <span className="t-tiny pt-0.5">批量策略</span>
-            <span>{prov.supports_n ? "原生 -n 参数" : "并发单张请求"}</span>
+            <span className="t-tiny pt-0.5">多张生成</span>
+            <span>{prov.supports_n ? "服务商支持一次返回多张" : "App 会自动并行生成多张"}</span>
           </div>
         </div>
       </Card>
@@ -100,13 +100,13 @@ export function ProviderDetail({
           <div className="t-caps">凭据</div>
         </div>
         {Object.entries(prov.credentials).length === 0 ? (
-          <div className="p-4 text-faint text-[12px]">此 provider 使用系统凭据 (如 ~/.codex/auth.json)。</div>
+          <div className="p-4 text-faint text-[12px]">这个服务商使用本机已登录的账号信息。</div>
         ) : (
           Object.entries(prov.credentials).map(([k, c], i) => (
             <div
               key={k}
               className={["grid items-center gap-3 px-4 py-3", i > 0 && "border-t border-border-faint"].filter(Boolean).join(" ")}
-              style={{ gridTemplateColumns: "140px 1fr auto auto" }}
+              style={{ gridTemplateColumns: "140px minmax(0,1fr) auto" }}
             >
               <span className="text-[12.5px] font-semibold">{k}</span>
               <div
@@ -131,7 +131,6 @@ export function ProviderDetail({
                 {c.source === "keychain" && <span>{c.service} / {c.account}</span>}
               </div>
               <SourceChip source={c.source} />
-              <Button variant="ghost" size="iconSm" icon="gear" />
             </div>
           ))
         )}

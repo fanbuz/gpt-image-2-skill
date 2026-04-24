@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatusDot } from "@/components/ui/status-dot";
 import { PlaceholderImage } from "@/components/screens/shared/placeholder-image";
 import { Button } from "@/components/ui/button";
-import { statusLabel } from "@/lib/format";
+import { formatTime, statusLabel } from "@/lib/format";
 import { api } from "@/lib/api";
 import type { Job } from "@/lib/types";
 
@@ -38,6 +38,7 @@ export function JobRow({
   const prompt = (job.metadata as Record<string, unknown>)?.prompt as string | undefined;
   const size = (job.metadata as Record<string, unknown>)?.size as string | undefined;
   const format = (job.metadata as Record<string, unknown>)?.format as string | undefined;
+  const outputCount = api.jobOutputPaths(job).length;
   const thumbSrc = job.status === "completed" ? api.jobOutputUrl(job, 0) : null;
 
   useEffect(() => {
@@ -69,16 +70,16 @@ export function JobRow({
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
           <Icon name={CMD_ICON[job.command] ?? "sparkle"} size={12} style={{ color: "var(--text-faint)" }} />
-          <span className="text-[12.5px] font-semibold truncate">{prompt || job.id}</span>
+          <span className="text-[12.5px] font-semibold truncate">{prompt || "未命名图片"}</span>
         </div>
-        <div className="text-[11px] text-faint font-mono mt-0.5">{job.id}</div>
+        <div className="text-[11px] text-faint mt-0.5">{formatTime(job.created_at)}</div>
       </div>
       <div className="flex items-center gap-1.5 text-[12px]">
         <Icon name="cpu" size={12} style={{ color: "var(--text-faint)" }} />
         <span className="truncate">{job.provider}</span>
       </div>
       <div className="text-[11.5px] text-muted font-mono">
-        {size ?? "—"} {format ? `· ${format}` : ""}
+        {size ?? "—"} {format ? `· ${format}` : ""}{outputCount > 1 ? ` · ${outputCount}张` : ""}
       </div>
       <div>
         <Badge tone={badgeTone(job.status)}>
