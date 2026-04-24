@@ -150,11 +150,14 @@ export const api = {
         mask = await fileToUpload(value);
       }
     }
+    const selectionHintRaw = form.get("selection_hint");
+    const selection_hint = selectionHintRaw instanceof File ? await fileToUpload(selectionHintRaw) : undefined;
     const result = await invoke<TauriJobResponse>("edit_image", {
       request: {
         ...meta,
         refs,
         mask,
+        selection_hint,
       },
     });
     rememberJobOutputs(result.job, result.payload);

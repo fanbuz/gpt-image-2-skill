@@ -16,6 +16,7 @@ export interface ProviderConfig {
   endpoint?: string;
   model?: string;
   supports_n?: boolean;
+  edit_region_mode?: "native-mask" | "reference-hint" | "none";
   credentials: Record<string, CredentialRef>;
   builtin?: boolean;
 }

@@ -38,6 +38,7 @@ fn config_for_ui(config: &AppConfig) -> Value {
                 "credentials": {},
                 "builtin": true,
                 "supports_n": false,
+                "edit_region_mode": "reference-hint",
             })
         });
         providers.entry("openai".to_string()).or_insert_with(|| {
@@ -50,6 +51,7 @@ fn config_for_ui(config: &AppConfig) -> Value {
                 },
                 "builtin": true,
                 "supports_n": true,
+                "edit_region_mode": "native-mask",
             })
         });
     }
@@ -93,6 +95,8 @@ struct ProviderInput {
     credentials: BTreeMap<String, CredentialInput>,
     #[serde(default)]
     supports_n: Option<bool>,
+    #[serde(default)]
+    edit_region_mode: Option<String>,
     #[serde(default)]
     set_default: bool,
 }
@@ -168,6 +172,8 @@ struct EditRequest {
     refs: Vec<UploadFile>,
     #[serde(default)]
     mask: Option<UploadFile>,
+    #[serde(default)]
+    selection_hint: Option<UploadFile>,
 }
 
 fn convert_provider_input(
@@ -209,6 +215,7 @@ fn convert_provider_input(
             model: input.model,
             credentials,
             supports_n: input.supports_n,
+            edit_region_mode: input.edit_region_mode,
         },
         input.set_default,
     ))
@@ -274,6 +281,44 @@ fn provider_supports_n(provider: Option<&str>) -> bool {
             })
             .unwrap_or(false),
         None => true,
+    }
+}
+
+fn provider_edit_region_mode(provider: Option<&str>) -> String {
+    let config = load_config().ok();
+    let selected = provider
+        .and_then(|name| {
+            let name = name.trim();
+            if name.is_empty() || name == "auto" {
+                None
+            } else {
+                Some(name)
+            }
+        })
+        .or_else(|| {
+            config
+                .as_ref()
+                .and_then(|config| config.default_provider.as_deref())
+                .filter(|name| !name.is_empty() && *name != "auto")
+        });
+
+    match selected {
+        Some("openai") => "native-mask".to_string(),
+        Some("codex") => "reference-hint".to_string(),
+        Some(name) => config
+            .as_ref()
+            .and_then(|config| config.providers.get(name))
+            .map(|provider| {
+                provider.edit_region_mode.clone().unwrap_or_else(|| {
+                    match provider.provider_type.as_str() {
+                        "openai" => "native-mask".to_string(),
+                        "codex" => "reference-hint".to_string(),
+                        _ => "reference-hint".to_string(),
+                    }
+                })
+            })
+            .unwrap_or_else(|| "reference-hint".to_string()),
+        None => "reference-hint".to_string(),
     }
 }
 
@@ -643,10 +688,39 @@ async fn edit_image(request: EditRequest) -> Result<Value, String> {
         } else {
             None
         };
+        let selection_hint_path = if let Some(hint) = &request.selection_hint {
+            let path = dir.join("selection-hint.png");
+            fs::write(&path, &hint.bytes).map_err(|error| error.to_string())?;
+            Some(path)
+        } else {
+            None
+        };
+        let edit_region_mode = if mask_path.is_some() || selection_hint_path.is_some() {
+            provider_edit_region_mode(request.provider.as_deref())
+        } else {
+            "none".to_string()
+        };
+        if edit_region_mode == "none" && (mask_path.is_some() || selection_hint_path.is_some()) {
+            return Err("当前服务商不支持局部编辑。请切换到「多图参考」或更换服务商。".to_string());
+        }
+        if edit_region_mode == "reference-hint"
+            && selection_hint_path.is_some()
+            && !ref_paths.is_empty()
+        {
+            ref_paths.insert(1, selection_hint_path.clone().unwrap());
+        }
         let count = requested_n(request.n)?;
         let use_native_n = count == 1 || provider_supports_n(request.provider.as_deref());
         let make_args = |out: PathBuf, n: Option<u8>| {
             let mut args = Vec::new();
+            let prompt = if edit_region_mode == "reference-hint" && selection_hint_path.is_some() {
+                format!(
+                    "Edit the first image only. The second image marks the selected region in green. Change only the green marked region according to this request: {}. Keep everything outside the marked region unchanged. Other images are references only.",
+                    request.prompt
+                )
+            } else {
+                request.prompt.clone()
+            };
             if let Some(provider) = request.provider.as_deref()
                 && !provider.is_empty()
             {
@@ -657,7 +731,7 @@ async fn edit_image(request: EditRequest) -> Result<Value, String> {
                 "images".to_string(),
                 "edit".to_string(),
                 "--prompt".to_string(),
-                request.prompt.clone(),
+                prompt,
                 "--out".to_string(),
                 out.display().to_string(),
             ]);
@@ -665,7 +739,9 @@ async fn edit_image(request: EditRequest) -> Result<Value, String> {
                 args.push("--ref-image".to_string());
                 args.push(path.display().to_string());
             }
-            if let Some(path) = &mask_path {
+            if edit_region_mode == "native-mask"
+                && let Some(path) = &mask_path
+            {
                 args.push("--mask".to_string());
                 args.push(path.display().to_string());
             }
@@ -720,6 +796,8 @@ async fn edit_image(request: EditRequest) -> Result<Value, String> {
             "moderation": request.moderation,
             "ref_count": request.refs.len(),
             "has_mask": request.mask.is_some(),
+            "selection_hint": request.selection_hint.is_some(),
+            "edit_region_mode": edit_region_mode,
         });
         let job = job_from_payload(&payload, &fallback_id, "images edit", request_meta);
         Ok(json!({

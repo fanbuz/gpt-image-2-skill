@@ -6,7 +6,15 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { useUpsertProvider } from "@/hooks/use-config";
-import type { CredentialSource, ProviderKind } from "@/lib/types";
+import type { CredentialSource, ProviderConfig, ProviderKind } from "@/lib/types";
+
+type EditRegionMode = NonNullable<ProviderConfig["edit_region_mode"]>;
+
+function defaultEditRegionMode(kind: ProviderKind): EditRegionMode {
+  if (kind === "openai") return "native-mask";
+  if (kind === "codex") return "reference-hint";
+  return "reference-hint";
+}
 
 export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [name, setName] = useState("");
@@ -14,6 +22,7 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
   const [apiBase, setApiBase] = useState("https://example.com/v1");
   const [model, setModel] = useState("gpt-image-2");
   const [supportsN, setSupportsN] = useState(false);
+  const [editRegionMode, setEditRegionMode] = useState<EditRegionMode>("reference-hint");
   const [keySource, setKeySource] = useState<CredentialSource>("file");
   const [apiKey, setApiKey] = useState("");
   const [envName, setEnvName] = useState("OPENAI_API_KEY");
@@ -30,6 +39,7 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
     setApiBase("https://example.com/v1");
     setModel("gpt-image-2");
     setSupportsN(false);
+    setEditRegionMode("reference-hint");
     setKeySource("file");
     setApiKey("");
     setEnvName("OPENAI_API_KEY");
@@ -49,6 +59,7 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
           api_base: kind === "codex" ? undefined : apiBase || undefined,
           model: model || undefined,
           supports_n: kind === "codex" ? false : supportsN,
+          edit_region_mode: editRegionMode,
           credentials:
             kind === "codex"
               ? {
@@ -103,6 +114,7 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
             onChange={(next) => {
               setKind(next);
               setSupportsN(next === "openai");
+              setEditRegionMode(defaultEditRegionMode(next));
             }}
             className="w-full overflow-x-auto"
             options={[
@@ -136,6 +148,28 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
               options={[
                 { value: "no", label: "App 自动并行" },
                 { value: "yes", label: "服务商一次返回多张" },
+              ]}
+            />
+          )}
+        </Field>
+        <Field
+          label="局部编辑"
+          hint={kind === "openai" ? "OpenAI 官方可使用精确遮罩" : "不确定时选「软选区参考」最稳"}
+        >
+          {kind === "codex" ? (
+            <div className="flex h-8 items-center justify-between rounded-md border border-border bg-sunken px-2.5 text-[12px]">
+              <span className="font-semibold">软选区参考</span>
+              <span className="text-faint">适合当前 Codex 通道</span>
+            </div>
+          ) : (
+            <Segmented
+              value={editRegionMode}
+              onChange={setEditRegionMode}
+              className="w-full overflow-x-auto"
+              options={[
+                { value: "reference-hint", label: "软选区参考" },
+                { value: "native-mask", label: "精确遮罩" },
+                { value: "none", label: "不支持" },
               ]}
             />
           )}

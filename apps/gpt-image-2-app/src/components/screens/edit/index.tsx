@@ -13,25 +13,65 @@ import { Icon } from "@/components/icon";
 import { EventTimeline } from "@/components/screens/shared/event-timeline";
 import { ImageSizeInput, OutputCountInput } from "@/components/screens/shared/image-parameter-inputs";
 import { OutputTile } from "@/components/screens/shared/output-tile";
-import { MaskCanvas, type MaskMode } from "./mask-canvas";
+import { MaskCanvas, type MaskExport, type MaskMode } from "./mask-canvas";
 import { ReferenceImageCard, type RefImage } from "./reference-card";
 import { providerKindLabel } from "@/lib/format";
 import { useCreateEdit } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
 import { useTweaks } from "@/hooks/use-tweaks";
 import { api } from "@/lib/api";
-import { completedEvent, errorMessage, failedEvent, outputCountDescription, outputCountMismatchMessage, responseOutputCount, submittedEvent } from "@/lib/job-feedback";
-import { BACKGROUND_OPTIONS, normalizeOutputCount, QUALITY_OPTIONS, validateImageSize, validateOutputCount } from "@/lib/image-options";
-import { effectiveOutputCount, providerSupportsMultipleOutputs, requestOutputCount } from "@/lib/provider-capabilities";
+import {
+  completedEvent,
+  errorMessage,
+  failedEvent,
+  outputCountDescription,
+  outputCountMismatchMessage,
+  responseOutputCount,
+  submittedEvent,
+} from "@/lib/job-feedback";
+import {
+  BACKGROUND_OPTIONS,
+  normalizeOutputCount,
+  QUALITY_OPTIONS,
+  validateImageSize,
+  validateOutputCount,
+} from "@/lib/image-options";
+import {
+  effectiveOutputCount,
+  providerEditRegionMode,
+  providerSupportsMultipleOutputs,
+  requestOutputCount,
+} from "@/lib/provider-capabilities";
 import { effectiveDefaultProvider, providerNames as readProviderNames } from "@/lib/providers";
 import { openPath, revealPath, saveImages } from "@/lib/user-actions";
-import type { JobEvent, ServerConfig } from "@/lib/types";
+import type { JobEvent, ProviderConfig, ServerConfig } from "@/lib/types";
+
+type EditMode = "reference" | "region";
+type RefWithFile = RefImage & { file: File };
+type EditRegionMode = NonNullable<ProviderConfig["edit_region_mode"]>;
+
+function blobFile(blob: Blob, name: string) {
+  return new File([blob], name, { type: "image/png" });
+}
+
+function regionModeLabel(mode: EditRegionMode) {
+  if (mode === "native-mask") return "精确遮罩";
+  if (mode === "reference-hint") return "软选区参考";
+  return "不支持局部编辑";
+}
+
+function regionModeHint(mode: EditRegionMode) {
+  if (mode === "native-mask") return "遮罩会精确作用在目标图上";
+  if (mode === "reference-hint") return "会把绿色选区作为参考图传给服务商";
+  return "请使用多图参考，或换一个支持局部编辑的服务商";
+}
 
 export function EditScreen({ config }: { config?: ServerConfig }) {
   const { tweaks } = useTweaks();
   const providerNames = useMemo(() => readProviderNames(config), [config]);
   const defaultProvider = effectiveDefaultProvider(config);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [editMode, setEditMode] = useState<EditMode>("reference");
   const [prompt, setPrompt] = useState(
     "把背景换成黄昏海边，保留主体人物的面部和衣着细节。"
   );
@@ -41,8 +81,9 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const [quality, setQuality] = useState("auto");
   const [background, setBackground] = useState("auto");
   const [n, setN] = useState(4);
-  const [refs, setRefs] = useState<(RefImage & { file: File })[]>([]);
+  const [refs, setRefs] = useState<RefWithFile[]>([]);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
+  const [targetRefId, setTargetRefId] = useState<string | null>(null);
   const [brushSize, setBrushSize] = useState(28);
   const [maskMode, setMaskMode] = useState<MaskMode>("paint");
   const [clearKey, setClearKey] = useState(0);
@@ -56,38 +97,43 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const [runNotice, setRunNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!selectedRef && refs.length > 0) setSelectedRef(refs[0].id);
-  }, [refs, selectedRef]);
-
-  useEffect(() => {
     if (providerNames.length > 0 && (!provider || !config?.providers[provider])) {
       setProvider(defaultProvider || providerNames[0]);
     }
   }, [config?.providers, defaultProvider, provider, providerNames]);
+
+  useEffect(() => {
+    if (refs.length === 0) {
+      setSelectedRef(null);
+      setTargetRefId(null);
+      return;
+    }
+    if (!selectedRef || !refs.some((ref) => ref.id === selectedRef)) {
+      setSelectedRef(refs[0].id);
+    }
+    if (!targetRefId || !refs.some((ref) => ref.id === targetRefId)) {
+      setTargetRefId(refs[0].id);
+    }
+  }, [refs, selectedRef, targetRefId]);
 
   const { events, running } = useJobEvents(jobId);
   const mutate = useCreateEdit();
   const isWorking = exportKey != null || mutate.isPending || running;
   const providerCfg = provider ? config?.providers[provider] : undefined;
   const supportsMultipleOutputs = providerSupportsMultipleOutputs(config, provider);
+  const editRegionMode = providerEditRegionMode(config, provider);
+  const usesRegion = editMode === "region";
+  const usesNativeMask = usesRegion && editRegionMode === "native-mask";
+  const usesSoftRegion = usesRegion && editRegionMode === "reference-hint";
+  const regionUnavailable = usesRegion && editRegionMode === "none";
   const sizeValidation = validateImageSize(size);
   const outputCountValidation = validateOutputCount(n);
   const parameterError = sizeValidation.message ?? (supportsMultipleOutputs ? outputCountValidation.message : undefined);
   const safeN = normalizeOutputCount(n);
   const actualN = effectiveOutputCount(config, provider, safeN);
   const displayN = isWorking && pendingOutputCount != null ? pendingOutputCount : actualN;
-
-  const addRef = (files: FileList | null) => {
-    if (!files) return;
-    const next = [...refs];
-    Array.from(files).forEach((file, i) => {
-      const id = `r-${Date.now()}-${i}`;
-      next.push({ id, name: file.name, url: URL.createObjectURL(file), file });
-    });
-    setRefs(next);
-  };
-
-  const selectedRefObj = refs.find((r) => r.id === selectedRef);
+  const selectedRefObj = refs.find((ref) => ref.id === selectedRef);
+  const targetRef = refs.find((ref) => ref.id === targetRefId) ?? refs[0];
 
   useEffect(() => {
     if (!supportsMultipleOutputs && n !== 1) {
@@ -101,34 +147,124 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
     }
   }, [background]);
 
+  const addRef = (files: FileList | null) => {
+    if (!files) return;
+    const additions = Array.from(files).map((file, index) => ({
+      id: `r-${Date.now()}-${index}`,
+      name: file.name,
+      url: URL.createObjectURL(file),
+      file,
+    }));
+    if (additions.length === 0) return;
+    setRefs((prev) => [...prev, ...additions]);
+    setSelectedRef((prev) => prev ?? additions[0].id);
+    setTargetRefId((prev) => prev ?? additions[0].id);
+  };
+
+  const removeRef = (id: string) => {
+    setRefs((prev) => {
+      const next = prev.filter((ref) => ref.id !== id);
+      if (id === selectedRef) setSelectedRef(next[0]?.id ?? null);
+      if (id === targetRefId) setTargetRefId(next[0]?.id ?? null);
+      return next;
+    });
+  };
+
+  const resetRunState = (preparingMessage: string) => {
+    setRunError(null);
+    setJobId(null);
+    setOutputCount(0);
+    setSelectedOutput(0);
+    setRunNotice(null);
+    setLocalEvents([submittedEvent(preparingMessage)]);
+  };
+
   const handleRun = () => {
     if (!provider || refs.length === 0 || isWorking) return;
     if (parameterError) {
       toast.error("参数无效", { description: parameterError });
       return;
     }
-    setRunError(null);
-    setJobId(null);
-    setOutputCount(0);
-    setSelectedOutput(0);
-    setRunNotice(null);
-    setLocalEvents([submittedEvent("正在准备参考图和遮罩。")]);
-    // We need to export the mask first (async via toBlob).
-    setExportKey(Date.now());
+    if (regionUnavailable) {
+      toast.error("当前服务商不支持局部编辑", {
+        description: "请切换到「多图参考」，或换一个支持局部编辑的服务商。",
+      });
+      return;
+    }
+    if (usesRegion && !targetRef) {
+      toast.error("请先选择目标图", { description: "遮罩会作用在目标图上。" });
+      return;
+    }
+
+    if (usesRegion) {
+      resetRunState(usesNativeMask ? "正在导出目标图和遮罩。" : "正在准备目标图和绿色选区参考。");
+      setExportKey(Date.now());
+      return;
+    }
+
+    resetRunState("正在提交参考图。");
+    void submit(null);
   };
 
-  // Kick off submission once the mask blob is ready.
-  const submit = async (maskBlob: Blob | null) => {
+  const submit = async (maskPayload: MaskExport | null) => {
     const form = new FormData();
     const normalizedSize = sizeValidation.normalized ?? size;
     const plannedN = effectiveOutputCount(config, provider, safeN);
     const requestedN = requestOutputCount(config, provider, safeN);
-    const meta = { prompt, provider, size: normalizedSize, format, quality, background, n: requestedN };
+    const meta = {
+      prompt,
+      provider,
+      size: normalizedSize,
+      format,
+      quality,
+      background,
+      n: requestedN,
+      edit_mode: editMode,
+      edit_region_mode: usesRegion ? editRegionMode : "none",
+      target_name: usesRegion ? targetRef?.name : undefined,
+    };
+
+    if (usesRegion) {
+      if (!maskPayload) {
+        setExportKey(null);
+        setRunError("遮罩导出失败，请重新涂抹一次。");
+        setLocalEvents([failedEvent("遮罩导出失败，请重新涂抹一次。")]);
+        toast.error("遮罩导出失败", { description: "请重新涂抹一次。" });
+        return;
+      }
+      if (!maskPayload.hasSelection) {
+        setExportKey(null);
+        setRunError("请先涂抹要修改的区域。");
+        setLocalEvents([failedEvent("请先涂抹要修改的区域。")]);
+        toast.error("还没有选区", { description: "请在目标图上涂抹要修改的区域。" });
+        return;
+      }
+      if (!targetRef) {
+        setExportKey(null);
+        return;
+      }
+      form.append("ref_00", blobFile(maskPayload.targetImage, "target.png"));
+      refs
+        .filter((ref) => ref.id !== targetRef.id)
+        .forEach((ref, index) => {
+          form.append(`ref_${String(index + 1).padStart(2, "0")}`, ref.file, ref.name);
+        });
+      if (usesNativeMask) {
+        form.append("mask", blobFile(maskPayload.nativeMask, "mask.png"));
+      }
+      if (usesSoftRegion) {
+        form.append("selection_hint", blobFile(maskPayload.selectionHint, "selection-hint.png"));
+      }
+    } else {
+      refs.forEach((ref, index) => {
+        form.append(`ref_${String(index).padStart(2, "0")}`, ref.file, ref.name);
+      });
+    }
+
     form.append("meta", JSON.stringify(meta));
-    refs.forEach((r, i) => form.append(`ref_${String(i).padStart(2, "0")}`, r.file, r.name));
-    if (maskBlob) form.append("mask", maskBlob, "mask.png");
+    const modeText = usesRegion ? regionModeLabel(editRegionMode) : "多图参考";
     const toastId = toast.loading("正在编辑图像", {
-      description: `${refs.length} 张参考图 · ${provider}`,
+      description: `${modeText} · ${refs.length} 张图片 · ${provider}`,
     });
     setPendingOutputCount(plannedN);
     try {
@@ -171,37 +307,41 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const saveSelected = () => saveImages([selectedPath], "图片");
   const saveAll = () => saveImages(outputPaths, "图片");
   const timelineEvents = events.length > 0 ? events : localEvents;
-  const hasOutputs = outputs.some((output) => output.url) || events.some((e) => e.type === "job.completed" || e.type === "output_saved");
+  const hasOutputs = outputs.some((output) => output.url) || events.some((event) => event.type === "job.completed" || event.type === "output_saved");
+  const outputSubtitle = usesRegion
+    ? "设为目标图并涂抹要修改的区域，再点击右侧开始。"
+    : "上传一张或多张参考图，写清楚希望如何融合或改动。";
 
   return (
     <div
       className="grid h-full grid-cols-[220px_minmax(260px,1fr)_260px] overflow-hidden xl:grid-cols-[248px_minmax(320px,1fr)_300px]"
     >
-      <div className="flex flex-col border-r border-border bg-raised overflow-auto">
-        <div className="p-4 border-b border-border-faint">
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="t-h3">参考图</div>
+      <div className="flex flex-col overflow-auto border-r border-border bg-raised">
+        <div className="border-b border-border-faint p-4">
+          <div className="mb-2.5 flex items-center justify-between">
+            <div className="t-h3">{usesRegion ? "目标图与参考图" : "参考图"}</div>
             <span className="t-tiny font-mono">{refs.length}/6</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            {refs.map((r) => (
+            {refs.map((ref) => (
               <ReferenceImageCard
-                key={r.id}
-                ref_={r}
-                active={r.id === selectedRef}
-                onSelect={() => setSelectedRef(r.id)}
-                onRemove={() =>
-                  setRefs((prev) => {
-                    const next = prev.filter((x) => x.id !== r.id);
-                    if (r.id === selectedRef) setSelectedRef(next[0]?.id ?? null);
-                    return next;
-                  })
-                }
+                key={ref.id}
+                ref_={ref}
+                active={ref.id === selectedRef}
+                role={usesRegion ? (ref.id === targetRef?.id ? "target" : "reference") : undefined}
+                onSelect={() => setSelectedRef(ref.id)}
+                onSetTarget={usesRegion ? () => {
+                  setTargetRefId(ref.id);
+                  setSelectedRef(ref.id);
+                  setClearKey((key) => key + 1);
+                } : undefined}
+                onRemove={() => removeRef(ref.id)}
               />
             ))}
             <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="aspect-square rounded-lg border-[1.5px] border-dashed border-border-strong bg-sunken flex flex-col items-center justify-center gap-1 text-muted"
+              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-[1.5px] border-dashed border-border-strong bg-sunken text-muted"
             >
               <Icon name="plus" size={18} />
               <span className="text-[11px]">添加</span>
@@ -212,47 +352,69 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
               multiple
               accept="image/*"
               className="hidden"
-              onChange={(e) => {
-                addRef(e.target.files);
+              onChange={(event) => {
+                addRef(event.target.files);
                 if (fileInputRef.current) fileInputRef.current.value = "";
               }}
             />
           </div>
+          {usesRegion && (
+            <div className="mt-3 rounded-lg border border-border bg-sunken px-3 py-2 text-[11.5px] leading-relaxed text-muted">
+              遮罩只作用在标记为「目标图」的图片上；其他图片只作为风格、人物或物体参考。
+            </div>
+          )}
         </div>
 
-        <div className="p-4 border-b border-border-faint">
-          <FieldLabel hint={selectedRefObj ? "绘制遮罩" : "请先选择参考图"}>
-            遮罩 · 将只替换遮罩区域
-          </FieldLabel>
-          <div className="flex items-center gap-1.5 mt-1.5 mb-2.5">
-            <Segmented
-              value={maskMode}
-              onChange={setMaskMode}
-              size="sm"
-              options={[
-                { value: "paint", label: "绘制", icon: "brush" },
-                { value: "erase", label: "擦除", icon: "eraser" },
-              ]}
-            />
-            <div className="flex-1" />
-            <Button variant="ghost" size="sm" icon="trash" onClick={() => setClearKey((k) => k + 1)} title="清除遮罩" />
+        {usesRegion ? (
+          <div className="border-b border-border-faint p-4">
+            <FieldLabel hint={targetRef ? "涂抹目标图" : "请先上传目标图"}>
+              局部选区
+            </FieldLabel>
+            <div className="mb-2.5 mt-1.5 flex items-center gap-1.5">
+              <Segmented
+                value={maskMode}
+                onChange={setMaskMode}
+                size="sm"
+                options={[
+                  { value: "paint", label: "绘制", icon: "brush" },
+                  { value: "erase", label: "擦除", icon: "eraser" },
+                ]}
+              />
+              <div className="flex-1" />
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="trash"
+                onClick={() => setClearKey((key) => key + 1)}
+                title="清除选区"
+              />
+            </div>
+            <div className="mb-1 flex items-center gap-2">
+              <span className="t-tiny min-w-[28px]">笔刷</span>
+              <input
+                type="range"
+                min={8}
+                max={80}
+                value={brushSize}
+                onChange={(event) => setBrushSize(Number(event.target.value))}
+                className="flex-1"
+                style={{ accentColor: "var(--accent)" }}
+              />
+              <span className="t-mono min-w-5 text-right text-faint">{brushSize}</span>
+            </div>
+            <div className="mt-2 rounded-lg border border-border bg-sunken px-3 py-2 text-[11.5px] leading-relaxed text-muted">
+              {regionModeHint(editRegionMode)}
+            </div>
           </div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="t-tiny min-w-[28px]">笔刷</span>
-            <input
-              type="range"
-              min={8}
-              max={80}
-              value={brushSize}
-              onChange={(e) => setBrushSize(Number(e.target.value))}
-              className="flex-1"
-              style={{ accentColor: "var(--accent)" }}
-            />
-            <span className="t-mono text-faint min-w-5 text-right">{brushSize}</span>
+        ) : (
+          <div className="border-b border-border-faint p-4">
+            <div className="rounded-lg border border-border bg-sunken px-3 py-2 text-[11.5px] leading-relaxed text-muted">
+              多图参考不会使用遮罩。所有上传图片都会作为参考，适合风格迁移、人物保持、产品变体和组合编辑。
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="p-4 flex-1">
+        <div className="flex-1 p-4">
           <FieldLabel
             hint={
               <span className="flex items-center gap-1">
@@ -263,49 +425,77 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
           >
             提示词
           </FieldLabel>
-          <Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} minHeight={120} placeholder="描述你希望的修改…" />
-          <div className="flex items-center gap-1.5 mt-2 text-[11px] text-faint">
+          <Textarea
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            minHeight={120}
+            placeholder={usesRegion ? "描述目标图选区里要变成什么..." : "描述如何参考这些图片进行编辑..."}
+          />
+          <div className="mt-2 flex items-center gap-1.5 text-[11px] text-faint">
             <Icon name="info" size={11} />
-            提示词越具体，遮罩区域保留越准确。
+            {usesRegion ? "越具体，选区外越容易保持稳定。" : "可以说明哪张图负责人物、风格、背景或物体。"}
           </div>
         </div>
       </div>
 
-      <div className="flex flex-col overflow-auto bg-background gridpaper">
-        <div className="px-6 pt-5 pb-3 flex items-center gap-2.5">
+      <div className="gridpaper flex flex-col overflow-auto bg-background">
+        <div className="flex items-center gap-2.5 px-6 pb-3 pt-5">
           <Segmented
-            value="mask"
-            onChange={() => {}}
+            value={editMode}
+            onChange={(mode) => {
+              setEditMode(mode);
+              setRunError(null);
+              setRunNotice(null);
+            }}
             options={[
-              { value: "mask", label: "遮罩编辑器", icon: "mask" },
-              { value: "compare", label: "对比原图", icon: "diff" },
+              { value: "reference", label: "多图参考", icon: "image" },
+              { value: "region", label: "局部编辑", icon: "mask" },
             ]}
           />
           <div className="flex-1" />
-          <span className="t-mono t-small">{selectedRefObj?.name ?? "—"}</span>
+          <span className="t-mono t-small">
+            {usesRegion ? targetRef?.name ?? "未选择目标图" : selectedRefObj?.name ?? refs[0]?.name ?? "—"}
+          </span>
         </div>
 
-        <div className="px-6 flex justify-center">
+        <div className="flex justify-center px-6">
           <div style={{ width: "min(100%, clamp(280px, calc(100vh - 340px), 520px))" }}>
-            {selectedRefObj ? (
-              <MaskCanvas
-                imageUrl={selectedRefObj.url}
-                seed={0}
-                brushSize={brushSize}
-                mode={maskMode}
-                clearKey={clearKey}
-                exportKey={exportKey ?? undefined}
-                onExport={(blob) => { submit(blob); }}
-              />
+            {usesRegion ? (
+              targetRef ? (
+                <MaskCanvas
+                  imageUrl={targetRef.url}
+                  seed={0}
+                  brushSize={brushSize}
+                  mode={maskMode}
+                  clearKey={clearKey}
+                  exportKey={exportKey ?? undefined}
+                  onExport={(payload) => { void submit(payload); }}
+                />
+              ) : (
+                <div className="flex aspect-square items-center justify-center rounded-[10px] border border-border bg-sunken text-[12px] text-faint">
+                  请上传并设定目标图
+                </div>
+              )
+            ) : selectedRefObj || refs[0] ? (
+              <div className="relative aspect-square overflow-hidden rounded-[10px] border border-border bg-sunken">
+                <img
+                  src={(selectedRefObj ?? refs[0]).url}
+                  alt={(selectedRefObj ?? refs[0]).name}
+                  className="h-full w-full object-contain"
+                />
+                <div className="absolute bottom-2.5 left-2.5 rounded bg-black/55 px-2 py-1 font-mono text-[10.5px] font-medium text-white backdrop-blur-sm">
+                  多图参考 · 不使用遮罩
+                </div>
+              </div>
             ) : (
-              <div className="aspect-square rounded-[10px] border border-border bg-sunken flex items-center justify-center text-faint text-[12px]">
+              <div className="flex aspect-square items-center justify-center rounded-[10px] border border-border bg-sunken text-[12px] text-faint">
                 请上传至少一张参考图
               </div>
             )}
           </div>
         </div>
 
-        <div className="px-6 pt-5 pb-2 flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5 px-6 pb-2 pt-5">
           <div className="t-h3">输出 · {isWorking ? `请求 ${displayN} 个候选生成中` : hasOutputs ? `${outputs.length} 个候选` : "尚未生成"}</div>
           <div className="flex-1" />
           {hasOutputs && (
@@ -332,30 +522,30 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
             </Card>
           ) : !hasOutputs && !isWorking ? (
             <Card padding={0} style={{ overflow: "hidden" }}>
-              <Empty icon="image" title="还没有输出" subtitle="检查左侧参考图与遮罩，写好提示词，点击右侧「开始编辑」即可生成。" />
+              <Empty icon="image" title="还没有输出" subtitle={outputSubtitle} />
             </Card>
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {isWorking && !hasOutputs &&
-                Array.from({ length: displayN }).map((_, i) => (
+                Array.from({ length: displayN }).map((_, index) => (
                   <div
-                    key={i}
-                    className="aspect-square rounded-lg border border-border flex items-center justify-center text-faint font-mono text-[11px] animate-shimmer"
+                    key={index}
+                    className="flex aspect-square items-center justify-center rounded-lg border border-border text-[11px] font-mono text-faint animate-shimmer"
                     style={{
                       background: "linear-gradient(90deg, var(--bg-sunken) 0%, var(--bg-hover) 40%, var(--bg-sunken) 80%)",
                       backgroundSize: "200% 100%",
                     }}
                   >
-                    生成中 · {String.fromCharCode(65 + i)}
+                    生成中 · {String.fromCharCode(65 + index)}
                   </div>
                 ))}
-              {hasOutputs && outputs.map((o) => (
+              {hasOutputs && outputs.map((output) => (
                 <OutputTile
-                  key={o.index}
-                  output={o}
-                  onSelect={() => setSelectedOutput(o.index)}
-                  onDownload={() => saveImages([api.outputPath(jobId!, o.index)], "图片")}
-                  onOpen={() => openPath(api.outputPath(jobId!, o.index))}
+                  key={output.index}
+                  output={output}
+                  onSelect={() => setSelectedOutput(output.index)}
+                  onDownload={() => saveImages([api.outputPath(jobId!, output.index)], "图片")}
+                  onOpen={() => openPath(api.outputPath(jobId!, output.index))}
                 />
               ))}
             </div>
@@ -368,19 +558,19 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
         </div>
       </div>
 
-      <div className="border-l border-border bg-raised flex flex-col overflow-hidden">
-        <div className="px-4 py-3.5 border-b border-border-faint">
+      <div className="flex flex-col overflow-hidden border-l border-border bg-raised">
+        <div className="border-b border-border-faint px-4 py-3.5">
           <Field label="服务商">
-            <div className="flex items-center gap-1.5 px-2.5 h-9 bg-sunken border border-border rounded-md">
+            <div className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-sunken px-2.5">
               <Icon name="cpu" size={14} style={{ color: "var(--accent)" }} />
               <select
                 value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                className="flex-1 bg-transparent border-none outline-none text-[13px] font-medium"
+                onChange={(event) => setProvider(event.target.value)}
+                className="flex-1 border-none bg-transparent text-[13px] font-medium outline-none"
               >
                 {providerNames.length === 0 && <option value="">（无可用 provider）</option>}
-                {providerNames.map((p) => (
-                  <option key={p} value={p}>{p}</option>
+                {providerNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
                 ))}
               </select>
               {provider === defaultProvider && <Badge tone="neutral" size="sm">默认</Badge>}
@@ -392,6 +582,13 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
             </div>
           </Field>
 
+          {usesRegion && (
+            <div className="mb-3 rounded-lg border border-border bg-sunken px-3 py-2 text-[11.5px] leading-relaxed text-muted">
+              <div className="font-semibold text-foreground">{regionModeLabel(editRegionMode)}</div>
+              <div>{regionModeHint(editRegionMode)}</div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-2.5">
             <div className="col-span-2">
               <Field label="尺寸" hint="auto 或 16 倍数自定义尺寸">
@@ -399,13 +596,13 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
               </Field>
             </div>
             <Field label="质量">
-              <Select value={quality} onChange={(e) => setQuality(e.target.value)} options={QUALITY_OPTIONS} />
+              <Select value={quality} onChange={(event) => setQuality(event.target.value)} options={QUALITY_OPTIONS} />
             </Field>
             <Field label="格式">
-              <Select value={format} onChange={(e) => setFormat(e.target.value)} options={["png", "jpeg", "webp"]} />
+              <Select value={format} onChange={(event) => setFormat(event.target.value)} options={["png", "jpeg", "webp"]} />
             </Field>
             <Field label="背景">
-              <Select value={background} onChange={(e) => setBackground(e.target.value)} options={BACKGROUND_OPTIONS} />
+              <Select value={background} onChange={(event) => setBackground(event.target.value)} options={BACKGROUND_OPTIONS} />
             </Field>
           </div>
 
@@ -424,26 +621,30 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
           </Field>
         </div>
 
-        <div className="px-4 py-3.5 border-b border-border-faint">
+        <div className="border-b border-border-faint px-4 py-3.5">
           <Button
             variant="primary"
             size="lg"
             icon="sparkle"
             onClick={handleRun}
-            disabled={isWorking || refs.length === 0 || !provider || Boolean(parameterError)}
+            disabled={isWorking || refs.length === 0 || !provider || Boolean(parameterError) || regionUnavailable}
             kbd="⌘↵"
             className="w-full justify-center"
           >
-            {isWorking ? "编辑中…" : "开始编辑"}
+            {isWorking ? "编辑中..." : usesRegion ? "开始局部编辑" : "开始参考编辑"}
           </Button>
-          <div className="flex justify-between mt-2 text-[11px] text-faint">
-            <span>{refs.length} 张参考图</span>
-            <span className="t-mono">{displayN}×{size.split("x")[0]}px</span>
+          <div className="mt-2 flex justify-between text-[11px] text-faint">
+            <span>
+              {usesRegion
+                ? `目标图 + ${Math.max(0, refs.length - 1)} 张参考`
+                : `${refs.length} 张参考图`}
+            </span>
+            <span className="t-mono">{displayN} 张</span>
           </div>
         </div>
 
-        <div className="px-4 py-3.5 flex-1 overflow-auto flex flex-col">
-          <div className="flex items-center gap-2 mb-2.5">
+        <div className="flex flex-1 flex-col overflow-auto px-4 py-3.5">
+          <div className="mb-2.5 flex items-center gap-2">
             <div className="t-h3">进度</div>
             {isWorking && <Spinner size={12} />}
             <div className="flex-1" />

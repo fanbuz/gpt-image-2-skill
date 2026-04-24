@@ -11,6 +11,13 @@ import type { ProviderConfig } from "@/lib/types";
 
 type TestStatus = "idle" | "running" | "ok" | "err";
 
+function editRegionModeLabel(prov: ProviderConfig) {
+  const mode = prov.edit_region_mode ?? (prov.type === "openai" ? "native-mask" : "reference-hint");
+  if (mode === "native-mask") return "精确遮罩";
+  if (mode === "reference-hint") return "软选区参考";
+  return "不支持局部编辑";
+}
+
 export function ProviderDetail({
   name,
   prov,
@@ -91,6 +98,8 @@ export function ProviderDetail({
             <span className="t-mono">{prov.model ?? "—"}</span>
             <span className="t-tiny pt-0.5">多张生成</span>
             <span>{prov.supports_n ? "服务商支持一次返回多张" : "App 会自动并行生成多张"}</span>
+            <span className="t-tiny pt-0.5">局部编辑</span>
+            <span>{editRegionModeLabel(prov)}</span>
           </div>
         </div>
       </Card>

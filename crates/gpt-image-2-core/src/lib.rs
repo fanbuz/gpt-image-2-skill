@@ -131,6 +131,7 @@ struct ProviderSelection {
     codex_endpoint: String,
     default_model: String,
     supports_n: bool,
+    edit_region_mode: String,
 }
 
 impl ProviderSelection {
@@ -144,6 +145,7 @@ impl ProviderSelection {
             },
             "reason": self.reason,
             "supports_n": self.supports_n,
+            "edit_region_mode": self.edit_region_mode,
         })
     }
 }
@@ -177,6 +179,8 @@ pub struct ProviderConfig {
     pub credentials: BTreeMap<String, CredentialRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supports_n: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edit_region_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -392,6 +396,8 @@ pub struct AddProviderArgs {
     pub supports_n: bool,
     #[arg(long, action = ArgAction::SetTrue)]
     pub no_supports_n: bool,
+    #[arg(long)]
+    pub edit_region_mode: Option<String>,
     #[arg(long, action = ArgAction::SetTrue)]
     pub set_default: bool,
 }
@@ -1891,6 +1897,11 @@ fn configured_provider_selection(
     reason: &str,
     api_key_override: Option<&str>,
 ) -> Result<ProviderSelection, AppError> {
+    let edit_region_mode = provider
+        .edit_region_mode
+        .as_deref()
+        .map(normalize_edit_region_mode)
+        .transpose()?;
     match provider.provider_type.as_str() {
         "openai" | "openai-compatible" => {
             let api_base = provider
@@ -1917,6 +1928,9 @@ fn configured_provider_selection(
                 supports_n: provider
                     .supports_n
                     .unwrap_or(provider.provider_type == "openai"),
+                edit_region_mode: edit_region_mode.unwrap_or_else(|| {
+                    default_edit_region_mode(&provider.provider_type).to_string()
+                }),
             })
         }
         "codex" => {
@@ -1936,6 +1950,8 @@ fn configured_provider_selection(
                     .clone()
                     .unwrap_or_else(|| DEFAULT_CODEX_MODEL.to_string()),
                 supports_n: false,
+                edit_region_mode: edit_region_mode
+                    .unwrap_or_else(|| EDIT_REGION_REFERENCE_HINT.to_string()),
             })
         }
         other => Err(AppError::new(
@@ -1943,6 +1959,33 @@ fn configured_provider_selection(
             format!("Unsupported provider type: {other}"),
         )
         .with_detail(json!({"provider": requested, "type": other}))),
+    }
+}
+
+const EDIT_REGION_NATIVE_MASK: &str = "native-mask";
+const EDIT_REGION_REFERENCE_HINT: &str = "reference-hint";
+const EDIT_REGION_NONE: &str = "none";
+
+fn default_edit_region_mode(provider_type: &str) -> &'static str {
+    match provider_type {
+        "openai" => EDIT_REGION_NATIVE_MASK,
+        "codex" => EDIT_REGION_REFERENCE_HINT,
+        _ => EDIT_REGION_REFERENCE_HINT,
+    }
+}
+
+fn normalize_edit_region_mode(value: &str) -> Result<String, AppError> {
+    match value {
+        EDIT_REGION_NATIVE_MASK | EDIT_REGION_REFERENCE_HINT | EDIT_REGION_NONE => {
+            Ok(value.to_string())
+        }
+        other => Err(AppError::new(
+            "invalid_provider_config",
+            format!("Unsupported edit_region_mode: {other}"),
+        )
+        .with_detail(json!({
+            "allowed": [EDIT_REGION_NATIVE_MASK, EDIT_REGION_REFERENCE_HINT, EDIT_REGION_NONE]
+        }))),
     }
 }
 
@@ -1987,6 +2030,7 @@ fn select_builtin_provider(cli: &Cli, requested: &str) -> Result<ProviderSelecti
                 codex_endpoint: cli.endpoint.clone(),
                 default_model: DEFAULT_OPENAI_MODEL.to_string(),
                 supports_n: true,
+                edit_region_mode: EDIT_REGION_NATIVE_MASK.to_string(),
             })
         }
         "codex" => {
@@ -2005,6 +2049,7 @@ fn select_builtin_provider(cli: &Cli, requested: &str) -> Result<ProviderSelecti
                 codex_endpoint: cli.endpoint.clone(),
                 default_model: DEFAULT_CODEX_MODEL.to_string(),
                 supports_n: false,
+                edit_region_mode: EDIT_REGION_REFERENCE_HINT.to_string(),
             })
         }
         "auto" => {
@@ -2030,6 +2075,7 @@ fn select_builtin_provider(cli: &Cli, requested: &str) -> Result<ProviderSelecti
                     codex_endpoint: cli.endpoint.clone(),
                     default_model: DEFAULT_OPENAI_MODEL.to_string(),
                     supports_n: true,
+                    edit_region_mode: EDIT_REGION_NATIVE_MASK.to_string(),
                 })
             } else if codex_ready {
                 Ok(ProviderSelection {
@@ -2041,6 +2087,7 @@ fn select_builtin_provider(cli: &Cli, requested: &str) -> Result<ProviderSelecti
                     codex_endpoint: cli.endpoint.clone(),
                     default_model: DEFAULT_CODEX_MODEL.to_string(),
                     supports_n: false,
+                    edit_region_mode: EDIT_REGION_REFERENCE_HINT.to_string(),
                 })
             } else {
                 Err(
@@ -2105,6 +2152,7 @@ fn select_request_provider(
             codex_endpoint: cli.endpoint.clone(),
             default_model: DEFAULT_CODEX_MODEL.to_string(),
             supports_n: false,
+            edit_region_mode: EDIT_REGION_REFERENCE_HINT.to_string(),
         });
     }
     if matches!(
@@ -2124,18 +2172,19 @@ fn select_request_provider(
             codex_endpoint: cli.endpoint.clone(),
             default_model: DEFAULT_OPENAI_MODEL.to_string(),
             supports_n: true,
+            edit_region_mode: EDIT_REGION_NATIVE_MASK.to_string(),
         });
     }
     select_image_provider(cli)
 }
 
 fn validate_provider_specific_image_args(
-    provider: &ProviderKind,
+    selection: &ProviderSelection,
     shared: &SharedImageArgs,
     mask: Option<&str>,
     input_fidelity: Option<InputFidelity>,
 ) -> Result<(), AppError> {
-    if matches!(provider, ProviderKind::Codex) {
+    if matches!(selection.kind, ProviderKind::Codex) {
         if shared.n.unwrap_or(1) != 1 {
             return Err(AppError::new(
                 "unsupported_option",
@@ -2151,7 +2200,7 @@ fn validate_provider_specific_image_args(
         if mask.is_some() {
             return Err(AppError::new(
                 "unsupported_option",
-                "--mask is supported by the openai provider.",
+                "--mask requires a provider with native-mask region editing.",
             ));
         }
         if input_fidelity.is_some() {
@@ -2161,7 +2210,18 @@ fn validate_provider_specific_image_args(
             ));
         }
     }
-    if matches!(provider, ProviderKind::OpenAi) && shared.instructions != DEFAULT_INSTRUCTIONS {
+    if mask.is_some() && selection.edit_region_mode != EDIT_REGION_NATIVE_MASK {
+        return Err(AppError::new(
+            "unsupported_option",
+            "--mask requires a provider with native-mask region editing.",
+        )
+        .with_detail(json!({
+            "provider": selection.resolved,
+            "edit_region_mode": selection.edit_region_mode,
+        })));
+    }
+    if matches!(selection.kind, ProviderKind::OpenAi) && shared.instructions != DEFAULT_INSTRUCTIONS
+    {
         return Err(AppError::new(
             "unsupported_option",
             "--instructions is supported by the codex provider.",
@@ -3358,6 +3418,11 @@ fn run_config_add_provider(cli: &Cli, args: &AddProviderArgs) -> Result<CommandO
             "Use either --supports-n or --no-supports-n, not both.",
         ));
     }
+    let edit_region_mode = args
+        .edit_region_mode
+        .as_deref()
+        .map(normalize_edit_region_mode)
+        .transpose()?;
     let mut credentials = BTreeMap::new();
     if let Some(api_key) = &args.api_key {
         credentials.insert(
@@ -3422,6 +3487,7 @@ fn run_config_add_provider(cli: &Cli, args: &AddProviderArgs) -> Result<CommandO
             model,
             credentials,
             supports_n,
+            edit_region_mode,
         },
     );
     if args.set_default || config.default_provider.is_none() {
@@ -4266,7 +4332,7 @@ fn run_images_command(
             if use_batch {
                 validation_shared.n = None;
             }
-            validate_provider_specific_image_args(&selection.kind, &validation_shared, None, None)?;
+            validate_provider_specific_image_args(&selection, &validation_shared, None, None)?;
             if use_batch {
                 return run_batched_image_command(
                     cli,
@@ -4291,7 +4357,7 @@ fn run_images_command(
                 validation_shared.n = None;
             }
             validate_provider_specific_image_args(
-                &selection.kind,
+                &selection,
                 &validation_shared,
                 args.mask.as_deref(),
                 args.input_fidelity,
@@ -4692,6 +4758,7 @@ mod tests {
                     },
                 )]),
                 supports_n: Some(false),
+                edit_region_mode: Some(EDIT_REGION_REFERENCE_HINT.to_string()),
             },
         );
         save_app_config(&config_path, &config).unwrap();
@@ -4717,10 +4784,12 @@ mod tests {
                 },
             )]),
             supports_n: Some(true),
+            edit_region_mode: None,
         };
         let selection = configured_provider_selection("local", &provider, "test", None).unwrap();
         assert_eq!(selection.resolved, "local");
         assert_eq!(selection.api_base, "https://example.com/v1");
         assert!(matches!(selection.kind, ProviderKind::OpenAi));
+        assert_eq!(selection.edit_region_mode, EDIT_REGION_REFERENCE_HINT);
     }
 }
