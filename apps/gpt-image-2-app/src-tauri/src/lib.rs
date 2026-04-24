@@ -236,12 +236,6 @@ fn output_extension(format: Option<&str>) -> &str {
     }
 }
 
-fn is_official_openai_base(api_base: Option<&str>) -> bool {
-    api_base
-        .map(|api_base| api_base.trim_start().starts_with("https://api.openai.com/"))
-        .unwrap_or(false)
-}
-
 fn provider_accepts_multiple_outputs(provider: Option<&str>) -> bool {
     let config = load_config().ok();
     let selected = provider
@@ -262,15 +256,11 @@ fn provider_accepts_multiple_outputs(provider: Option<&str>) -> bool {
 
     match selected {
         Some("codex") => false,
-        Some("openai") => true,
         Some(name) => config
             .as_ref()
             .and_then(|config| config.providers.get(name))
-            .map(|provider| {
-                provider.provider_type == "openai"
-                    || is_official_openai_base(provider.api_base.as_deref())
-            })
-            .unwrap_or(false),
+            .map(|provider| provider.provider_type != "codex")
+            .unwrap_or(true),
         None => true,
     }
 }

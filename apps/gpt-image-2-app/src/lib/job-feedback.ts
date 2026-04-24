@@ -28,6 +28,11 @@ export function outputCountDescription(actual: number, requested: number) {
   return actual > 1 ? `已保存 ${actual} 个输出` : "输出已保存";
 }
 
+export function outputCountMismatchMessage(actual: number, requested: number) {
+  if (requested <= 1 || actual === requested) return null;
+  return `已向 provider 请求 ${requested} 个输出，但 API 响应体里只有 ${actual} 个可保存图片。`;
+}
+
 export function submittedEvent(message: string): JobEvent {
   return {
     seq: 1,

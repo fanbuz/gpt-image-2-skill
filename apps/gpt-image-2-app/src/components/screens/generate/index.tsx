@@ -16,7 +16,7 @@ import { useCreateGenerate } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
 import { useTweaks } from "@/hooks/use-tweaks";
 import { api } from "@/lib/api";
-import { completedEvent, errorMessage, failedEvent, outputCountDescription, responseOutputCount, submittedEvent } from "@/lib/job-feedback";
+import { completedEvent, errorMessage, failedEvent, outputCountDescription, outputCountMismatchMessage, responseOutputCount, submittedEvent } from "@/lib/job-feedback";
 import { QUALITY_OPTIONS } from "@/lib/image-options";
 import { effectiveOutputCount, providerSupportsMultipleOutputs, requestOutputCount } from "@/lib/provider-capabilities";
 import { effectiveDefaultProvider, providerNames as readProviderNames } from "@/lib/providers";
@@ -47,6 +47,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
   const [pendingOutputCount, setPendingOutputCount] = useState<number | null>(null);
   const [localEvents, setLocalEvents] = useState<JobEvent[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
+  const [runNotice, setRunNotice] = useState<string | null>(null);
 
   const { events, running } = useJobEvents(jobId);
   const mutate = useCreateGenerate();
@@ -78,6 +79,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
     setRunError(null);
     setJobId(null);
     setOutputCount(0);
+    setRunNotice(null);
     setPendingOutputCount(plannedN);
     setLocalEvents([submittedEvent(`已提交到 Tauri core，正在请求 ${plannedN} 个输出。`)]);
     try {
@@ -94,6 +96,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
       const count = responseOutputCount(res);
       setOutputCount(count);
       setJobId(res.job_id);
+      setRunNotice(outputCountMismatchMessage(count, plannedN));
       setLocalEvents([completedEvent(res)]);
       toast.success("生成完成", {
         id: toastId,
@@ -211,6 +214,12 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
               {hasOutputs && outputs.map((o) => (
                 <OutputTile key={o.index} output={o} />
               ))}
+            </div>
+          )}
+
+          {runNotice && !isWorking && (
+            <div className="mt-3 rounded-lg border border-[color:var(--warn-border,var(--border))] bg-sunken px-3 py-2 text-[12px] leading-relaxed text-muted">
+              {runNotice} 后台如果显示生成了更多图片，说明兼容层没有把所有图片序列化回 OpenAI 响应。
             </div>
           )}
 
