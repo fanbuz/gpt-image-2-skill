@@ -31,7 +31,7 @@ jobs:
           RELEASE_DRAFT: ${{ inputs.release_draft }}
           PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          if gh release view "$RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             echo "Release $RELEASE_TAG already exists."
             exit 0
           fi
@@ -45,6 +45,7 @@ jobs:
           fi
 
           gh release create "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
             --title "GPT Image 2 $RELEASE_TAG" \
             --notes "Desktop app installers for GPT Image 2." \
             "${flags[@]}"
@@ -192,4 +193,4 @@ jobs:
             exit 1
           fi
 
-          gh release upload "$RELEASE_TAG" "${artifacts[@]}" --clobber
+          gh release upload "$RELEASE_TAG" "${artifacts[@]}" --repo "${{ github.repository }}" --clobber
