@@ -28,16 +28,23 @@ const outputPaths = new Map<string, string>();
 
 function rememberJobOutputs(job?: Partial<Job> | null, payload?: TauriJobResponse["payload"]) {
   if (!job?.id) return;
-  if (job.output_path) outputPaths.set(`${job.id}:0`, job.output_path);
   for (const output of job.outputs ?? []) {
     outputPaths.set(`${job.id}:${output.index}`, output.path);
+  }
+  // Only fall back to output_path as index 0 when outputs is empty
+  // (legacy single-shot jobs). During streaming, output_path may point at
+  // an arbitrary index and must not masquerade as index 0.
+  if (job.output_path && (!job.outputs || job.outputs.length === 0)) {
+    outputPaths.set(`${job.id}:0`, job.output_path);
   }
   const files = payload?.output?.files ?? [];
   for (const output of files) {
     outputPaths.set(`${job.id}:${output.index}`, output.path);
   }
   const primary = payload?.output?.path;
-  if (primary) outputPaths.set(`${job.id}:0`, primary);
+  if (primary && files.length === 0) {
+    outputPaths.set(`${job.id}:0`, primary);
+  }
 }
 
 function normalizeJob(raw: Record<string, unknown>): Job {
@@ -189,14 +196,23 @@ export const api = {
     return path ? convertFileSrc(path) : "";
   },
   jobOutputUrl(job: Job, index = 0) {
-    const outputPath = job.outputs.find((output) => output.index === index)?.path;
-    const path = outputPath ?? (index === 0 ? job.output_path : undefined);
-    const rememberedPath = outputPaths.get(`${job.id}:${index}`) ?? (index === 0 ? outputPaths.get(`${job.id}:0`) : undefined);
-    return path ? convertFileSrc(path) : rememberedPath ? convertFileSrc(rememberedPath) : "";
+    const direct = job.outputs.find((output) => output.index === index)?.path;
+    if (direct) return convertFileSrc(direct);
+    const remembered = outputPaths.get(`${job.id}:${index}`);
+    if (remembered) return convertFileSrc(remembered);
+    // Legacy single-output jobs: outputs is empty and output_path is the one image.
+    if (index === 0 && job.outputs.length === 0 && job.output_path) {
+      return convertFileSrc(job.output_path);
+    }
+    return "";
   },
   jobOutputPath(job: Job, index = 0) {
-    const outputPath = job.outputs.find((output) => output.index === index)?.path;
-    return outputPath ?? (index === 0 ? job.output_path : undefined);
+    const direct = job.outputs.find((output) => output.index === index)?.path;
+    if (direct) return direct;
+    if (index === 0 && job.outputs.length === 0 && job.output_path) {
+      return job.output_path;
+    }
+    return undefined;
   },
   jobOutputPaths(job: Job) {
     const paths = job.outputs

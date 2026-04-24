@@ -3,7 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, mpsc},
     thread,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -653,31 +653,134 @@ fn chrono_like_now() -> String {
     format!("{secs}")
 }
 
-fn run_payloads_concurrently(arg_sets: Vec<Vec<String>>) -> Result<Vec<Value>, String> {
-    let handles = arg_sets
-        .into_iter()
-        .map(|args| thread::spawn(move || cli_json_result(&args)))
-        .collect::<Vec<_>>();
-    let mut payloads = Vec::new();
+#[derive(Clone)]
+struct StreamContext {
+    app: tauri::AppHandle,
+    state: JobQueueState,
+    job_id: String,
+    command: String,
+    provider: String,
+    created_at: String,
+    metadata: Value,
+}
+
+fn run_payloads_concurrently_streaming(
+    arg_sets: Vec<Vec<String>>,
+    mut on_partial: impl FnMut(usize, &Value),
+) -> Result<Vec<Value>, String> {
+    let total = arg_sets.len();
+    if total == 0 {
+        return Ok(Vec::new());
+    }
+    let (tx, rx) = mpsc::channel::<(usize, Result<Value, String>)>();
+    for (index, args) in arg_sets.into_iter().enumerate() {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            let result = cli_json_result(&args);
+            let _ = tx.send((index, result));
+        });
+    }
+    drop(tx);
+    let mut results: Vec<Option<Value>> = (0..total).map(|_| None).collect();
     let mut errors = Vec::new();
-    for handle in handles {
-        match handle.join() {
-            Ok(Ok(payload)) => payloads.push(payload),
-            Ok(Err(error)) => errors.push(error),
-            Err(_) => errors.push("Image worker panicked.".to_string()),
+    let mut received = 0usize;
+    while received < total {
+        match rx.recv() {
+            Ok((index, Ok(payload))) => {
+                on_partial(index, &payload);
+                results[index] = Some(payload);
+            }
+            Ok((_, Err(error))) => errors.push(error),
+            Err(_) => break,
+        }
+        received += 1;
+    }
+    if !errors.is_empty() {
+        return Err(errors.join("; "));
+    }
+    Ok(results.into_iter().flatten().collect())
+}
+
+fn apply_partial_output(
+    ctx: &StreamContext,
+    partials: &mut Vec<Value>,
+    batch_index: usize,
+    payload: &Value,
+) {
+    for id in collect_history_ids(payload) {
+        if id != ctx.job_id {
+            let _ = delete_history_job(&id);
         }
     }
-    if errors.is_empty() {
-        Ok(payloads)
-    } else {
-        Err(errors.join("; "))
+
+    let files = output_files_from_payload(payload);
+    for mut file in files {
+        if let Value::Object(map) = &mut file {
+            map.insert("index".to_string(), json!(batch_index));
+        }
+        partials.push(file);
     }
+
+    let mut sorted_outputs = partials.clone();
+    sorted_outputs.sort_by_key(|value| {
+        value
+            .get("index")
+            .and_then(Value::as_u64)
+            .unwrap_or(u64::MAX)
+    });
+    // `output_path` is defined as the path of the index-0 output. While the
+    // job is still streaming, only set it once index-0 has actually landed so
+    // the front-end doesn't mistake a later slot's path for index-0.
+    let first_path = sorted_outputs
+        .iter()
+        .find(|file| file.get("index").and_then(Value::as_u64) == Some(0))
+        .and_then(|file| file.get("path"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string);
+
+    let parent_snapshot = job_snapshot(
+        &ctx.job_id,
+        &ctx.command,
+        &ctx.provider,
+        "running",
+        &ctx.created_at,
+        ctx.metadata.clone(),
+        first_path,
+        json!(sorted_outputs),
+        Value::Null,
+    );
+    let _ = persist_job(&parent_snapshot);
+
+    let payload_path = payload
+        .get("output")
+        .and_then(|output| output.get("path"))
+        .cloned()
+        .unwrap_or(Value::Null);
+
+    let event = {
+        let Ok(mut inner) = ctx.state.inner.lock() else {
+            return;
+        };
+        append_queue_event(
+            &mut inner,
+            &ctx.job_id,
+            "local",
+            "job.output_ready",
+            json!({
+                "index": batch_index,
+                "path": payload_path,
+                "job": parent_snapshot,
+            }),
+        )
+    };
+    emit_queue_event(&ctx.app, &ctx.job_id, &event);
 }
 
 fn run_generate_request(
     mut request: GenerateRequest,
     fallback_id: String,
     dir: PathBuf,
+    stream: Option<StreamContext>,
 ) -> Result<Value, String> {
     if request.prompt.trim().is_empty() {
         return Err("Prompt is required.".to_string());
@@ -703,7 +806,19 @@ fn run_generate_request(
                 )
             })
             .collect::<Vec<_>>();
-        merge_batch_payloads("images generate", run_payloads_concurrently(arg_sets)?)
+        let partials = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let partials_for_cb = partials.clone();
+        let stream_for_cb = stream.clone();
+        let payloads =
+            run_payloads_concurrently_streaming(arg_sets, move |index, payload| {
+                if let Some(ctx) = &stream_for_cb {
+                    let mut list = partials_for_cb
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    apply_partial_output(ctx, &mut list, index, payload);
+                }
+            })?;
+        merge_batch_payloads("images generate", payloads)
     };
     let request_meta = serde_json::to_value(&request).unwrap_or_else(|_| json!({}));
     let job = job_from_payload(&payload, &fallback_id, "images generate", request_meta);
@@ -792,6 +907,7 @@ fn run_edit_request(
     mut request: EditRequest,
     fallback_id: String,
     dir: PathBuf,
+    stream: Option<StreamContext>,
 ) -> Result<Value, String> {
     if request.prompt.trim().is_empty() {
         return Err("Prompt is required.".to_string());
@@ -837,7 +953,19 @@ fn run_edit_request(
                 )
             })
             .collect::<Vec<_>>();
-        merge_batch_payloads("images edit", run_payloads_concurrently(arg_sets)?)
+        let partials = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let partials_for_cb = partials.clone();
+        let stream_for_cb = stream.clone();
+        let payloads =
+            run_payloads_concurrently_streaming(arg_sets, move |index, payload| {
+                if let Some(ctx) = &stream_for_cb {
+                    let mut list = partials_for_cb
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    apply_partial_output(ctx, &mut list, index, payload);
+                }
+            })?;
+        merge_batch_payloads("images edit", payloads)
     };
     let request_meta = edit_request_metadata(&request);
     let job = job_from_payload(&payload, &fallback_id, "images edit", request_meta);
@@ -1270,13 +1398,28 @@ fn start_queued_jobs(app: tauri::AppHandle, state: JobQueueState) {
         let worker_app = app.clone();
         let worker_state = state.clone();
         thread::spawn(move || {
+            let stream = StreamContext {
+                app: worker_app.clone(),
+                state: worker_state.clone(),
+                job_id: queued.id.clone(),
+                command: queued.command.clone(),
+                provider: queued.provider.clone(),
+                created_at: queued.created_at.clone(),
+                metadata: queued.metadata.clone(),
+            };
             let result = match queued.task.clone() {
-                QueuedTask::Generate(request) => {
-                    run_generate_request(request, queued.id.clone(), queued.dir.clone())
-                }
-                QueuedTask::Edit(request) => {
-                    run_edit_request(request, queued.id.clone(), queued.dir.clone())
-                }
+                QueuedTask::Generate(request) => run_generate_request(
+                    request,
+                    queued.id.clone(),
+                    queued.dir.clone(),
+                    Some(stream),
+                ),
+                QueuedTask::Edit(request) => run_edit_request(
+                    request,
+                    queued.id.clone(),
+                    queued.dir.clone(),
+                    Some(stream),
+                ),
             };
             finish_queued_job(worker_app, worker_state, queued, result);
         });
@@ -1470,7 +1613,7 @@ fn enqueue_edit_image(
 async fn generate_image(request: GenerateRequest) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (fallback_id, dir) = unique_job_dir()?;
-        run_generate_request(request, fallback_id, dir)
+        run_generate_request(request, fallback_id, dir, None)
     })
     .await
     .map_err(|error| error.to_string())?
@@ -1480,7 +1623,7 @@ async fn generate_image(request: GenerateRequest) -> Result<Value, String> {
 async fn edit_image(request: EditRequest) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (fallback_id, dir) = unique_job_dir()?;
-        run_edit_request(request, fallback_id, dir)
+        run_edit_request(request, fallback_id, dir, None)
     })
     .await
     .map_err(|error| error.to_string())?

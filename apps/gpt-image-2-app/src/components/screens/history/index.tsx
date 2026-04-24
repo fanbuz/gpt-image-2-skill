@@ -34,6 +34,10 @@ export function HistoryScreen() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(true);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [outputIndexByJob, setOutputIndexByJob] = useState<
+    Record<string, number>
+  >({});
 
   const filtered = useMemo(
     () =>
@@ -62,6 +66,9 @@ export function HistoryScreen() {
     [filter, jobs, query],
   );
   const selectedJob = jobs.find((j) => j.id === selectedId);
+  const selectedOutputIndex = selectedJob
+    ? (outputIndexByJob[selectedJob.id] ?? 0)
+    : 0;
 
   useEffect(() => {
     const onOpenJob = (event: Event) => {
@@ -73,6 +80,12 @@ export function HistoryScreen() {
     window.addEventListener(OPEN_JOB_EVENT, onOpenJob);
     return () => window.removeEventListener(OPEN_JOB_EVENT, onOpenJob);
   }, []);
+
+  const setJobOutputIndex = (jobId: string, index: number) => {
+    setOutputIndexByJob((prev) =>
+      prev[jobId] === index ? prev : { ...prev, [jobId]: index },
+    );
+  };
 
   return (
     <div
@@ -132,10 +145,27 @@ export function HistoryScreen() {
                 key={j.id}
                 job={j}
                 selected={j.id === selectedId}
+                expanded={expandedIds.has(j.id)}
                 onSelect={() => {
                   setSelectedId(j.id);
                   setDrawerOpen(true);
                 }}
+                onSelectOutput={(index) => {
+                  setSelectedId(j.id);
+                  setJobOutputIndex(j.id, index);
+                  setDrawerOpen(true);
+                }}
+                onToggleExpanded={() =>
+                  setExpandedIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(j.id)) {
+                      next.delete(j.id);
+                    } else {
+                      next.add(j.id);
+                    }
+                    return next;
+                  })
+                }
                 onDelete={() => deleteJob.mutate(j.id)}
               />
             ))
@@ -165,6 +195,10 @@ export function HistoryScreen() {
         <div className="border-l border-border bg-raised overflow-hidden">
           <JobMetadataDrawer
             job={selectedJob}
+            outputIndex={selectedOutputIndex}
+            onOutputIndexChange={(index) => {
+              if (selectedJob) setJobOutputIndex(selectedJob.id, index);
+            }}
             onClose={() => setDrawerOpen(false)}
             onDelete={(id) => {
               deleteJob.mutate(id);
