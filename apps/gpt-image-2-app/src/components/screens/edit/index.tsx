@@ -11,6 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/icon";
 import { EventTimeline } from "@/components/screens/shared/event-timeline";
+import { ImageSizeInput, OutputCountInput } from "@/components/screens/shared/image-parameter-inputs";
 import { OutputTile } from "@/components/screens/shared/output-tile";
 import { MaskCanvas, type MaskMode } from "./mask-canvas";
 import { ReferenceImageCard, type RefImage } from "./reference-card";
@@ -20,7 +21,7 @@ import { useJobEvents } from "@/hooks/use-job-events";
 import { useTweaks } from "@/hooks/use-tweaks";
 import { api } from "@/lib/api";
 import { completedEvent, errorMessage, failedEvent, outputCountDescription, outputCountMismatchMessage, responseOutputCount, submittedEvent } from "@/lib/job-feedback";
-import { QUALITY_OPTIONS } from "@/lib/image-options";
+import { normalizeOutputCount, QUALITY_OPTIONS, validateImageSize, validateOutputCount } from "@/lib/image-options";
 import { effectiveOutputCount, providerSupportsMultipleOutputs, requestOutputCount } from "@/lib/provider-capabilities";
 import { effectiveDefaultProvider, providerNames as readProviderNames } from "@/lib/providers";
 import type { JobEvent, ServerConfig } from "@/lib/types";
@@ -67,7 +68,11 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const isWorking = exportKey != null || mutate.isPending || running;
   const providerCfg = provider ? config?.providers[provider] : undefined;
   const supportsMultipleOutputs = providerSupportsMultipleOutputs(config, provider);
-  const actualN = effectiveOutputCount(config, provider, n);
+  const sizeValidation = validateImageSize(size);
+  const outputCountValidation = validateOutputCount(n);
+  const parameterError = sizeValidation.message ?? (supportsMultipleOutputs ? outputCountValidation.message : undefined);
+  const safeN = normalizeOutputCount(n);
+  const actualN = effectiveOutputCount(config, provider, safeN);
   const displayN = isWorking && pendingOutputCount != null ? pendingOutputCount : actualN;
 
   const addRef = (files: FileList | null) => {
@@ -90,6 +95,10 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
 
   const handleRun = () => {
     if (!provider || refs.length === 0 || isWorking) return;
+    if (parameterError) {
+      toast.error("参数无效", { description: parameterError });
+      return;
+    }
     setRunError(null);
     setJobId(null);
     setOutputCount(0);
@@ -102,9 +111,10 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   // Kick off submission once the mask blob is ready.
   const submit = async (maskBlob: Blob | null) => {
     const form = new FormData();
-    const plannedN = effectiveOutputCount(config, provider, n);
-    const requestedN = requestOutputCount(config, provider, n);
-    const meta = { prompt, provider, size, format, quality, background, n: requestedN };
+    const normalizedSize = sizeValidation.normalized ?? size;
+    const plannedN = effectiveOutputCount(config, provider, safeN);
+    const requestedN = requestOutputCount(config, provider, safeN);
+    const meta = { prompt, provider, size: normalizedSize, format, quality, background, n: requestedN };
     form.append("meta", JSON.stringify(meta));
     refs.forEach((r, i) => form.append(`ref_${String(i).padStart(2, "0")}`, r.file, r.name));
     if (maskBlob) form.append("mask", maskBlob, "mask.png");
@@ -353,9 +363,11 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
           </Field>
 
           <div className="grid grid-cols-2 gap-2.5">
-            <Field label="尺寸">
-              <Select value={size} onChange={(e) => setSize(e.target.value)} options={["1024x1024", "1024x1792", "1792x1024", "2048x2048"]} />
-            </Field>
+            <div className="col-span-2">
+              <Field label="尺寸" hint="auto 或 16 倍数自定义尺寸">
+                <ImageSizeInput value={size} onChange={setSize} />
+              </Field>
+            </div>
             <Field label="质量">
               <Select value={quality} onChange={(e) => setQuality(e.target.value)} options={QUALITY_OPTIONS} />
             </Field>
@@ -372,7 +384,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
             hint={supportsMultipleOutputs ? "请求数量，实际以 provider 返回为准" : "此 provider 固定单张"}
           >
             {supportsMultipleOutputs ? (
-              <Segmented value={String(n)} onChange={(v) => setN(Number(v))} options={["1", "2", "4", "6"]} />
+              <OutputCountInput value={n} onChange={setN} />
             ) : (
               <div className="flex h-9 items-center justify-between rounded-md border border-border bg-sunken px-2.5 text-[12px]">
                 <span className="font-semibold">1</span>
@@ -388,7 +400,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
             size="lg"
             icon="sparkle"
             onClick={handleRun}
-            disabled={isWorking || refs.length === 0 || !provider}
+            disabled={isWorking || refs.length === 0 || !provider || Boolean(parameterError)}
             kbd="⌘↵"
             className="w-full justify-center"
           >

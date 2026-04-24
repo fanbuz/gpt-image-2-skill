@@ -33,6 +33,7 @@ pub const DEFAULT_REQUEST_TIMEOUT: u64 = 300;
 pub const DEFAULT_REFRESH_TIMEOUT: u64 = 60;
 pub const ENDPOINT_CHECK_TIMEOUT: u64 = 5;
 pub const IMAGE_SIZE_MAX_EDGE: u32 = 3840;
+pub const IMAGE_SIZE_MIN_TOTAL_PIXELS: u32 = 655_360;
 pub const IMAGE_SIZE_MAX_TOTAL_PIXELS: u32 = 8_294_400;
 pub const IMAGE_SIZE_MAX_ASPECT_RATIO: f64 = 3.0;
 pub const REFRESH_ENDPOINT: &str = "https://auth.openai.com/oauth/token";
@@ -614,7 +615,14 @@ pub fn parse_image_size(value: &str) -> Result<String, String> {
             IMAGE_SIZE_MAX_EDGE
         ));
     }
-    if width.saturating_mul(height) > IMAGE_SIZE_MAX_TOTAL_PIXELS {
+    let total_pixels = width.saturating_mul(height);
+    if total_pixels < IMAGE_SIZE_MIN_TOTAL_PIXELS {
+        return Err(format!(
+            "Image size supports at least {} total pixels.",
+            IMAGE_SIZE_MIN_TOTAL_PIXELS
+        ));
+    }
+    if total_pixels > IMAGE_SIZE_MAX_TOTAL_PIXELS {
         return Err(format!(
             "Image size supports up to {} total pixels.",
             IMAGE_SIZE_MAX_TOTAL_PIXELS
@@ -4399,6 +4407,7 @@ mod tests {
 
     #[test]
     fn parse_image_size_accepts_valid_dimensions() {
+        assert_eq!(parse_image_size("1024x640").unwrap(), "1024x640");
         assert_eq!(parse_image_size("2880x2880").unwrap(), "2880x2880");
         assert_eq!(parse_image_size("2160x3840").unwrap(), "2160x3840");
     }
@@ -4406,6 +4415,11 @@ mod tests {
     #[test]
     fn parse_image_size_rejects_oversized_square() {
         assert!(parse_image_size("4096x4096").is_err());
+    }
+
+    #[test]
+    fn parse_image_size_rejects_too_few_pixels() {
+        assert!(parse_image_size("512x512").is_err());
     }
 
     #[test]
