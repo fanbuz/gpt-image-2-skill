@@ -57,8 +57,10 @@ const linuxKeyringDepsStep = `      - name: Install Linux keyring build dependen
         if: \${{ runner.os == 'Linux' }}
         run: |
           sudo apt-get update
-          sudo apt-get install --yes pkg-config libglib2.0-dev
+          sudo apt-get install --yes pkg-config libglib2.0-dev libgtk-3-dev
 `;
+const linuxKeyringDepsStepPattern =
+  /      - name: Install Linux keyring build dependencies\n        if: \$\{\{ runner\.os == 'Linux' \}\}\n        run: \|\n(?:          .+\n)+/;
 
 const dispatchSteps = `      - name: Dispatch npm publish workflow
         run: gh workflow run "Publish npm Packages" --repo "\${{ github.repository }}" -f tag="\${{ needs.plan.outputs.tag }}"
@@ -81,7 +83,9 @@ if (!source.includes(wixStepName)) {
   );
 }
 
-if (!source.includes(linuxKeyringDepsStepName)) {
+if (source.includes(linuxKeyringDepsStepName)) {
+  source = source.replace(linuxKeyringDepsStepPattern, linuxKeyringDepsStep);
+} else {
   source = source.replace(insertAfter, `${linuxKeyringDepsStep}${insertAfter}`);
 }
 
