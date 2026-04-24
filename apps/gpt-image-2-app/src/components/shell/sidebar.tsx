@@ -10,7 +10,7 @@ export type ScreenId = "generate" | "edit" | "history" | "providers";
 const NAV: { id: ScreenId; label: string; icon: IconName; kbd: string }[] = [
   { id: "generate", label: "生成", icon: "generate", kbd: "1" },
   { id: "edit", label: "编辑", icon: "edit", kbd: "2" },
-  { id: "history", label: "历史与队列", icon: "history", kbd: "3" },
+  { id: "history", label: "任务", icon: "history", kbd: "3" },
   { id: "providers", label: "服务商", icon: "providers", kbd: "4" },
 ];
 

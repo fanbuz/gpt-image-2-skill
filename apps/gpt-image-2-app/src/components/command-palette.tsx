@@ -58,7 +58,7 @@ export function CommandPalette({
       },
       {
         group: "跳转",
-        label: "历史与队列",
+        label: "任务",
         icon: "history",
         action: () => setScreen("history"),
       },

@@ -60,7 +60,7 @@ function JobToast({
             {promptOf(job)}
           </div>
           <div className="mt-1 text-[11px] text-faint">
-            {subtitle} · 点击查看历史
+            {subtitle} · 点击查看任务
           </div>
         </div>
       </div>
