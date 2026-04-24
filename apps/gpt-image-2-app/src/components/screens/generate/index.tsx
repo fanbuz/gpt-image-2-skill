@@ -30,7 +30,7 @@ const PRESETS = [
   "水墨写意山水, 留白, 竖幅",
 ];
 
-export function GenerateScreen({ config }: { config?: ServerConfig }) {
+export function GenerateScreen({ config, onOpenEdit }: { config?: ServerConfig; onOpenEdit?: () => void }) {
   const { tweaks } = useTweaks();
   const providerNames = useMemo(() => readProviderNames(config), [config]);
   const defaultProvider = effectiveDefaultProvider(config);
@@ -170,8 +170,11 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
               className="w-full min-h-[80px] resize-y bg-transparent border-none outline-none text-[15px] leading-[1.5] text-foreground"
             />
             <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <Button variant="ghost" size="sm" icon="image" disabled>参考图</Button>
-              <Button variant="ghost" size="sm" icon="wand" disabled>润色</Button>
+              {onOpenEdit && (
+                <Button variant="ghost" size="sm" icon="image" onClick={onOpenEdit}>
+                  有参考图？去编辑
+                </Button>
+              )}
               <div className="flex-1 min-w-0" />
               <span className="t-tiny font-mono">{prompt.length} 字</span>
               <Button variant="primary" size="md" icon="sparkle" onClick={handleRun} kbd="⌘↵" disabled={isWorking || !provider || Boolean(parameterError)}>

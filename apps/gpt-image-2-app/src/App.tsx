@@ -74,7 +74,7 @@ export default function App() {
             />
             <div className="flex-1 min-h-0 relative">
               <div key={screen} className="animate-fade-in h-full">
-                {screen === "generate" && <GenerateScreen config={config} />}
+                {screen === "generate" && <GenerateScreen config={config} onOpenEdit={() => setScreen("edit")} />}
                 {screen === "edit" && <EditScreen config={config} />}
                 {screen === "history" && <HistoryScreen />}
                 {screen === "providers" && <ProvidersScreen config={config} />}
