@@ -813,11 +813,11 @@ fn validate_provider_name(name: &str) -> Result<(), AppError> {
     Ok(())
 }
 
-fn default_keychain_account(provider: &str, secret: &str) -> String {
+pub fn default_keychain_account(provider: &str, secret: &str) -> String {
     format!("providers/{provider}/{secret}")
 }
 
-fn read_keychain_secret(service: &str, account: &str) -> Result<String, AppError> {
+pub fn read_keychain_secret(service: &str, account: &str) -> Result<String, AppError> {
     let entry = keyring::Entry::new(service, account).map_err(|error| {
         AppError::new("keychain_error", "Unable to open keychain entry.").with_detail(
             json!({"service": service, "account": account, "error": error.to_string()}),
@@ -830,7 +830,7 @@ fn read_keychain_secret(service: &str, account: &str) -> Result<String, AppError
     })
 }
 
-fn write_keychain_secret(service: &str, account: &str, value: &str) -> Result<(), AppError> {
+pub fn write_keychain_secret(service: &str, account: &str, value: &str) -> Result<(), AppError> {
     let entry = keyring::Entry::new(service, account).map_err(|error| {
         AppError::new("keychain_error", "Unable to open keychain entry.").with_detail(
             json!({"service": service, "account": account, "error": error.to_string()}),
@@ -3078,6 +3078,34 @@ fn normalize_saved_output(saved_files: &[Value]) -> Value {
     }
 }
 
+fn primary_saved_output_path(output_path: &Path, saved_files: &[Value]) -> PathBuf {
+    saved_files
+        .first()
+        .and_then(|file| file.get("path"))
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| output_path.to_path_buf())
+}
+
+fn history_image_metadata(
+    operation: &str,
+    selection: &ProviderSelection,
+    shared: &SharedImageArgs,
+    saved_files: &[Value],
+) -> Value {
+    json!({
+        "operation": operation,
+        "prompt": &shared.prompt,
+        "size": shared.size.as_deref(),
+        "format": shared.output_format.map(OutputFormat::as_str),
+        "quality": shared.quality.map(Quality::as_str),
+        "background": shared.background.as_str(),
+        "n": shared.n,
+        "provider_selection": selection.payload(),
+        "output": normalize_saved_output(saved_files),
+    })
+}
+
 type DecodedOpenAiImages = (Vec<Vec<u8>>, Vec<Option<String>>);
 
 fn decode_openai_images(payload: &Value) -> Result<DecodedOpenAiImages, AppError> {
@@ -3584,7 +3612,7 @@ fn record_history_job(
 pub fn list_history_jobs() -> Result<Vec<Value>, AppError> {
     let conn = open_history_db()?;
     let mut stmt = conn
-        .prepare("SELECT id, command, provider, status, output_path, created_at FROM jobs ORDER BY created_at DESC LIMIT 100")
+        .prepare("SELECT id, command, provider, status, output_path, created_at, metadata FROM jobs ORDER BY created_at DESC LIMIT 100")
         .map_err(|error| AppError::new("history_query_failed", "Unable to query history.").with_detail(json!({"error": error.to_string()})))?;
     stmt.query_map([], |row| {
         Ok(json!({
@@ -3594,6 +3622,7 @@ pub fn list_history_jobs() -> Result<Vec<Value>, AppError> {
             "status": row.get::<_, String>(3)?,
             "output_path": row.get::<_, Option<String>>(4)?,
             "created_at": row.get::<_, String>(5)?,
+            "metadata": serde_json::from_str::<Value>(&row.get::<_, String>(6)?).unwrap_or(Value::Null),
         }))
     })
     .map_err(|error| {
@@ -3852,16 +3881,13 @@ fn run_openai_image_command(
         ));
     }
     let saved_files = save_images(&output_path, &image_bytes_list)?;
+    let primary_output_path = primary_saved_output_path(&output_path, &saved_files);
     let history_job_id = record_history_job(
         &format!("images {operation}"),
         &selection.resolved,
         "completed",
-        Some(&output_path),
-        json!({
-            "operation": operation,
-            "provider_selection": selection.payload(),
-            "output": normalize_saved_output(&saved_files),
-        }),
+        Some(&primary_output_path),
+        history_image_metadata(operation, selection, shared, &saved_files),
     )
     .ok();
     emit_progress_event(
@@ -3965,16 +3991,13 @@ fn run_codex_image_command(
         .map(decode_base64_bytes)
         .collect::<Result<_, _>>()?;
     let saved_files = save_images(&output_path, &image_bytes_list)?;
+    let primary_output_path = primary_saved_output_path(&output_path, &saved_files);
     let history_job_id = record_history_job(
         &format!("images {operation}"),
         &selection.resolved,
         "completed",
-        Some(&output_path),
-        json!({
-            "operation": operation,
-            "provider_selection": selection.payload(),
-            "output": normalize_saved_output(&saved_files),
-        }),
+        Some(&primary_output_path),
+        history_image_metadata(operation, selection, shared, &saved_files),
     )
     .ok();
     emit_progress_event(
@@ -4336,23 +4359,30 @@ fn dispatch(cli: &Cli) -> Result<CommandOutcome, AppError> {
 }
 
 pub fn run(argv: &[String]) -> i32 {
+    let outcome = run_json(argv);
+    emit_json(&outcome.payload);
+    outcome.exit_status
+}
+
+pub fn run_json(argv: &[String]) -> CommandOutcome {
     match Cli::try_parse_from(argv) {
         Ok(cli) => match dispatch(&cli) {
-            Ok(outcome) => {
-                emit_json(&outcome.payload);
-                outcome.exit_status
-            }
+            Ok(outcome) => outcome,
             Err(error) => {
                 let (payload, exit_status) = build_error_payload(error);
-                emit_json(&payload);
-                exit_status
+                CommandOutcome {
+                    payload,
+                    exit_status,
+                }
             }
         },
         Err(error) => {
             let app_error = AppError::new("invalid_command", error.to_string()).with_exit_status(2);
             let (payload, exit_status) = build_error_payload(app_error);
-            emit_json(&payload);
-            exit_status
+            CommandOutcome {
+                payload,
+                exit_status,
+            }
         }
     }
 }
