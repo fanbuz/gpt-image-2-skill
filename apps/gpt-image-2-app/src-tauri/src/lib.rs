@@ -16,7 +16,7 @@ use gpt_image_2_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 fn app_error(error: gpt_image_2_core::AppError) -> String {
     format!("{}: {}", error.code, error.message)
@@ -1807,6 +1807,16 @@ fn open_system_path(path: &Path, reveal: bool) -> Result<(), String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            let window = app
+                .get_webview_window("main")
+                .or_else(|| app.webview_windows().into_values().next());
+            if let Some(window) = window {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .manage(JobQueueState::default())
         .invoke_handler(tauri::generate_handler![
             config_path,
