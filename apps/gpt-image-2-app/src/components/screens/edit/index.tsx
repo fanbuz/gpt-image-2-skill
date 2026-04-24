@@ -19,7 +19,8 @@ import { useCreateEdit } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
 import { useTweaks } from "@/hooks/use-tweaks";
 import { api } from "@/lib/api";
-import { completedEvent, errorMessage, failedEvent, responseOutputCount, submittedEvent } from "@/lib/job-feedback";
+import { completedEvent, errorMessage, failedEvent, outputCountDescription, responseOutputCount, submittedEvent } from "@/lib/job-feedback";
+import { QUALITY_OPTIONS } from "@/lib/image-options";
 import { effectiveOutputCount, providerSupportsMultipleOutputs, requestOutputCount } from "@/lib/provider-capabilities";
 import { effectiveDefaultProvider, providerNames as readProviderNames } from "@/lib/providers";
 import type { JobEvent, ServerConfig } from "@/lib/types";
@@ -35,7 +36,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const [provider, setProvider] = useState<string>("");
   const [size, setSize] = useState("1024x1024");
   const [format, setFormat] = useState("png");
-  const [quality, setQuality] = useState("high");
+  const [quality, setQuality] = useState("auto");
   const [background, setBackground] = useState("auto");
   const [n, setN] = useState(4);
   const [refs, setRefs] = useState<(RefImage & { file: File })[]>([]);
@@ -46,6 +47,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const [exportKey, setExportKey] = useState<number | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [outputCount, setOutputCount] = useState(0);
+  const [pendingOutputCount, setPendingOutputCount] = useState<number | null>(null);
   const [localEvents, setLocalEvents] = useState<JobEvent[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
 
@@ -65,6 +67,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const providerCfg = provider ? config?.providers[provider] : undefined;
   const supportsMultipleOutputs = providerSupportsMultipleOutputs(config, provider);
   const actualN = effectiveOutputCount(config, provider, n);
+  const displayN = isWorking && pendingOutputCount != null ? pendingOutputCount : actualN;
 
   const addRef = (files: FileList | null) => {
     if (!files) return;
@@ -77,6 +80,12 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   };
 
   const selectedRefObj = refs.find((r) => r.id === selectedRef);
+
+  useEffect(() => {
+    if (!supportsMultipleOutputs && n !== 1) {
+      setN(1);
+    }
+  }, [n, supportsMultipleOutputs]);
 
   const handleRun = () => {
     if (!provider || refs.length === 0 || isWorking) return;
@@ -91,6 +100,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   // Kick off submission once the mask blob is ready.
   const submit = async (maskBlob: Blob | null) => {
     const form = new FormData();
+    const plannedN = effectiveOutputCount(config, provider, n);
     const requestedN = requestOutputCount(config, provider, n);
     const meta = { prompt, provider, size, format, quality, background, n: requestedN };
     form.append("meta", JSON.stringify(meta));
@@ -99,6 +109,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
     const toastId = toast.loading("正在编辑图像", {
       description: `${refs.length} 张参考图 · ${provider}`,
     });
+    setPendingOutputCount(plannedN);
     try {
       const res = await mutate.mutateAsync(form);
       const count = responseOutputCount(res);
@@ -107,7 +118,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
       setLocalEvents([completedEvent(res)]);
       toast.success("编辑完成", {
         id: toastId,
-        description: count > 1 ? `已保存 ${count} 个输出` : "输出已保存",
+        description: outputCountDescription(count, plannedN),
       });
     } catch (error) {
       const message = errorMessage(error);
@@ -115,6 +126,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
       setLocalEvents([failedEvent(message)]);
       toast.error("编辑失败", { id: toastId, description: message });
     } finally {
+      setPendingOutputCount(null);
       setExportKey(null);
     }
   };
@@ -263,7 +275,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
         </div>
 
         <div className="px-6 pt-5 pb-2 flex items-center gap-2.5">
-          <div className="t-h3">输出 · {isWorking ? `${actualN} 个候选生成中` : hasOutputs ? `${outputs.length} 个候选` : "尚未生成"}</div>
+          <div className="t-h3">输出 · {isWorking ? `请求 ${displayN} 个候选生成中` : hasOutputs ? `${outputs.length} 个候选` : "尚未生成"}</div>
           <div className="flex-1" />
           {hasOutputs && (
             <>
@@ -290,7 +302,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {isWorking && !hasOutputs &&
-                Array.from({ length: actualN }).map((_, i) => (
+                Array.from({ length: displayN }).map((_, i) => (
                   <div
                     key={i}
                     className="aspect-square rounded-lg border border-border flex items-center justify-center text-faint font-mono text-[11px] animate-shimmer"
@@ -337,7 +349,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
               <Select value={size} onChange={(e) => setSize(e.target.value)} options={["1024x1024", "1024x1792", "1792x1024", "2048x2048"]} />
             </Field>
             <Field label="质量">
-              <Select value={quality} onChange={(e) => setQuality(e.target.value)} options={[{ value: "low", label: "低" }, { value: "medium", label: "中" }, { value: "high", label: "高" }]} />
+              <Select value={quality} onChange={(e) => setQuality(e.target.value)} options={QUALITY_OPTIONS} />
             </Field>
             <Field label="格式">
               <Select value={format} onChange={(e) => setFormat(e.target.value)} options={["png", "jpeg", "webp"]} />
@@ -347,7 +359,10 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
             </Field>
           </div>
 
-          <Field label="输出数量">
+          <Field
+            label="输出数量"
+            hint={supportsMultipleOutputs ? "请求数量，实际以 provider 返回为准" : "此 provider 固定单张"}
+          >
             {supportsMultipleOutputs ? (
               <Segmented value={String(n)} onChange={(v) => setN(Number(v))} options={["1", "2", "4", "6"]} />
             ) : (
@@ -373,7 +388,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
           </Button>
           <div className="flex justify-between mt-2 text-[11px] text-faint">
             <span>{refs.length} 张参考图</span>
-            <span className="t-mono">{actualN}×{size.split("x")[0]}px</span>
+            <span className="t-mono">{displayN}×{size.split("x")[0]}px</span>
           </div>
         </div>
 

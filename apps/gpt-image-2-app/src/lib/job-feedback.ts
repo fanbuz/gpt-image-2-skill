@@ -20,6 +20,14 @@ export function responseOutputPath(response: TauriJobResponse) {
   return response.job?.output_path ?? response.payload?.output?.path ?? response.payload?.output?.files?.[0]?.path;
 }
 
+export function outputCountDescription(actual: number, requested: number) {
+  if (actual < 1) return "未发现输出文件";
+  if (requested > 1 && actual !== requested) {
+    return `请求 ${requested} 个，provider 返回 ${actual} 个`;
+  }
+  return actual > 1 ? `已保存 ${actual} 个输出` : "输出已保存";
+}
+
 export function submittedEvent(message: string): JobEvent {
   return {
     seq: 1,

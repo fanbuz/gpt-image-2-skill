@@ -16,7 +16,8 @@ import { useCreateGenerate } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
 import { useTweaks } from "@/hooks/use-tweaks";
 import { api } from "@/lib/api";
-import { completedEvent, errorMessage, failedEvent, responseOutputCount, submittedEvent } from "@/lib/job-feedback";
+import { completedEvent, errorMessage, failedEvent, outputCountDescription, responseOutputCount, submittedEvent } from "@/lib/job-feedback";
+import { QUALITY_OPTIONS } from "@/lib/image-options";
 import { effectiveOutputCount, providerSupportsMultipleOutputs, requestOutputCount } from "@/lib/provider-capabilities";
 import { effectiveDefaultProvider, providerNames as readProviderNames } from "@/lib/providers";
 import type { JobEvent, ServerConfig } from "@/lib/types";
@@ -38,11 +39,12 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
   const [provider, setProvider] = useState<string>("");
   const [size, setSize] = useState("1024x1024");
   const [format, setFormat] = useState("png");
-  const [quality, setQuality] = useState("high");
+  const [quality, setQuality] = useState("auto");
   const [background, setBackground] = useState("auto");
   const [n, setN] = useState(4);
   const [jobId, setJobId] = useState<string | null>(null);
   const [outputCount, setOutputCount] = useState(0);
+  const [pendingOutputCount, setPendingOutputCount] = useState<number | null>(null);
   const [localEvents, setLocalEvents] = useState<JobEvent[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
 
@@ -52,6 +54,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
   const providerCfg = provider ? config?.providers[provider] : undefined;
   const supportsMultipleOutputs = providerSupportsMultipleOutputs(config, provider);
   const actualN = effectiveOutputCount(config, provider, n);
+  const displayN = isWorking && pendingOutputCount != null ? pendingOutputCount : actualN;
 
   useEffect(() => {
     if (providerNames.length > 0 && (!provider || !config?.providers[provider])) {
@@ -59,8 +62,15 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
     }
   }, [config?.providers, defaultProvider, provider, providerNames]);
 
+  useEffect(() => {
+    if (!supportsMultipleOutputs && n !== 1) {
+      setN(1);
+    }
+  }, [n, supportsMultipleOutputs]);
+
   const handleRun = async () => {
     if (!provider || isWorking) return;
+    const plannedN = effectiveOutputCount(config, provider, n);
     const requestedN = requestOutputCount(config, provider, n);
     const toastId = toast.loading("正在生成图像", {
       description: `${provider} · ${size} · ${quality}`,
@@ -68,7 +78,8 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
     setRunError(null);
     setJobId(null);
     setOutputCount(0);
-    setLocalEvents([submittedEvent(`已提交到 Tauri core，正在等待 ${actualN} 个输出。`)]);
+    setPendingOutputCount(plannedN);
+    setLocalEvents([submittedEvent(`已提交到 Tauri core，正在请求 ${plannedN} 个输出。`)]);
     try {
       const res = await mutate.mutateAsync({
         prompt,
@@ -78,7 +89,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
         quality,
         background,
         n: requestedN,
-        metadata: { size, format, quality, background, n: actualN },
+        metadata: { size, format, quality, background, n: plannedN },
       });
       const count = responseOutputCount(res);
       setOutputCount(count);
@@ -86,13 +97,15 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
       setLocalEvents([completedEvent(res)]);
       toast.success("生成完成", {
         id: toastId,
-        description: count > 1 ? `已保存 ${count} 个输出` : "输出已保存",
+        description: outputCountDescription(count, plannedN),
       });
     } catch (error) {
       const message = errorMessage(error);
       setRunError(message);
       setLocalEvents([failedEvent(message)]);
       toast.error("生成失败", { id: toastId, description: message });
+    } finally {
+      setPendingOutputCount(null);
     }
   };
 
@@ -151,7 +164,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
         <div className="px-7 pb-6 pt-3 max-w-[820px] mx-auto w-full flex-1">
           <div className="flex items-center gap-2.5 mb-3">
             <div className="t-h3">
-              {isWorking ? `生成中 · ${actualN} 个候选` : hasOutputs ? `候选 · ${outputs.length}` : "候选"}
+              {isWorking ? `生成中 · 请求 ${displayN} 个候选` : hasOutputs ? `候选 · ${outputs.length}` : "候选"}
             </div>
             {hasOutputs && outputs[0]?.selected && <Badge tone="accent" icon="check">已选 A</Badge>}
             <div className="flex-1" />
@@ -181,9 +194,9 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
               />
             </Card>
           ) : (
-            <div className="grid gap-3" style={{ gridTemplateColumns: actualN <= 2 ? "1fr 1fr" : `repeat(${Math.min(actualN, 4)}, 1fr)` }}>
+            <div className="grid gap-3" style={{ gridTemplateColumns: displayN <= 2 ? "1fr 1fr" : `repeat(${Math.min(displayN, 4)}, 1fr)` }}>
               {isWorking && !hasOutputs &&
-                Array.from({ length: actualN }).map((_, i) => (
+                Array.from({ length: displayN }).map((_, i) => (
                   <div
                     key={i}
                     className="aspect-square rounded-lg border border-border flex items-center justify-center text-faint font-mono text-[11px] animate-shimmer"
@@ -245,7 +258,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
               <Select value={size} onChange={(e) => setSize(e.target.value)} options={["1024x1024", "1024x1792", "1792x1024", "2048x2048"]} />
             </Field>
             <Field label="质量">
-              <Select value={quality} onChange={(e) => setQuality(e.target.value)} options={[{ value: "low", label: "低" }, { value: "medium", label: "中" }, { value: "high", label: "高" }]} />
+              <Select value={quality} onChange={(e) => setQuality(e.target.value)} options={QUALITY_OPTIONS} />
             </Field>
             <Field label="格式">
               <Select value={format} onChange={(e) => setFormat(e.target.value)} options={["png", "jpeg", "webp"]} />
@@ -254,7 +267,10 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
               <Select value={background} onChange={(e) => setBackground(e.target.value)} options={[{ value: "auto", label: "自动" }, { value: "transparent", label: "透明" }, { value: "opaque", label: "不透明" }]} />
             </Field>
           </div>
-          <Field label="输出数量">
+          <Field
+            label="输出数量"
+            hint={supportsMultipleOutputs ? "请求数量，实际以 provider 返回为准" : "此 provider 固定单张"}
+          >
             {supportsMultipleOutputs ? (
               <Segmented value={String(n)} onChange={(v) => setN(Number(v))} options={["1", "2", "4", "6"]} />
             ) : (
