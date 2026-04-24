@@ -1,4 +1,12 @@
-import { createContext, createElement, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import type { Tweaks } from "@/lib/types";
 
 const DEFAULT_TWEAKS: Tweaks = {
@@ -6,7 +14,6 @@ const DEFAULT_TWEAKS: Tweaks = {
   accent: "green",
   font: "system",
   density: "comfortable",
-  timeline: "card",
 };
 
 const STORAGE_KEY = "gpt2.tweaks";
@@ -38,14 +45,22 @@ export function TweaksProvider({ children }: { children: ReactNode }) {
     root.setAttribute("data-accent", tweaks.accent);
     root.setAttribute("data-font", tweaks.font);
     root.setAttribute("data-density", tweaks.density);
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(tweaks)); } catch { /* ignore */ }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tweaks));
+    } catch {
+      /* ignore */
+    }
   }, [tweaks]);
 
   const setTweaks = useCallback((partial: Partial<Tweaks>) => {
     setTweaksState((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  return createElement(TweaksContext.Provider, { value: { tweaks, setTweaks } }, children);
+  return createElement(
+    TweaksContext.Provider,
+    { value: { tweaks, setTweaks } },
+    children,
+  );
 }
 
 export function useTweaks() {

@@ -5,9 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Empty } from "@/components/ui/empty";
 import { Field } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
 import { Icon } from "@/components/icon";
-import { EventTimeline } from "@/components/screens/shared/event-timeline";
 import {
   ImageSizeInput,
   OutputCountInput,
@@ -16,19 +14,14 @@ import { OutputTile } from "@/components/screens/shared/output-tile";
 import { providerKindLabel } from "@/lib/format";
 import { useCreateGenerate } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
-import { useTweaks } from "@/hooks/use-tweaks";
 import { api } from "@/lib/api";
 import {
-  completedEvent,
   errorMessage,
-  failedEvent,
   outputCountDescription,
   outputCountMismatchMessage,
   responseOutputCount,
-  submittedEvent,
 } from "@/lib/job-feedback";
 import {
-  BACKGROUND_OPTIONS,
   normalizeOutputCount,
   QUALITY_OPTIONS,
   validateImageSize,
@@ -44,7 +37,7 @@ import {
   providerNames as readProviderNames,
 } from "@/lib/providers";
 import { copyText, openPath, revealPath, saveImages } from "@/lib/user-actions";
-import type { JobEvent, ServerConfig } from "@/lib/types";
+import type { ServerConfig } from "@/lib/types";
 
 const PRESETS = [
   "等距透视的 3D 小房子, 柔和阴影",
@@ -60,7 +53,6 @@ export function GenerateScreen({
   config?: ServerConfig;
   onOpenEdit?: () => void;
 }) {
-  const { tweaks } = useTweaks();
   const providerNames = useMemo(() => readProviderNames(config), [config]);
   const defaultProvider = effectiveDefaultProvider(config);
   const [prompt, setPrompt] = useState("");
@@ -68,7 +60,6 @@ export function GenerateScreen({
   const [size, setSize] = useState("1024x1024");
   const [format, setFormat] = useState("png");
   const [quality, setQuality] = useState("auto");
-  const [background, setBackground] = useState("auto");
   const [n, setN] = useState(1);
   const [jobId, setJobId] = useState<string | null>(null);
   const [outputCount, setOutputCount] = useState(0);
@@ -76,7 +67,6 @@ export function GenerateScreen({
   const [pendingOutputCount, setPendingOutputCount] = useState<number | null>(
     null,
   );
-  const [localEvents, setLocalEvents] = useState<JobEvent[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [runNotice, setRunNotice] = useState<string | null>(null);
   const promptId = useId();
@@ -115,12 +105,6 @@ export function GenerateScreen({
     }
   }, [n, supportsMultipleOutputs]);
 
-  useEffect(() => {
-    if (background === "transparent") {
-      setBackground("auto");
-    }
-  }, [background]);
-
   const handleRun = async () => {
     if (!provider || isWorking) return;
     if (parameterError) {
@@ -139,7 +123,6 @@ export function GenerateScreen({
     setSelectedOutput(0);
     setRunNotice(null);
     setPendingOutputCount(plannedN);
-    setLocalEvents([submittedEvent(`已开始生成 ${plannedN} 张候选图。`)]);
     try {
       const res = await mutate.mutateAsync({
         prompt,
@@ -147,13 +130,11 @@ export function GenerateScreen({
         size: normalizedSize,
         format,
         quality,
-        background,
         n: requestedN,
         metadata: {
           size: normalizedSize,
           format,
           quality,
-          background,
           n: plannedN,
         },
       });
@@ -161,7 +142,6 @@ export function GenerateScreen({
       setOutputCount(count);
       setJobId(res.job_id);
       setRunNotice(outputCountMismatchMessage(count, plannedN));
-      setLocalEvents([completedEvent(res)]);
       toast.success("生成完成", {
         id: toastId,
         description: outputCountDescription(count, plannedN),
@@ -169,7 +149,6 @@ export function GenerateScreen({
     } catch (error) {
       const message = errorMessage(error);
       setRunError(message);
-      setLocalEvents([failedEvent(message)]);
       toast.error("生成失败", { id: toastId, description: message });
     } finally {
       setPendingOutputCount(null);
@@ -198,7 +177,6 @@ export function GenerateScreen({
   const saveSelected = () => saveImages([selectedPath], "图片");
   const saveAll = () => saveImages(outputPaths, "图片");
 
-  const timelineEvents = events.length > 0 ? events : localEvents;
   const hasOutputs =
     outputs.some((output) => output.url) ||
     events.some((e) => e.type === "output_saved" || e.type === "job.completed");
@@ -434,112 +412,89 @@ export function GenerateScreen({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-col overflow-hidden border-t border-border bg-raised lg:border-l lg:border-t-0">
-        <div className="px-4 py-3.5 border-b border-border-faint">
-          <Field label="服务商" id={providerSelectId}>
-            <div className="flex items-center gap-1.5 px-2.5 h-9 bg-sunken border border-border rounded-md focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-faint)] transition-colors">
-              <Icon
-                name="cpu"
-                size={14}
-                aria-hidden="true"
-                style={{ color: "var(--accent)" }}
-              />
-              <select
-                id={providerSelectId}
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                disabled={providerNames.length === 0}
-                className="flex-1 bg-transparent border-none outline-none text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {providerNames.length === 0 && (
-                  <option value="">（无可用 provider）</option>
-                )}
-                {providerNames.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-              {provider === defaultProvider && (
-                <Badge tone="neutral" size="sm">
-                  默认
-                </Badge>
+      <div className="parameter-scroll border-t border-border bg-raised px-4 py-3.5 lg:border-l lg:border-t-0">
+        <Field label="服务商" id={providerSelectId}>
+          <div className="flex items-center gap-1.5 px-2.5 h-9 bg-sunken border border-border rounded-md focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-faint)] transition-colors">
+            <Icon
+              name="cpu"
+              size={14}
+              aria-hidden="true"
+              style={{ color: "var(--accent)" }}
+            />
+            <select
+              id={providerSelectId}
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              disabled={providerNames.length === 0}
+              className="flex-1 bg-transparent border-none outline-none text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {providerNames.length === 0 && (
+                <option value="">（无可用 provider）</option>
               )}
-            </div>
-            <div className="mt-1.5 flex gap-1.5 text-[11px] text-muted">
-              <span
-                className="t-mono truncate max-w-[160px]"
-                title={providerCfg?.model ?? ""}
-              >
-                {providerCfg?.model ?? "—"}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span className="truncate">
-                {providerKindLabel(providerCfg?.type)}
-              </span>
-            </div>
-          </Field>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="col-span-2">
-              <Field label="尺寸" hint="auto 或 16 倍数自定义尺寸">
-                <ImageSizeInput value={size} onChange={setSize} />
-              </Field>
-            </div>
-            <Field label="质量">
-              <Select
-                value={quality}
-                onChange={(e) => setQuality(e.target.value)}
-                options={QUALITY_OPTIONS}
-              />
-            </Field>
-            <Field label="格式">
-              <Select
-                value={format}
-                onChange={(e) => setFormat(e.target.value)}
-                options={["png", "jpeg", "webp"]}
-              />
-            </Field>
-            <Field label="背景">
-              <Select
-                value={background}
-                onChange={(e) => setBackground(e.target.value)}
-                options={BACKGROUND_OPTIONS}
-              />
-            </Field>
-          </div>
-          <Field
-            label="输出数量"
-            hint={
-              supportsMultipleOutputs
-                ? "可以一次生成多张候选"
-                : "这个服务一次只返回一张"
-            }
-          >
-            {supportsMultipleOutputs ? (
-              <OutputCountInput value={n} onChange={setN} />
-            ) : (
-              <div className="flex h-9 items-center justify-between rounded-md border border-border bg-sunken px-2.5 text-[12px]">
-                <span className="font-semibold">1</span>
-                <span className="text-faint">会自动单张生成</span>
-              </div>
-            )}
-          </Field>
-        </div>
-
-        <div className="px-4 py-3.5 flex-1 overflow-auto flex flex-col">
-          <div className="flex items-center gap-2 mb-2.5">
-            <div className="t-h3">进度</div>
-            {isWorking && <Spinner size={12} />}
-            <div className="flex-1" />
-            {timelineEvents.length > 0 && (
-              <span className="t-tiny font-mono">
-                {timelineEvents.length} 条
-              </span>
+              {providerNames.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+            {provider === defaultProvider && (
+              <Badge tone="neutral" size="sm">
+                默认
+              </Badge>
             )}
           </div>
-          <EventTimeline events={timelineEvents} mode={tweaks.timeline} />
+          <div className="mt-1.5 flex gap-1.5 text-[11px] text-muted">
+            <span
+              className="t-mono truncate max-w-[160px]"
+              title={providerCfg?.model ?? ""}
+            >
+              {providerCfg?.model ?? "—"}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span className="truncate">
+              {providerKindLabel(providerCfg?.type)}
+            </span>
+          </div>
+        </Field>
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className="col-span-2">
+            <Field label="尺寸" hint="auto 或 16 倍数自定义尺寸">
+              <ImageSizeInput value={size} onChange={setSize} />
+            </Field>
+          </div>
+          <Field label="质量">
+            <Select
+              value={quality}
+              onChange={(e) => setQuality(e.target.value)}
+              options={QUALITY_OPTIONS}
+            />
+          </Field>
+          <Field label="格式">
+            <Select
+              value={format}
+              onChange={(e) => setFormat(e.target.value)}
+              options={["png", "jpeg", "webp"]}
+            />
+          </Field>
         </div>
+        <Field
+          label="输出数量"
+          hint={
+            supportsMultipleOutputs
+              ? "可以一次生成多张候选"
+              : "这个服务一次只返回一张"
+          }
+        >
+          {supportsMultipleOutputs ? (
+            <OutputCountInput value={n} onChange={setN} />
+          ) : (
+            <div className="flex h-9 items-center justify-between rounded-md border border-border bg-sunken px-2.5 text-[12px]">
+              <span className="font-semibold">1</span>
+              <span className="text-faint">会自动单张生成</span>
+            </div>
+          )}
+        </Field>
       </div>
     </div>
   );

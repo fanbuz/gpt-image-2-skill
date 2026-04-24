@@ -6,10 +6,8 @@ import { Empty } from "@/components/ui/empty";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Segmented } from "@/components/ui/segmented";
-import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/icon";
-import { EventTimeline } from "@/components/screens/shared/event-timeline";
 import {
   ImageSizeInput,
   OutputCountInput,
@@ -20,19 +18,14 @@ import { ReferenceImageCard, type RefImage } from "./reference-card";
 import { providerKindLabel } from "@/lib/format";
 import { useCreateEdit } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
-import { useTweaks } from "@/hooks/use-tweaks";
 import { api } from "@/lib/api";
 import {
-  completedEvent,
   errorMessage,
-  failedEvent,
   outputCountDescription,
   outputCountMismatchMessage,
   responseOutputCount,
-  submittedEvent,
 } from "@/lib/job-feedback";
 import {
-  BACKGROUND_OPTIONS,
   normalizeOutputCount,
   QUALITY_OPTIONS,
   validateImageSize,
@@ -49,7 +42,7 @@ import {
   providerNames as readProviderNames,
 } from "@/lib/providers";
 import { openPath, revealPath, saveImages } from "@/lib/user-actions";
-import type { JobEvent, ProviderConfig, ServerConfig } from "@/lib/types";
+import type { ProviderConfig, ServerConfig } from "@/lib/types";
 
 type EditMode = "reference" | "region";
 type RefWithFile = RefImage & { file: File };
@@ -74,7 +67,6 @@ function regionModeHint(mode: EditRegionMode) {
 }
 
 export function EditScreen({ config }: { config?: ServerConfig }) {
-  const { tweaks } = useTweaks();
   const providerNames = useMemo(() => readProviderNames(config), [config]);
   const defaultProvider = effectiveDefaultProvider(config);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -85,7 +77,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const [size, setSize] = useState("1024x1024");
   const [format, setFormat] = useState("png");
   const [quality, setQuality] = useState("auto");
-  const [background, setBackground] = useState("auto");
   const [n, setN] = useState(1);
   const [refs, setRefs] = useState<RefWithFile[]>([]);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
@@ -103,7 +94,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const [pendingOutputCount, setPendingOutputCount] = useState<number | null>(
     null,
   );
-  const [localEvents, setLocalEvents] = useState<JobEvent[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [runNotice, setRunNotice] = useState<string | null>(null);
   const promptId = useId();
@@ -170,12 +160,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
     }
   }, [n, supportsMultipleOutputs]);
 
-  useEffect(() => {
-    if (background === "transparent") {
-      setBackground("auto");
-    }
-  }, [background]);
-
   const addRef = (files: FileList | null) => {
     if (!files) return;
     const additions = Array.from(files).map((file, index) => ({
@@ -232,13 +216,12 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
     };
   }, []);
 
-  const resetRunState = (preparingMessage: string) => {
+  const resetRunState = () => {
     setRunError(null);
     setJobId(null);
     setOutputCount(0);
     setSelectedOutput(0);
     setRunNotice(null);
-    setLocalEvents([submittedEvent(preparingMessage)]);
   };
 
   const handleRun = () => {
@@ -259,16 +242,12 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
     }
 
     if (usesRegion) {
-      resetRunState(
-        usesNativeMask
-          ? "正在导出目标图和遮罩。"
-          : "正在准备目标图和绿色选区参考。",
-      );
+      resetRunState();
       setExportKey(Date.now());
       return;
     }
 
-    resetRunState("正在提交参考图。");
+    resetRunState();
     void submit(null);
   };
 
@@ -283,7 +262,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
       size: normalizedSize,
       format,
       quality,
-      background,
       n: requestedN,
       edit_mode: editMode,
       edit_region_mode: usesRegion ? editRegionMode : "none",
@@ -294,14 +272,12 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
       if (!maskPayload) {
         setExportKey(null);
         setRunError("遮罩导出失败，请重新涂抹一次。");
-        setLocalEvents([failedEvent("遮罩导出失败，请重新涂抹一次。")]);
         toast.error("遮罩导出失败", { description: "请重新涂抹一次。" });
         return;
       }
       if (!maskPayload.hasSelection) {
         setExportKey(null);
         setRunError("请先涂抹要修改的区域。");
-        setLocalEvents([failedEvent("请先涂抹要修改的区域。")]);
         toast.error("还没有选区", {
           description: "请在目标图上涂抹要修改的区域。",
         });
@@ -359,7 +335,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
       setOutputCount(count);
       setJobId(res.job_id);
       setRunNotice(outputCountMismatchMessage(count, plannedN));
-      setLocalEvents([completedEvent(res)]);
       toast.success("编辑完成", {
         id: toastId,
         description: outputCountDescription(count, plannedN),
@@ -367,7 +342,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
     } catch (error) {
       const message = errorMessage(error);
       setRunError(message);
-      setLocalEvents([failedEvent(message)]);
       toast.error("编辑失败", { id: toastId, description: message });
     } finally {
       setPendingOutputCount(null);
@@ -394,7 +368,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
     : undefined;
   const saveSelected = () => saveImages([selectedPath], "图片");
   const saveAll = () => saveImages(outputPaths, "图片");
-  const timelineEvents = events.length > 0 ? events : localEvents;
   const hasOutputs =
     outputs.some((output) => output.url) ||
     events.some(
@@ -751,8 +724,8 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
         </div>
       </div>
 
-      <div className="edit-settings flex flex-col overflow-hidden border-t border-border bg-raised xl:border-l xl:border-t-0">
-        <div className="border-b border-border-faint px-4 py-3.5">
+      <div className="edit-settings parameter-shelf border-t border-border bg-raised xl:border-l xl:border-t-0">
+        <div className="parameter-scroll px-4 py-3.5">
           <Field label="服务商" id={providerSelectId}>
             <div className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-sunken px-2.5 focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-faint)] transition-colors">
               <Icon
@@ -826,13 +799,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
                 options={["png", "jpeg", "webp"]}
               />
             </Field>
-            <Field label="背景">
-              <Select
-                value={background}
-                onChange={(event) => setBackground(event.target.value)}
-                options={BACKGROUND_OPTIONS}
-              />
-            </Field>
           </div>
 
           <Field
@@ -854,7 +820,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
           </Field>
         </div>
 
-        <div className="border-b border-border-faint px-4 py-3.5">
+        <div className="parameter-actions px-4 py-3.5">
           <Button
             variant="primary"
             size="lg"
@@ -884,20 +850,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
             </span>
             <span className="t-mono">{displayN} 张</span>
           </div>
-        </div>
-
-        <div className="flex flex-1 flex-col overflow-auto px-4 py-3.5">
-          <div className="mb-2.5 flex items-center gap-2">
-            <div className="t-h3">进度</div>
-            {isWorking && <Spinner size={12} />}
-            <div className="flex-1" />
-            {timelineEvents.length > 0 && (
-              <span className="t-tiny font-mono">
-                {timelineEvents.length} 条
-              </span>
-            )}
-          </div>
-          <EventTimeline events={timelineEvents} mode={tweaks.timeline} />
         </div>
       </div>
     </div>

@@ -109,21 +109,6 @@ export function TweaksPanel({
             ]}
           />
         </div>
-
-        <div>
-          <div className="t-tiny mb-1.5">进度显示</div>
-          <Segmented
-            value={tweaks.timeline}
-            onChange={(v) => setTweaks({ timeline: v })}
-            size="sm"
-            ariaLabel="进度显示"
-            options={[
-              { value: "card", label: "卡片" },
-              { value: "chip", label: "紧凑" },
-              { value: "log", label: "日志" },
-            ]}
-          />
-        </div>
       </div>
 
       <div className="px-3.5 py-2 border-t border-border-faint text-[11px] text-faint flex items-center gap-1.5">

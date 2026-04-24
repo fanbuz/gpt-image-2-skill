@@ -368,7 +368,7 @@
   min-height: 0;
   overflow: hidden;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) minmax(220px, 42%);
+  grid-template-rows: minmax(300px, 1fr) minmax(250px, 38%);
 }
 
 .edit-layout {
@@ -382,6 +382,22 @@
   grid-template-areas:
     "refs canvas"
     "refs settings";
+}
+
+.parameter-shelf {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.parameter-scroll {
+  min-height: 0;
+  overflow: auto;
+}
+
+.parameter-actions {
+  border-top: 1px solid var(--border-faint);
+  background: var(--bg-raised);
 }
 
 .edit-refs {

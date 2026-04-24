@@ -27,7 +27,12 @@ export interface ServerConfig {
   providers: Record<string, ProviderConfig>;
 }
 
-export type JobStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
+export type JobStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 export interface OutputRef {
   index: number;
@@ -85,5 +90,4 @@ export type Tweaks = {
   accent: "green" | "black" | "blue" | "violet" | "orange";
   font: "system" | "mono" | "serif";
   density: "compact" | "comfortable";
-  timeline: "card" | "chip" | "log";
 };
