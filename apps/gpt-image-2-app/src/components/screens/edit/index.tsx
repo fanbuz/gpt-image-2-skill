@@ -62,7 +62,7 @@ function regionModeLabel(mode: EditRegionMode) {
 
 function regionModeHint(mode: EditRegionMode) {
   if (mode === "native-mask") return "遮罩会精确作用在目标图上";
-  if (mode === "reference-hint") return "会把绿色选区作为参考图传给服务商";
+  if (mode === "reference-hint") return "会额外发送一张选区标记图；用户上传图片顺序保持不变";
   return "请使用多图参考，或换一个支持局部编辑的服务商";
 }
 
@@ -243,16 +243,19 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
         setExportKey(null);
         return;
       }
-      form.append("ref_00", blobFile(maskPayload.targetImage, "target.png"));
-      refs
-        .filter((ref) => ref.id !== targetRef.id)
-        .forEach((ref, index) => {
-          form.append(`ref_${String(index + 1).padStart(2, "0")}`, ref.file, ref.name);
-        });
       if (usesNativeMask) {
+        form.append("ref_00", blobFile(maskPayload.targetImage, "target.png"));
+        refs
+          .filter((ref) => ref.id !== targetRef.id)
+          .forEach((ref, index) => {
+            form.append(`ref_${String(index + 1).padStart(2, "0")}`, ref.file, ref.name);
+          });
         form.append("mask", blobFile(maskPayload.nativeMask, "mask.png"));
       }
       if (usesSoftRegion) {
+        refs.forEach((ref, index) => {
+          form.append(`ref_${String(index).padStart(2, "0")}`, ref.file, ref.name);
+        });
         form.append("selection_hint", blobFile(maskPayload.selectionHint, "selection-hint.png"));
       }
     } else {

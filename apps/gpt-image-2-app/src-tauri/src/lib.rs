@@ -703,24 +703,13 @@ async fn edit_image(request: EditRequest) -> Result<Value, String> {
         if edit_region_mode == "none" && (mask_path.is_some() || selection_hint_path.is_some()) {
             return Err("当前服务商不支持局部编辑。请切换到「多图参考」或更换服务商。".to_string());
         }
-        if edit_region_mode == "reference-hint"
-            && selection_hint_path.is_some()
-            && !ref_paths.is_empty()
-        {
-            ref_paths.insert(1, selection_hint_path.clone().unwrap());
+        if edit_region_mode == "reference-hint" && selection_hint_path.is_some() {
+            ref_paths.push(selection_hint_path.clone().unwrap());
         }
         let count = requested_n(request.n)?;
         let use_native_n = count == 1 || provider_supports_n(request.provider.as_deref());
         let make_args = |out: PathBuf, n: Option<u8>| {
             let mut args = Vec::new();
-            let prompt = if edit_region_mode == "reference-hint" && selection_hint_path.is_some() {
-                format!(
-                    "Edit the first image only. The second image marks the selected region in green. Change only the green marked region according to this request: {}. Keep everything outside the marked region unchanged. Other images are references only.",
-                    request.prompt
-                )
-            } else {
-                request.prompt.clone()
-            };
             if let Some(provider) = request.provider.as_deref()
                 && !provider.is_empty()
             {
@@ -731,7 +720,7 @@ async fn edit_image(request: EditRequest) -> Result<Value, String> {
                 "images".to_string(),
                 "edit".to_string(),
                 "--prompt".to_string(),
-                prompt,
+                request.prompt.clone(),
                 "--out".to_string(),
                 out.display().to_string(),
             ]);
