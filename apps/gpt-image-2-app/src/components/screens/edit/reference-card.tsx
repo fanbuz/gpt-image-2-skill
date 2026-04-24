@@ -1,3 +1,4 @@
+import { type KeyboardEvent } from "react";
 import { Icon } from "@/components/icon";
 import { cn } from "@/lib/cn";
 
@@ -23,47 +24,103 @@ export function ReferenceImageCard({
   onSetTarget?: () => void;
   onRemove?: () => void;
 }) {
+  const roleLabel =
+    role === "target" ? "目标图" : role === "reference" ? "参考图" : "参考图";
+  const ariaLabel = `${roleLabel}：${ref_.name}${ref_.hasMask ? "，已绘制遮罩" : ""}`;
+
+  const handleKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect?.();
+    } else if ((event.key === "Delete" || event.key === "Backspace") && onRemove) {
+      event.preventDefault();
+      onRemove();
+    } else if (event.key === "t" && onSetTarget && role !== "target") {
+      event.preventDefault();
+      onSetTarget();
+    }
+  };
+
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={ariaLabel}
+      aria-pressed={Boolean(active)}
       onClick={onSelect}
+      onKeyDown={handleKey}
       className={cn(
         "relative aspect-square rounded-lg overflow-hidden cursor-pointer transition-all bg-sunken",
         "border-[1.5px]",
+        "focus-visible:outline-none focus-visible:border-accent focus-visible:shadow-[0_0_0_3px_var(--accent-faint)]",
         active ? "border-accent shadow-[0_0_0_3px_var(--accent-faint)]" : "border-border"
       )}
     >
-      <img src={ref_.url} alt={ref_.name} className="w-full h-full object-cover" />
-      <div className="absolute top-1.5 left-1.5 px-1.5 py-px rounded bg-black/55 backdrop-blur-sm text-white text-[10px] font-semibold font-mono">
+      <img
+        src={ref_.url}
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+        decoding="async"
+        className="w-full h-full object-cover"
+      />
+      <div
+        className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded t-mono max-w-[calc(100%-64px)] truncate"
+        style={{ background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: "10px" }}
+        title={ref_.name}
+      >
         {ref_.name}
       </div>
       {role === "target" && (
-        <div className="absolute top-1.5 right-1.5 px-1.5 py-px rounded bg-accent text-[color:var(--accent-on)] text-[10px] font-semibold">
-          目标图
+        <div
+          className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold"
+          style={{ background: "var(--accent)", color: "var(--accent-on)" }}
+        >
+          目标
         </div>
       )}
       {role === "reference" && (
-        <div className="absolute top-1.5 right-1.5 px-1.5 py-px rounded bg-black/45 text-white text-[10px] font-semibold">
+        <div
+          className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold"
+          style={{ background: "rgba(0,0,0,0.45)", color: "#fff" }}
+        >
           参考
         </div>
       )}
       {ref_.hasMask && (
-        <div className="absolute top-7 right-1.5 px-1.5 py-px rounded bg-accent text-[color:var(--accent-on)] text-[10px] font-semibold flex items-center gap-1">
-          <Icon name="mask" size={10} />遮罩
+        <div
+          className="absolute top-7 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1"
+          style={{ background: "var(--accent)", color: "var(--accent-on)" }}
+        >
+          <Icon name="mask" size={10} aria-hidden="true" />遮罩
         </div>
       )}
       {onSetTarget && role !== "target" && (
         <button
-          onClick={(e) => { e.stopPropagation(); onSetTarget(); }}
-          className="absolute bottom-1.5 left-1.5 h-[22px] rounded bg-black/55 px-1.5 text-[10px] font-semibold text-white backdrop-blur-sm border-none"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSetTarget();
+          }}
+          aria-label={`把「${ref_.name}」设为目标图`}
+          className="absolute bottom-1.5 left-1.5 min-h-[28px] rounded px-2 text-[11px] font-semibold border-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]"
+          style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}
         >
           设为目标
         </button>
       )}
       <button
-        onClick={(e) => { e.stopPropagation(); onRemove?.(); }}
-        className="absolute bottom-1.5 right-1.5 w-[22px] h-[22px] rounded bg-black/55 backdrop-blur-sm text-white border-none flex items-center justify-center"
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove?.();
+        }}
+        aria-label={`删除「${ref_.name}」`}
+        className="absolute bottom-1.5 right-1.5 w-7 h-7 rounded border-none flex items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]"
+        style={{ background: "rgba(0,0,0,0.55)", color: "#fff" }}
       >
-        <Icon name="x" size={12} />
+        <Icon name="x" size={12} aria-hidden="true" />
       </button>
     </div>
   );

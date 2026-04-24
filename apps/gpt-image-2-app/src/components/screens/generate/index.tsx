@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { Empty } from "@/components/ui/empty";
 import { Field } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
@@ -34,15 +33,13 @@ export function GenerateScreen({ config, onOpenEdit }: { config?: ServerConfig; 
   const { tweaks } = useTweaks();
   const providerNames = useMemo(() => readProviderNames(config), [config]);
   const defaultProvider = effectiveDefaultProvider(config);
-  const [prompt, setPrompt] = useState(
-    "极简线条风格的日本庭院，俯视视角，晨雾中的石灯笼与枯山水，高细节"
-  );
+  const [prompt, setPrompt] = useState("");
   const [provider, setProvider] = useState<string>("");
   const [size, setSize] = useState("1024x1024");
   const [format, setFormat] = useState("png");
   const [quality, setQuality] = useState("auto");
   const [background, setBackground] = useState("auto");
-  const [n, setN] = useState(4);
+  const [n, setN] = useState(1);
   const [jobId, setJobId] = useState<string | null>(null);
   const [outputCount, setOutputCount] = useState(0);
   const [selectedOutput, setSelectedOutput] = useState(0);
@@ -50,6 +47,8 @@ export function GenerateScreen({ config, onOpenEdit }: { config?: ServerConfig; 
   const [localEvents, setLocalEvents] = useState<JobEvent[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
   const [runNotice, setRunNotice] = useState<string | null>(null);
+  const promptId = useId();
+  const providerSelectId = useId();
 
   const { events, running } = useJobEvents(jobId);
   const mutate = useCreateGenerate();
@@ -157,16 +156,18 @@ export function GenerateScreen({ config, onOpenEdit }: { config?: ServerConfig; 
     <div className="grid h-full grid-cols-[minmax(0,1fr)_300px] overflow-hidden xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className="flex flex-col overflow-auto bg-background gridpaper">
         <div className="p-6 pb-4 max-w-[820px] mx-auto w-full">
-          <div className="flex items-baseline gap-2 mb-2.5">
-            <div className="t-title">图像生成</div>
-            <div className="t-small">把想法写成提示词</div>
-          </div>
-          <div className="bg-raised border border-border rounded-xl p-3.5 shadow-sm">
+          <div className="bg-raised border border-border rounded-xl p-4 shadow-sm">
+            <label htmlFor={promptId} className="sr-only">
+              生成提示词
+            </label>
             <textarea
+              id={promptId}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="描述你想生成的图像…"
               onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleRun(); }}
+              aria-describedby={`${promptId}-counter`}
+              maxLength={4000}
               className="w-full min-h-[80px] resize-y bg-transparent border-none outline-none text-[15px] leading-[1.5] text-foreground"
             />
             <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -176,19 +177,22 @@ export function GenerateScreen({ config, onOpenEdit }: { config?: ServerConfig; 
                 </Button>
               )}
               <div className="flex-1 min-w-0" />
-              <span className="t-tiny font-mono">{prompt.length} 字</span>
+              <span id={`${promptId}-counter`} className="t-tiny font-mono" aria-live="polite">
+                {prompt.length} / 4000
+              </span>
               <Button variant="primary" size="md" icon="sparkle" onClick={handleRun} kbd="⌘↵" disabled={isWorking || !provider || Boolean(parameterError)}>
                 {isWorking ? "生成中…" : "生成"}
               </Button>
             </div>
           </div>
-          <div className="flex gap-1.5 mt-2.5 flex-wrap">
-            <span className="t-tiny pt-1.5">快速开始</span>
+          <div className="mt-2.5 flex flex-wrap items-center gap-1.5" role="group" aria-label="快速开始提示词">
+            <span className="t-tiny pt-1.5" aria-hidden="true">快速开始</span>
             {PRESETS.map((p) => (
               <button
                 key={p}
+                type="button"
                 onClick={() => setPrompt(p)}
-                className="px-2.5 py-1 bg-raised border border-border rounded-full text-[11.5px] text-muted"
+                className="min-h-[30px] rounded-full border border-border bg-raised px-3 py-1 text-[11.5px] text-muted transition-colors hover:text-foreground hover:border-border-strong"
               >
                 {p}
               </button>
@@ -196,10 +200,14 @@ export function GenerateScreen({ config, onOpenEdit }: { config?: ServerConfig; 
           </div>
         </div>
 
-        <div className="px-7 pb-6 pt-3 max-w-[820px] mx-auto w-full flex-1">
+        <div className="px-7 pb-6 pt-4 max-w-[820px] mx-auto w-full flex-1">
           <div className="flex flex-wrap items-center gap-2.5 mb-3">
             <div className="t-h3">
-              {isWorking ? `生成中 · 请求 ${displayN} 个候选` : hasOutputs ? `候选 · ${outputs.length}` : "候选"}
+              {isWorking
+                ? `生成中 · 请求 ${displayN} 张`
+                : hasOutputs
+                  ? `候选 · ${outputs.length} 张`
+                  : "候选"}
             </div>
             {hasOutputs && <Badge tone="accent" icon="check">已选 {String.fromCharCode(65 + selectedOutput)}</Badge>}
             <div className="flex-1" />
@@ -222,24 +230,20 @@ export function GenerateScreen({ config, onOpenEdit }: { config?: ServerConfig; 
           </div>
 
           {runError && !isWorking ? (
-            <Card padding={0}>
-              <Empty
-                icon="warn"
-                title="生成失败"
-                subtitle={runError}
-                action={<Button variant="secondary" size="sm" icon="reload" onClick={handleRun}>重试</Button>}
-              />
-            </Card>
+            <Empty
+              icon="warn"
+              title="生成失败"
+              subtitle={runError}
+              action={<Button variant="secondary" size="sm" icon="reload" onClick={handleRun}>重试</Button>}
+            />
           ) : !hasOutputs && !isWorking ? (
-            <Card padding={0}>
-              <Empty
-                icon="image"
-                title="从一句话开始"
-                subtitle="写下画面，点「生成」后会在这里看到候选图。图片会自动保存，也可以一键另存到下载文件夹。"
-              />
-            </Card>
+            <Empty
+              icon="image"
+              title="从一句话开始"
+              subtitle="候选会出现在这里，自动保存到本机结果文件夹。选一张满意的，再一键另存到下载目录。"
+            />
           ) : (
-            <div className="grid gap-3" style={{ gridTemplateColumns: displayN <= 2 ? "1fr 1fr" : `repeat(${Math.min(displayN, 4)}, 1fr)` }}>
+            <div className="grid gap-4" style={{ gridTemplateColumns: displayN <= 2 ? "1fr 1fr" : `repeat(${Math.min(displayN, 4)}, 1fr)` }}>
               {isWorking && !hasOutputs &&
                 Array.from({ length: displayN }).map((_, i) => (
                   <div
@@ -291,13 +295,15 @@ export function GenerateScreen({ config, onOpenEdit }: { config?: ServerConfig; 
 
       <div className="border-l border-border bg-raised flex flex-col overflow-hidden">
         <div className="px-4 py-3.5 border-b border-border-faint">
-          <Field label="服务商">
-            <div className="flex items-center gap-1.5 px-2.5 h-9 bg-sunken border border-border rounded-md">
-              <Icon name="cpu" size={14} style={{ color: "var(--accent)" }} />
+          <Field label="服务商" id={providerSelectId}>
+            <div className="flex items-center gap-1.5 px-2.5 h-9 bg-sunken border border-border rounded-md focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-faint)] transition-colors">
+              <Icon name="cpu" size={14} aria-hidden="true" style={{ color: "var(--accent)" }} />
               <select
+                id={providerSelectId}
                 value={provider}
                 onChange={(e) => setProvider(e.target.value)}
-                className="flex-1 bg-transparent border-none outline-none text-[13px] font-medium"
+                disabled={providerNames.length === 0}
+                className="flex-1 bg-transparent border-none outline-none text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {providerNames.length === 0 && <option value="">（无可用 provider）</option>}
                 {providerNames.map((p) => (
@@ -307,9 +313,9 @@ export function GenerateScreen({ config, onOpenEdit }: { config?: ServerConfig; 
               {provider === defaultProvider && <Badge tone="neutral" size="sm">默认</Badge>}
             </div>
             <div className="mt-1.5 flex gap-1.5 text-[11px] text-muted">
-              <span className="t-mono">{providerCfg?.model ?? "—"}</span>
-              <span>·</span>
-              <span>{providerKindLabel(providerCfg?.type)}</span>
+              <span className="t-mono truncate max-w-[160px]" title={providerCfg?.model ?? ""}>{providerCfg?.model ?? "—"}</span>
+              <span aria-hidden="true">·</span>
+              <span className="truncate">{providerKindLabel(providerCfg?.type)}</span>
             </div>
           </Field>
 

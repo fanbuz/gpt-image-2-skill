@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { PlaceholderImage } from "@/components/screens/shared/placeholder-image";
 
 export type MaskMode = "paint" | "erase";
@@ -14,6 +14,9 @@ export function MaskCanvas({
   seed,
   brushSize,
   mode,
+  snapshot,
+  snapshotKey,
+  onSnapshotChange,
   /** export trigger — when this value changes, we produce a Blob and fire `onExport` */
   exportKey,
   onExport,
@@ -24,6 +27,9 @@ export function MaskCanvas({
   seed?: number;
   brushSize: number;
   mode: MaskMode;
+  snapshot?: string;
+  snapshotKey?: string;
+  onSnapshotChange?: (snapshot: string | null) => void;
   exportKey?: number;
   onExport?: (payload: MaskExport | null) => void;
   clearKey?: number;
@@ -34,6 +40,12 @@ export function MaskCanvas({
   const W = 1024;
   const H = 1024;
 
+  const commitSnapshot = () => {
+    const c = canvasRef.current;
+    if (!c) return;
+    onSnapshotChange?.(c.toDataURL("image/png"));
+  };
+
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
@@ -41,8 +53,30 @@ export function MaskCanvas({
     if (!ctx) return;
     ctx.clearRect(0, 0, W, H);
     onClear?.();
+    onSnapshotChange?.(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearKey]);
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    ctx.clearRect(0, 0, W, H);
+    if (!snapshot) return;
+    let cancelled = false;
+    const image = new Image();
+    image.onload = () => {
+      if (cancelled) return;
+      ctx.clearRect(0, 0, W, H);
+      ctx.drawImage(image, 0, 0, W, H);
+    };
+    image.src = snapshot;
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshotKey, snapshot]);
 
   useEffect(() => {
     if (exportKey == null) return;
@@ -78,6 +112,21 @@ export function MaskCanvas({
     ctx.fill();
   };
 
+  const handleKey = (event: KeyboardEvent<HTMLCanvasElement>) => {
+    if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      const c = canvasRef.current;
+      const ctx = c?.getContext("2d");
+      if (c && ctx) {
+        ctx.clearRect(0, 0, W, H);
+        onSnapshotChange?.(null);
+        onClear?.();
+      }
+    } else if (event.key === "Escape") {
+      (event.currentTarget as HTMLCanvasElement).blur();
+    }
+  };
+
   return (
     <div
       className="relative w-full aspect-square rounded-[10px] overflow-hidden bg-sunken border border-border"
@@ -85,16 +134,31 @@ export function MaskCanvas({
     >
       <div className="absolute inset-0">
         {imageUrl ? (
-          <img src={imageUrl} alt="reference" className="w-full h-full object-cover" />
+          <img
+            src={imageUrl}
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+            decoding="async"
+            className="w-full h-full object-cover"
+          />
         ) : (
           <PlaceholderImage seed={seed ?? 7} />
         )}
       </div>
-      <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.15)" }} />
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ background: "rgba(0,0,0,0.15)" }}
+        aria-hidden="true"
+      />
       <canvas
         ref={canvasRef}
         width={W}
         height={H}
+        tabIndex={0}
+        role="img"
+        aria-label={`选区绘制画布（${mode === "erase" ? "擦除模式" : "绘制模式"}，按 Delete 清除选区）`}
+        onKeyDown={handleKey}
         onPointerDown={(e) => {
           (e.target as Element).setPointerCapture(e.pointerId);
           setPainting(true);
@@ -104,14 +168,27 @@ export function MaskCanvas({
         onPointerUp={(e) => {
           (e.target as Element).releasePointerCapture(e.pointerId);
           setPainting(false);
+          commitSnapshot();
         }}
-        onPointerCancel={() => setPainting(false)}
-        onPointerLeave={() => setPainting(false)}
-        className="absolute inset-0 w-full h-full"
+        onPointerCancel={() => {
+          setPainting(false);
+          commitSnapshot();
+        }}
+        onPointerLeave={() => {
+          if (painting) commitSnapshot();
+          setPainting(false);
+        }}
+        className="absolute inset-0 w-full h-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]"
         style={{ cursor: mode === "erase" ? "cell" : "crosshair" }}
       />
       <div
-        className="absolute bottom-2.5 left-2.5 px-2 py-1 bg-black/55 backdrop-blur-sm text-white text-[10.5px] font-medium rounded font-mono"
+        className="absolute bottom-2.5 left-2.5 px-2 py-1 t-mono rounded pointer-events-none"
+        style={{
+          background: "rgba(0,0,0,0.55)",
+          color: "#fff",
+          fontSize: "10.5px",
+        }}
+        aria-hidden="true"
       >
         涂抹要修改的区域 · 拖动指针
       </div>

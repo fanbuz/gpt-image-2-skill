@@ -1,6 +1,11 @@
 import { forwardRef, type SelectHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 import { Icon } from "@/components/icon";
+import {
+  useFieldDescribedBy,
+  useFieldId,
+  useFieldInvalid,
+} from "@/lib/field-context";
 
 type Option = string | { value: string; label: string };
 
@@ -12,13 +17,41 @@ type Props = Omit<SelectHTMLAttributes<HTMLSelectElement>, "size"> & {
 const heights = { sm: "h-7", md: "h-8", lg: "h-10" } as const;
 
 export const Select = forwardRef<HTMLSelectElement, Props>(
-  ({ options, size = "md", className, style, ...rest }, ref) => {
+  (
+    {
+      options,
+      size = "md",
+      className,
+      style,
+      id: idProp,
+      "aria-describedby": ariaDescribedByProp,
+      "aria-invalid": ariaInvalidProp,
+      ...rest
+    },
+    ref
+  ) => {
+    const id = useFieldId(idProp);
+    const describedBy = useFieldDescribedBy(
+      typeof ariaDescribedByProp === "string" ? ariaDescribedByProp : undefined
+    );
+    const invalid = useFieldInvalid(
+      ariaInvalidProp === true || ariaInvalidProp === "true"
+        ? true
+        : ariaInvalidProp === false || ariaInvalidProp === "false"
+          ? false
+          : undefined
+    );
+
     return (
       <div className={cn("relative inline-block w-full", heights[size])} style={style}>
         <select
           ref={ref}
+          id={id}
+          aria-describedby={describedBy}
+          aria-invalid={invalid}
           className={cn(
             "w-full h-full pl-2.5 pr-7 bg-raised border border-border rounded-md text-[13px] appearance-none cursor-pointer outline-none",
+            invalid && "border-status-err",
             className
           )}
           {...rest}
@@ -34,6 +67,7 @@ export const Select = forwardRef<HTMLSelectElement, Props>(
         <Icon
           name="chevdown"
           size={14}
+          aria-hidden="true"
           style={{
             position: "absolute",
             right: 8,
