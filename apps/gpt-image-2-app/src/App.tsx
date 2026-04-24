@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
 import { AppToolbar } from "@/components/shell/toolbar";
@@ -95,6 +96,18 @@ export default function App() {
               </div>
             </div>
           )}
+          <Toaster
+            position="top-right"
+            closeButton
+            richColors
+            toastOptions={{
+              style: {
+                background: "var(--bg-raised)",
+                border: "1px solid var(--border)",
+                color: "var(--text)",
+              },
+            }}
+          />
         </div>
       </WindowChrome>
     </div>

@@ -9,7 +9,7 @@ import type {
   TestProviderResult,
 } from "./types";
 
-type TauriJobResponse = {
+export type TauriJobResponse = {
   job_id: string;
   job?: Job;
   events?: JobEvent[];
@@ -152,7 +152,7 @@ export const api = {
     return result;
   },
   outputUrl(jobId: string, index = 0) {
-    const path = outputPaths.get(`${jobId}:${index}`) ?? outputPaths.get(`${jobId}:0`);
+    const path = outputPaths.get(`${jobId}:${index}`) ?? (index === 0 ? outputPaths.get(`${jobId}:0`) : undefined);
     return path ? convertFileSrc(path) : "";
   },
 };

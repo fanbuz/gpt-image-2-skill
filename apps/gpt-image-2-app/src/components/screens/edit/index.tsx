@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -14,12 +15,13 @@ import { OutputTile } from "@/components/screens/shared/output-tile";
 import { MaskCanvas, type MaskMode } from "./mask-canvas";
 import { ReferenceImageCard, type RefImage } from "./reference-card";
 import { providerKindLabel } from "@/lib/format";
-import { useCancelJob, useCreateEdit } from "@/hooks/use-jobs";
+import { useCreateEdit } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
 import { useTweaks } from "@/hooks/use-tweaks";
 import { api } from "@/lib/api";
+import { completedEvent, errorMessage, failedEvent, responseOutputCount, submittedEvent } from "@/lib/job-feedback";
 import { effectiveDefaultProvider, providerNames as readProviderNames } from "@/lib/providers";
-import type { ServerConfig } from "@/lib/types";
+import type { JobEvent, ServerConfig } from "@/lib/types";
 
 export function EditScreen({ config }: { config?: ServerConfig }) {
   const { tweaks } = useTweaks();
@@ -42,6 +44,9 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const [clearKey, setClearKey] = useState(0);
   const [exportKey, setExportKey] = useState<number | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [outputCount, setOutputCount] = useState(0);
+  const [localEvents, setLocalEvents] = useState<JobEvent[]>([]);
+  const [runError, setRunError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!selectedRef && refs.length > 0) setSelectedRef(refs[0].id);
@@ -55,7 +60,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
 
   const { events, running } = useJobEvents(jobId);
   const mutate = useCreateEdit();
-  const cancel = useCancelJob();
 
   const addRef = (files: FileList | null) => {
     if (!files) return;
@@ -70,7 +74,11 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const selectedRefObj = refs.find((r) => r.id === selectedRef);
 
   const handleRun = () => {
-    if (!provider || refs.length === 0) return;
+    if (!provider || refs.length === 0 || mutate.isPending || running || exportKey != null) return;
+    setRunError(null);
+    setJobId(null);
+    setOutputCount(0);
+    setLocalEvents([submittedEvent("正在导出遮罩并准备上传参考图。")]);
     // We need to export the mask first (async via toBlob).
     setExportKey(Date.now());
   };
@@ -82,23 +90,40 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
     form.append("meta", JSON.stringify(meta));
     refs.forEach((r, i) => form.append(`ref_${String(i).padStart(2, "0")}`, r.file, r.name));
     if (maskBlob) form.append("mask", maskBlob, "mask.png");
+    const toastId = toast.loading("正在编辑图像", {
+      description: `${refs.length} 张参考图 · ${provider}`,
+    });
     try {
       const res = await mutate.mutateAsync(form);
+      const count = responseOutputCount(res);
+      setOutputCount(count);
       setJobId(res.job_id);
+      setLocalEvents([completedEvent(res)]);
+      toast.success("编辑完成", {
+        id: toastId,
+        description: count > 1 ? `已保存 ${count} 个输出` : "输出已保存",
+      });
+    } catch (error) {
+      const message = errorMessage(error);
+      setRunError(message);
+      setLocalEvents([failedEvent(message)]);
+      toast.error("编辑失败", { id: toastId, description: message });
     } finally {
       setExportKey(null);
     }
   };
 
   const outputs = useMemo(() => {
-    if (!jobId) return [];
-    return Array.from({ length: n }).map((_, index) => ({
+    if (!jobId || outputCount < 1) return [];
+    return Array.from({ length: outputCount }).map((_, index) => ({
       index,
       url: api.outputUrl(jobId, index),
       selected: index === 0,
     }));
-  }, [jobId, n]);
-  const hasOutputs = outputs.length > 0 && events.some((e) => e.type === "job.completed" || e.type === "output_saved");
+  }, [jobId, outputCount]);
+  const isWorking = exportKey != null || mutate.isPending || running;
+  const timelineEvents = events.length > 0 ? events : localEvents;
+  const hasOutputs = outputs.some((output) => output.url) || events.some((e) => e.type === "job.completed" || e.type === "output_saved");
 
   const providerCfg = provider ? config?.providers[provider] : undefined;
 
@@ -235,7 +260,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
         </div>
 
         <div className="px-6 pt-5 pb-2 flex items-center gap-2.5">
-          <div className="t-h3">输出 · {hasOutputs ? `${outputs.length} 个候选` : "尚未生成"}</div>
+          <div className="t-h3">输出 · {isWorking ? `${n} 个候选生成中` : hasOutputs ? `${outputs.length} 个候选` : "尚未生成"}</div>
           <div className="flex-1" />
           {hasOutputs && (
             <>
@@ -246,13 +271,22 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
         </div>
 
         <div className="px-6 pb-6">
-          {!hasOutputs && !running ? (
+          {runError && !isWorking ? (
+            <Card padding={0} style={{ overflow: "hidden" }}>
+              <Empty
+                icon="warn"
+                title="编辑失败"
+                subtitle={runError}
+                action={<Button variant="secondary" size="sm" icon="reload" onClick={handleRun}>重试</Button>}
+              />
+            </Card>
+          ) : !hasOutputs && !isWorking ? (
             <Card padding={0} style={{ overflow: "hidden" }}>
               <Empty icon="image" title="还没有输出" subtitle="检查左侧参考图与遮罩，写好提示词，点击右侧「开始编辑」即可生成。" />
             </Card>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              {running && !hasOutputs &&
+              {isWorking && !hasOutputs &&
                 Array.from({ length: n }).map((_, i) => (
                   <div
                     key={i}
@@ -316,29 +350,17 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
         </div>
 
         <div className="px-4 py-3.5 border-b border-border-faint">
-          {!running ? (
-            <Button
-              variant="primary"
-              size="lg"
-              icon="sparkle"
-              onClick={handleRun}
-              disabled={mutate.isPending || refs.length === 0 || !provider}
-              kbd="⌘↵"
-              className="w-full justify-center"
-            >
-              {mutate.isPending ? "提交中…" : "开始编辑"}
-            </Button>
-          ) : (
-            <Button
-              variant="danger"
-              size="lg"
-              icon="x"
-              onClick={() => jobId && cancel.mutate(jobId)}
-              className="w-full justify-center"
-            >
-              取消
-            </Button>
-          )}
+          <Button
+            variant="primary"
+            size="lg"
+            icon="sparkle"
+            onClick={handleRun}
+            disabled={isWorking || refs.length === 0 || !provider}
+            kbd="⌘↵"
+            className="w-full justify-center"
+          >
+            {isWorking ? "编辑中…" : "开始编辑"}
+          </Button>
           <div className="flex justify-between mt-2 text-[11px] text-faint">
             <span>{refs.length} 张参考图</span>
             <span className="t-mono">{n}×{size.split("x")[0]}px</span>
@@ -348,11 +370,11 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
         <div className="px-4 py-3.5 flex-1 overflow-auto flex flex-col">
           <div className="flex items-center gap-2 mb-2.5">
             <div className="t-h3">事件时间线</div>
-            {running && <Spinner size={12} />}
+            {isWorking && <Spinner size={12} />}
             <div className="flex-1" />
-            {events.length > 0 && <span className="t-tiny font-mono">{events.length} 条</span>}
+            {timelineEvents.length > 0 && <span className="t-tiny font-mono">{timelineEvents.length} 条</span>}
           </div>
-          <EventTimeline events={events} mode={tweaks.timeline} />
+          <EventTimeline events={timelineEvents} mode={tweaks.timeline} />
         </div>
       </div>
     </div>

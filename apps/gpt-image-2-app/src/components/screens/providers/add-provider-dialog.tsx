@@ -67,7 +67,20 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="添加服务商" width={520}>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="添加服务商"
+      width={520}
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button variant="primary" icon="plus" onClick={submit} disabled={upsert.isPending || !name}>
+            {upsert.isPending ? "保存中…" : "添加并设为默认"}
+          </Button>
+        </>
+      }
+    >
       <Field label="名称" hint="config.json 里的键">
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如 my-image-api" autoFocus />
       </Field>
@@ -138,12 +151,6 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
           )}
         </>
       )}
-      <div className="flex justify-end gap-2 mt-2">
-        <Button variant="ghost" onClick={() => onOpenChange(false)}>取消</Button>
-        <Button variant="primary" icon="plus" onClick={submit} disabled={upsert.isPending || !name}>
-          {upsert.isPending ? "保存中…" : "添加并设为默认"}
-        </Button>
-      </div>
     </Dialog>
   );
 }

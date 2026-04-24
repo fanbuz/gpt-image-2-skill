@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -11,12 +12,13 @@ import { Icon } from "@/components/icon";
 import { EventTimeline } from "@/components/screens/shared/event-timeline";
 import { OutputTile } from "@/components/screens/shared/output-tile";
 import { providerKindLabel } from "@/lib/format";
-import { useCreateGenerate, useCancelJob } from "@/hooks/use-jobs";
+import { useCreateGenerate } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
 import { useTweaks } from "@/hooks/use-tweaks";
 import { api } from "@/lib/api";
+import { completedEvent, errorMessage, failedEvent, responseOutputCount, submittedEvent } from "@/lib/job-feedback";
 import { effectiveDefaultProvider, providerNames as readProviderNames } from "@/lib/providers";
-import type { ServerConfig } from "@/lib/types";
+import type { JobEvent, ServerConfig } from "@/lib/types";
 
 const PRESETS = [
   "等距透视的 3D 小房子, 柔和阴影",
@@ -39,10 +41,12 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
   const [background, setBackground] = useState("auto");
   const [n, setN] = useState(4);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [outputCount, setOutputCount] = useState(0);
+  const [localEvents, setLocalEvents] = useState<JobEvent[]>([]);
+  const [runError, setRunError] = useState<string | null>(null);
 
   const { events, running } = useJobEvents(jobId);
   const mutate = useCreateGenerate();
-  const cancel = useCancelJob();
 
   useEffect(() => {
     if (providerNames.length > 0 && (!provider || !config?.providers[provider])) {
@@ -51,30 +55,53 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
   }, [config?.providers, defaultProvider, provider, providerNames]);
 
   const handleRun = async () => {
-    if (!provider) return;
-    const res = await mutate.mutateAsync({
-      prompt,
-      provider,
-      size,
-      format,
-      quality,
-      background,
-      n,
-      metadata: { size, format, quality, background, n },
+    if (!provider || mutate.isPending || running) return;
+    const toastId = toast.loading("正在生成图像", {
+      description: `${provider} · ${size} · ${quality}`,
     });
-    setJobId(res.job_id);
+    setRunError(null);
+    setJobId(null);
+    setOutputCount(0);
+    setLocalEvents([submittedEvent("已提交到 Tauri core，正在等待 provider 返回。")]);
+    try {
+      const res = await mutate.mutateAsync({
+        prompt,
+        provider,
+        size,
+        format,
+        quality,
+        background,
+        n,
+        metadata: { size, format, quality, background, n },
+      });
+      const count = responseOutputCount(res);
+      setOutputCount(count);
+      setJobId(res.job_id);
+      setLocalEvents([completedEvent(res)]);
+      toast.success("生成完成", {
+        id: toastId,
+        description: count > 1 ? `已保存 ${count} 个输出` : "输出已保存",
+      });
+    } catch (error) {
+      const message = errorMessage(error);
+      setRunError(message);
+      setLocalEvents([failedEvent(message)]);
+      toast.error("生成失败", { id: toastId, description: message });
+    }
   };
 
   const outputs = useMemo(() => {
-    if (!jobId) return [];
-    return Array.from({ length: Math.max(1, n) }).map((_, index) => ({
+    if (!jobId || outputCount < 1) return [];
+    return Array.from({ length: outputCount }).map((_, index) => ({
       index,
       url: api.outputUrl(jobId, index),
       selected: index === 0,
     }));
-  }, [jobId, n]);
+  }, [jobId, outputCount]);
 
-  const hasOutputs = outputs.length > 0 && events.some(e => e.type === "output_saved" || e.type === "job.completed");
+  const isWorking = mutate.isPending || running;
+  const timelineEvents = events.length > 0 ? events : localEvents;
+  const hasOutputs = outputs.some((output) => output.url) || events.some(e => e.type === "output_saved" || e.type === "job.completed");
   const providerCfg = provider ? config?.providers[provider] : undefined;
 
   return (
@@ -98,13 +125,9 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
               <Button variant="ghost" size="sm" icon="wand" disabled>润色</Button>
               <div className="flex-1 min-w-0" />
               <span className="t-tiny font-mono">{prompt.length} 字</span>
-              {!running ? (
-                <Button variant="primary" size="md" icon="sparkle" onClick={handleRun} kbd="⌘↵" disabled={mutate.isPending || !provider}>
-                  {mutate.isPending ? "提交中…" : "生成"}
-                </Button>
-              ) : (
-                <Button variant="danger" size="md" icon="x" onClick={() => jobId && cancel.mutate(jobId)}>取消</Button>
-              )}
+              <Button variant="primary" size="md" icon="sparkle" onClick={handleRun} kbd="⌘↵" disabled={isWorking || !provider}>
+                {isWorking ? "生成中…" : "生成"}
+              </Button>
             </div>
           </div>
           <div className="flex gap-1.5 mt-2.5 flex-wrap">
@@ -124,7 +147,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
         <div className="px-7 pb-6 pt-3 max-w-[820px] mx-auto w-full flex-1">
           <div className="flex items-center gap-2.5 mb-3">
             <div className="t-h3">
-              {running ? `生成中 · ${n} 个候选` : hasOutputs ? `候选 · ${outputs.length}` : "候选"}
+              {isWorking ? `生成中 · ${n} 个候选` : hasOutputs ? `候选 · ${outputs.length}` : "候选"}
             </div>
             {hasOutputs && outputs[0]?.selected && <Badge tone="accent" icon="check">已选 A</Badge>}
             <div className="flex-1" />
@@ -136,7 +159,16 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
             )}
           </div>
 
-          {!hasOutputs && !running ? (
+          {runError && !isWorking ? (
+            <Card padding={0}>
+              <Empty
+                icon="warn"
+                title="生成失败"
+                subtitle={runError}
+                action={<Button variant="secondary" size="sm" icon="reload" onClick={handleRun}>重试</Button>}
+              />
+            </Card>
+          ) : !hasOutputs && !isWorking ? (
             <Card padding={0}>
               <Empty
                 icon="image"
@@ -146,7 +178,7 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
             </Card>
           ) : (
             <div className="grid gap-3" style={{ gridTemplateColumns: n <= 2 ? "1fr 1fr" : `repeat(${Math.min(n, 4)}, 1fr)` }}>
-              {running && !hasOutputs &&
+              {isWorking && !hasOutputs &&
                 Array.from({ length: n }).map((_, i) => (
                   <div
                     key={i}
@@ -224,13 +256,13 @@ export function GenerateScreen({ config }: { config?: ServerConfig }) {
         </div>
 
         <div className="px-4 py-3.5 flex-1 overflow-auto flex flex-col">
-          <div className="flex items-center gap-2 mb-2.5">
-            <div className="t-h3">事件时间线</div>
-            {running && <Spinner size={12} />}
+            <div className="flex items-center gap-2 mb-2.5">
+              <div className="t-h3">事件时间线</div>
+            {isWorking && <Spinner size={12} />}
             <div className="flex-1" />
-            {events.length > 0 && <span className="t-tiny font-mono">{events.length} 条</span>}
+            {timelineEvents.length > 0 && <span className="t-tiny font-mono">{timelineEvents.length} 条</span>}
           </div>
-          <EventTimeline events={events} mode={tweaks.timeline} />
+          <EventTimeline events={timelineEvents} mode={tweaks.timeline} />
         </div>
       </div>
     </div>
