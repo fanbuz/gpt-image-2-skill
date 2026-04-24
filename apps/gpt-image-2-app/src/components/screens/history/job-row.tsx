@@ -47,23 +47,50 @@ export function JobRow({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={`${prompt ?? "未命名任务"}，${job.provider}，${job.status}`}
+      aria-pressed={selected}
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        } else if ((e.key === "Delete" || e.key === "Backspace") && onDelete) {
+          e.preventDefault();
+          onDelete();
+        }
+      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       className={cn(
-        "grid items-center gap-3 px-3.5 py-2.5 border-b border-border-faint cursor-pointer",
+        "grid items-center gap-3 px-3.5 py-2.5 border-b border-border-faint cursor-pointer focus-visible:outline-none focus-visible:bg-hover",
         selected ? "bg-pressed" : hover ? "bg-hover" : "bg-transparent"
       )}
       style={{ gridTemplateColumns: "44px 1fr 130px 120px 100px 80px" }}
     >
       <div className="w-9 h-9 rounded-[5px] overflow-hidden bg-sunken border border-border shrink-0">
         {thumbSrc && !imageFailed ? (
-          <img src={thumbSrc} alt="" className="w-full h-full object-cover" onError={() => setImageFailed(true)} />
+          <img
+            src={thumbSrc}
+            alt={prompt ? `生成结果缩略图：${prompt}` : "生成结果缩略图"}
+            loading="lazy"
+            decoding="async"
+            width={36}
+            height={36}
+            className="w-full h-full object-cover"
+            onError={() => setImageFailed(true)}
+          />
         ) : job.status === "completed" ? (
           <PlaceholderImage seed={parseInt(job.id.replace(/\D/g, ""), 10) || 0} />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-faint">
-            <Icon name={job.status === "failed" ? "warn" : "circle"} size={14} />
+            <Icon
+              name={job.status === "failed" ? "warn" : "circle"}
+              size={14}
+              aria-hidden="true"
+            />
           </div>
         )}
       </div>

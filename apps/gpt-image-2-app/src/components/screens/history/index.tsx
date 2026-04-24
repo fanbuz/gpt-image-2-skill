@@ -61,7 +61,13 @@ export function HistoryScreen() {
             size="sm"
             wrapperClassName="max-w-[320px] flex-1"
           />
-          <Segmented value={filter} onChange={setFilter} size="sm" options={FILTERS} />
+          <Segmented
+            value={filter}
+            onChange={setFilter}
+            size="sm"
+            ariaLabel="筛选任务"
+            options={FILTERS}
+          />
           <div className="flex-1" />
           <span className="t-tiny font-mono">{filtered.length} / {jobs.length}</span>
         </div>

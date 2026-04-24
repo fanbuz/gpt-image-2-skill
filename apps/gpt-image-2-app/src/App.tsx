@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Component, type ErrorInfo, type ReactNode, useState } from "react";
 import { Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
@@ -13,6 +13,48 @@ import { ProvidersScreen } from "@/components/screens/providers";
 import { useConfig } from "@/hooks/use-config";
 import { useJobs } from "@/hooks/use-jobs";
 import { useGlobalShortcuts } from "@/hooks/use-shortcuts";
+
+class ScreenErrorBoundary extends Component<
+  { children: ReactNode; onReset: () => void },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // eslint-disable-next-line no-console
+    console.error("[gpt-image-2-app] screen error:", error, info);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div
+        role="alert"
+        className="flex h-full flex-col items-center justify-center gap-3 p-10 text-center"
+      >
+        <div className="t-h2 text-foreground">界面出现异常</div>
+        <div className="max-w-[420px] text-[13px] text-muted">
+          {this.state.error.message || "这个屏幕遇到了未知错误。已经停止渲染,以免影响其他功能。"}
+        </div>
+        <Button
+          variant="primary"
+          size="md"
+          icon="reload"
+          onClick={() => {
+            this.setState({ error: null });
+            this.props.onReset();
+          }}
+        >
+          重新加载这个屏幕
+        </Button>
+      </div>
+    );
+  }
+}
 
 function readInitialScreen(): ScreenId {
   try {
@@ -65,22 +107,38 @@ export default function App() {
               onOpenCommand={() => setPaletteOpen(true)}
               actions={
                 <>
-                  <Button variant="ghost" size="icon" icon="gear" onClick={() => setTweaksOpen((o) => !o)} title="Tweaks" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    icon="gear"
+                    onClick={() => setTweaksOpen((o) => !o)}
+                    aria-label="外观与偏好设置"
+                    aria-pressed={tweaksOpen}
+                    aria-expanded={tweaksOpen}
+                    data-tweaks-toggle
+                  />
                   <Button variant="solidDark" size="md" icon="sparkle" onClick={() => setScreen("generate")}>
                     新建生成
                   </Button>
                 </>
               }
             />
-            <div className="flex-1 min-h-0 relative">
+            <main
+              id="main"
+              role="main"
+              aria-label={meta.title}
+              className="flex-1 min-h-0 relative"
+            >
               <div key={screen} className="animate-fade-in h-full">
-                {screen === "generate" && <GenerateScreen config={config} onOpenEdit={() => setScreen("edit")} />}
-                {screen === "edit" && <EditScreen config={config} />}
-                {screen === "history" && <HistoryScreen />}
-                {screen === "providers" && <ProvidersScreen config={config} />}
+                <ScreenErrorBoundary onReset={() => setScreenState(screen)}>
+                  {screen === "generate" && <GenerateScreen config={config} onOpenEdit={() => setScreen("edit")} />}
+                  {screen === "edit" && <EditScreen config={config} />}
+                  {screen === "history" && <HistoryScreen />}
+                  {screen === "providers" && <ProvidersScreen config={config} />}
+                </ScreenErrorBoundary>
               </div>
               <TweaksPanel visible={tweaksOpen} onClose={() => setTweaksOpen(false)} />
-            </div>
+            </main>
           </div>
           <CommandPalette
             open={paletteOpen}
@@ -89,9 +147,13 @@ export default function App() {
             latestJob={jobs?.[0]}
           />
           {!config && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-20 text-faint text-[13px] pointer-events-none">
+            <div
+              role="status"
+              aria-live="polite"
+              className="absolute inset-0 flex items-center justify-center bg-background/80 z-20 text-faint text-[13px] pointer-events-none"
+            >
               <div className="flex items-center gap-2">
-                <span className="inline-block h-3 w-3 rounded-full bg-accent" />
+                <span aria-hidden="true" className="inline-block h-3 w-3 rounded-full bg-accent animate-pulse-subtle" />
                 加载配置中…
               </div>
             </div>

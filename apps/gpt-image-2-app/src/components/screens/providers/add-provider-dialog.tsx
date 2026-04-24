@@ -116,6 +116,7 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
               setSupportsN(next === "openai");
               setEditRegionMode(defaultEditRegionMode(next));
             }}
+            ariaLabel="服务商类型"
             className="w-full overflow-x-auto"
             options={[
               { value: "openai-compatible", label: "OpenAI 兼容" },
@@ -145,6 +146,7 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
             <Segmented
               value={supportsN ? "yes" : "no"}
               onChange={(value) => setSupportsN(value === "yes")}
+              ariaLabel="批量策略"
               options={[
                 { value: "no", label: "App 自动并行" },
                 { value: "yes", label: "服务商一次返回多张" },
@@ -165,6 +167,7 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
             <Segmented
               value={editRegionMode}
               onChange={setEditRegionMode}
+              ariaLabel="局部编辑模式"
               className="w-full overflow-x-auto"
               options={[
                 { value: "reference-hint", label: "软选区参考" },
@@ -194,6 +197,7 @@ export function AddProviderDialog({ open, onOpenChange }: { open: boolean; onOpe
             <Segmented
               value={keySource}
               onChange={(v) => setKeySource(v as CredentialSource)}
+              ariaLabel="密钥保存方式"
               className="w-full overflow-x-auto"
               options={[
                 { value: "file", label: "配置文件", icon: "filedot" },
