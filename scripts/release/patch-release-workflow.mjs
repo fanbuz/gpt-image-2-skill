@@ -13,7 +13,6 @@ const insertAfter = `      - name: Install dependencies
 `;
 
 const buildMarker = "      - name: Build artifacts";
-const linuxKeyringDepsStepName = "      - name: Install Linux keyring build dependencies";
 const wixStepName = "      - name: Refresh WiX path";
 const announceSectionMarker = "  announce:\n";
 const announceCheckoutMarker = `      - uses: actions/checkout@v6
@@ -53,20 +52,15 @@ const wixStep = `      - name: Refresh WiX path
           Write-Host "Using WiX root $wixRoot"
 `;
 
-const linuxKeyringDepsStep = `      - name: Install Linux keyring build dependencies
-        if: \${{ runner.os == 'Linux' }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes pkg-config libglib2.0-dev libgtk-3-dev
-`;
-const linuxKeyringDepsStepPattern =
-  /      - name: Install Linux keyring build dependencies\n        if: \$\{\{ runner\.os == 'Linux' \}\}\n        run: \|\n(?:          .+\n)+/;
-
 const dispatchSteps = `      - name: Dispatch npm publish workflow
         run: gh workflow run "Publish npm Packages" --repo "\${{ github.repository }}" -f tag="\${{ needs.plan.outputs.tag }}"
 `;
+const legacyLinuxDepsStepPattern =
+  /      - name: Install Linux keyring build dependencies\n        if: \$\{\{ runner\.os == 'Linux' \}\}\n        run: \|\n(?:          .+\n)+/;
 
 let source = fs.readFileSync(workflowPath, "utf8");
+
+source = source.replace(legacyLinuxDepsStepPattern, "");
 
 if (source.includes(permissionsBlock) && !source.includes(`  "actions": "write"`)) {
   source = source.replace(permissionsBlock, expandedPermissionsBlock);
@@ -81,12 +75,6 @@ if (!source.includes(wixStepName)) {
     `${insertAfter}${buildMarker}`,
     `${insertAfter}${wixStep}${buildMarker}`,
   );
-}
-
-if (source.includes(linuxKeyringDepsStepName)) {
-  source = source.replace(linuxKeyringDepsStepPattern, linuxKeyringDepsStep);
-} else {
-  source = source.replace(insertAfter, `${linuxKeyringDepsStep}${insertAfter}`);
 }
 
 source = source.replace(dispatchStepPattern, "");
