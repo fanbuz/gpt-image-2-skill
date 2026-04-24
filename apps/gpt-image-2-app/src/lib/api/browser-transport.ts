@@ -78,6 +78,15 @@ const running = new Map<string, BrowserQueuedTask>();
 let maxParallel = 2;
 let prepared: Promise<void> | null = null;
 
+function deleteDatabase() {
+  return new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => resolve();
+  });
+}
+
 function requestToPromise<T>(request: IDBRequest<T>) {
   return new Promise<T>((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
@@ -821,6 +830,29 @@ function prepareBrowserRuntime() {
     prepared = markInterruptedJobs().then(installBeforeUnloadGuard);
   }
   return prepared;
+}
+
+export async function __resetBrowserApiForTests() {
+  queue.splice(0, queue.length);
+  for (const task of running.values()) {
+    task.cancelled = true;
+    task.abort.abort();
+  }
+  running.clear();
+  eventLog.clear();
+  nextSeq.clear();
+  jobSubscribers.clear();
+  updateSubscribers.clear();
+  for (const url of objectUrls.values()) URL.revokeObjectURL(url);
+  objectUrls.clear();
+  blobsByPath.clear();
+  outputPaths.clear();
+  maxParallel = 2;
+  prepared = null;
+  const db = await dbPromise.current?.catch(() => null);
+  db?.close();
+  dbPromise.current = null;
+  await deleteDatabase();
 }
 
 async function downloadBlob(path: string, fileName: (blob: Blob) => string) {
