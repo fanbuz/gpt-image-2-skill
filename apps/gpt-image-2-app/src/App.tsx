@@ -8,20 +8,17 @@ import {
 import { Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
-import { AppToolbar } from "@/components/shell/toolbar";
-import { Sidebar, type ScreenId } from "@/components/shell/sidebar";
+import { TopNav } from "@/components/shell/top-nav";
 import { WindowChrome } from "@/components/shell/window-chrome";
+import { type ScreenId, isScreenId } from "@/components/shell/screens";
 import { GenerateScreen } from "@/components/screens/generate";
 import { EditScreen } from "@/components/screens/edit";
 import { HistoryScreen } from "@/components/screens/history";
-import { ProvidersScreen } from "@/components/screens/providers";
 import { SettingsScreen } from "@/components/screens/settings";
-import { MockupsScreen } from "@/components/screens/mockups";
 import { useConfig } from "@/hooks/use-config";
 import { useJobNotifications } from "@/hooks/use-job-notifications";
 import { useJobs } from "@/hooks/use-jobs";
 import { useGlobalShortcuts } from "@/hooks/use-shortcuts";
-import { useTweaks } from "@/hooks/use-tweaks";
 import { OPEN_JOB_EVENT } from "@/lib/job-navigation";
 
 class ScreenErrorBoundary extends Component<
@@ -69,30 +66,17 @@ class ScreenErrorBoundary extends Component<
 
 function readInitialScreen(): ScreenId {
   try {
-    const s = localStorage.getItem("gpt2.screen");
-    if (
-      s === "generate" ||
-      s === "edit" ||
-      s === "history" ||
-      s === "providers" ||
-      s === "settings" ||
-      s === "mockups"
-    )
-      return s;
+    const raw = localStorage.getItem("gpt2.screen");
+    if (isScreenId(raw)) return raw;
+    // Older localStorage payloads might still contain "providers" or
+    // "mockups" — coerce them to sensible new screens.
+    if (raw === "providers") return "settings";
+    if (raw === "mockups") return "generate";
   } catch {
     /* ignore */
   }
   return "generate";
 }
-
-const TITLES: Record<ScreenId, { title: string; subtitle: string }> = {
-  generate: { title: "图像生成", subtitle: "写提示词，生成候选并保存图片" },
-  edit: { title: "图像编辑", subtitle: "上传参考图、涂抹遮罩、描述变更" },
-  history: { title: "任务", subtitle: "查看正在运行、已完成和失败的生成记录" },
-  providers: { title: "凭证", subtitle: "管理生成图片时使用的接入信息" },
-  settings: { title: "设置", subtitle: "外观、队列与通知偏好" },
-  mockups: { title: "液态预览", subtitle: "React Bits 风格的视觉重构稿（静态 mockup）" },
-};
 
 export default function App() {
   const [screen, setScreenState] = useState<ScreenId>(readInitialScreen);
@@ -103,7 +87,6 @@ export default function App() {
     refetch: refetchConfig,
   } = useConfig();
   const { data: jobs } = useJobs();
-  const { tweaks } = useTweaks();
 
   const setScreen = useCallback((s: ScreenId) => {
     setScreenState(s);
@@ -128,7 +111,9 @@ export default function App() {
 
   useGlobalShortcuts({
     onCommand: () => setPaletteOpen(true),
-    onScreen: (s) => setScreen(s as ScreenId),
+    onScreen: (s) => {
+      if (isScreenId(s)) setScreen(s);
+    },
   });
   useJobNotifications(jobs, openJob);
 
@@ -142,94 +127,47 @@ export default function App() {
       jobs?.some((job) => active(job) && job.command === "images edit") ??
       false,
   };
-  const meta = TITLES[screen];
-
-  // Mockups screen runs in fullscreen "experience" mode — no sidebar, no toolbar,
-  // no command palette overlay. The mockup itself owns the entire window.
-  if (screen === "mockups") {
-    return (
-      <div className="desktop">
-        <WindowChrome>
-          <ScreenErrorBoundary onReset={() => setScreenState("mockups")}>
-            <MockupsScreen onExit={() => setScreen("generate")} />
-          </ScreenErrorBoundary>
-          <Toaster
-            position="top-right"
-            theme="dark"
-            closeButton
-            richColors
-          />
-        </WindowChrome>
-      </div>
-    );
-  }
 
   return (
     <div className="desktop">
       <WindowChrome>
-        <div className="relative flex h-full w-full">
-          <Sidebar
+        <div className="relative flex h-full w-full flex-col">
+          <TopNav
             screen={screen}
             setScreen={setScreen}
             config={config}
             running={running}
+            onOpenCommand={() => setPaletteOpen(true)}
           />
-          <div className="flex-1 min-w-0 flex flex-col relative overflow-hidden">
-            <AppToolbar
-              title={meta.title}
-              subtitle={meta.subtitle}
-              onOpenCommand={() => setPaletteOpen(true)}
-              actions={
-                <>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    icon="gear"
-                    onClick={() => setScreen("settings")}
-                    aria-label="打开设置"
-                    aria-pressed={screen === "settings"}
+
+          <main
+            id="main"
+            role="main"
+            className="flex-1 min-h-0 relative"
+            aria-label={screen}
+          >
+            <div key={screen} className="animate-fade-in h-full">
+              <ScreenErrorBoundary onReset={() => setScreenState(screen)}>
+                {screen === "generate" && (
+                  <GenerateScreen
+                    config={config}
+                    onOpenEdit={() => setScreen("edit")}
                   />
-                  <Button
-                    variant="solidDark"
-                    size="md"
-                    icon="sparkle"
-                    onClick={() => setScreen("generate")}
-                  >
-                    新建生成
-                  </Button>
-                </>
-              }
-            />
-            <main
-              id="main"
-              role="main"
-              aria-label={meta.title}
-              className="flex-1 min-h-0 relative"
-            >
-              <div key={screen} className="animate-fade-in h-full">
-                <ScreenErrorBoundary onReset={() => setScreenState(screen)}>
-                  {screen === "generate" && (
-                    <GenerateScreen
-                      config={config}
-                      onOpenEdit={() => setScreen("edit")}
-                    />
-                  )}
-                  {screen === "edit" && <EditScreen config={config} />}
-                  {screen === "history" && <HistoryScreen />}
-                  {screen === "providers" && (
-                    <ProvidersScreen config={config} />
-                  )}
-                  {screen === "settings" && <SettingsScreen />}
-                </ScreenErrorBoundary>
-              </div>
-            </main>
-          </div>
+                )}
+                {screen === "edit" && <EditScreen config={config} />}
+                {screen === "history" && <HistoryScreen />}
+                {screen === "settings" && <SettingsScreen config={config} />}
+              </ScreenErrorBoundary>
+            </div>
+          </main>
+
           <CommandPalette
             open={paletteOpen}
             onClose={() => setPaletteOpen(false)}
             setScreen={setScreen}
             latestJob={jobs?.[0]}
           />
+
           {!config && (
             <div
               role={configError ? "alert" : "status"}
@@ -268,7 +206,7 @@ export default function App() {
           )}
           <Toaster
             position="top-right"
-            theme={tweaks.theme}
+            theme="dark"
             closeButton
             richColors
           />

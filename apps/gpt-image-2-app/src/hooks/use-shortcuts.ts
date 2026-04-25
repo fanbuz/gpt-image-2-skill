@@ -2,10 +2,15 @@ import { useEffect } from "react";
 
 type Handler = (e: KeyboardEvent) => void;
 
-export function useShortcut(key: string, handler: Handler, deps: unknown[] = []) {
+export function useShortcut(
+  key: string,
+  handler: Handler,
+  deps: unknown[] = [],
+) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const combo = (e.metaKey || e.ctrlKey ? "mod+" : "") + e.key.toLowerCase();
+      const combo =
+        (e.metaKey || e.ctrlKey ? "mod+" : "") + e.key.toLowerCase();
       if (combo === key) {
         handler(e);
       }
@@ -28,14 +33,13 @@ export function useGlobalShortcuts(callbacks: {
         callbacks.onCommand?.();
         return;
       }
-      if (mod && !e.shiftKey && ["1", "2", "3", "4", "5"].includes(e.key)) {
+      if (mod && !e.shiftKey && ["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault();
         const map: Record<string, string> = {
           "1": "generate",
           "2": "edit",
           "3": "history",
-          "4": "providers",
-          "5": "settings",
+          "4": "settings",
         };
         callbacks.onScreen?.(map[e.key]);
       }

@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Icon, type IconName } from "@/components/icon";
-import type { ScreenId } from "@/components/shell/sidebar";
+import type { ScreenId } from "@/components/shell/screens";
 import type { Job } from "@/lib/types";
 
 type Item = {
@@ -64,9 +64,9 @@ export function CommandPalette({
       },
       {
         group: "跳转",
-        label: "凭证",
+        label: "设置 / 凭证",
         icon: "providers",
-        action: () => setScreen("providers"),
+        action: () => setScreen("settings"),
       },
       {
         group: "跳转",
@@ -84,7 +84,7 @@ export function CommandPalette({
         group: "操作",
         label: "测试默认凭证连接",
         icon: "play",
-        action: () => setScreen("providers"),
+        action: () => setScreen("settings"),
       },
       {
         group: "最近",

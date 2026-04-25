@@ -11,13 +11,14 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Tweaks } from "@/lib/types";
 
 const DEFAULT_TWEAKS: Tweaks = {
-  theme: "light",
-  accent: "green",
+  theme: "dark",
+  accent: "violet",
   font: "system",
   density: "comfortable",
   maxParallel: 2,
   notifyOnComplete: true,
   notifyOnFailure: true,
+  liquidBackground: true,
 };
 
 const STORAGE_KEY = "gpt2.tweaks";
@@ -44,6 +45,14 @@ function load(): Tweaks {
       ...DEFAULT_TWEAKS,
       ...parsed,
       maxParallel: clampParallel(parsed?.maxParallel),
+      // Force back to liquid theme even if older payload had light/other.
+      theme: "dark",
+      accent: "violet",
+      // Older payloads may not have liquidBackground; default to on.
+      liquidBackground:
+        typeof parsed?.liquidBackground === "boolean"
+          ? parsed.liquidBackground
+          : true,
     };
   } catch {
     return DEFAULT_TWEAKS;

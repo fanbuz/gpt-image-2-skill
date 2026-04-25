@@ -95,11 +95,24 @@ export interface TestProviderResult {
 }
 
 export type Tweaks = {
+  /**
+   * Theme is single-value liquid dark — kept in the type only to preserve
+   * older localStorage payloads. UI no longer exposes the toggle.
+   */
   theme: "light" | "dark";
+  /**
+   * Same story for accent — fixed violet→cyan brand gradient now.
+   */
   accent: "green" | "black" | "blue" | "violet" | "orange";
   font: "system" | "mono" | "serif";
   density: "compact" | "comfortable";
   maxParallel: number;
   notifyOnComplete: boolean;
   notifyOnFailure: boolean;
+  /**
+   * When true, render the WebGL LiquidChrome layer in WindowChrome.
+   * When false, fall back to a static dark background — saves GPU on
+   * laptops or when the user wants a calmer reading mode.
+   */
+  liquidBackground: boolean;
 };
