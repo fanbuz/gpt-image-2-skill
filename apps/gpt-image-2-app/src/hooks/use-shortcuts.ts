@@ -22,17 +22,11 @@ export function useShortcut(
 }
 
 export function useGlobalShortcuts(callbacks: {
-  onCommand?: () => void;
   onScreen?: (screen: string) => void;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === "k" && !e.shiftKey) {
-        e.preventDefault();
-        callbacks.onCommand?.();
-        return;
-      }
       if (mod && !e.shiftKey && ["1", "2", "3", "4"].includes(e.key)) {
         e.preventDefault();
         const map: Record<string, string> = {

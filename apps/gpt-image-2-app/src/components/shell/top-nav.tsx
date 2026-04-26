@@ -12,13 +12,11 @@ export function TopNav({
   setScreen,
   config,
   running,
-  onOpenCommand,
 }: {
   screen: ScreenId;
   setScreen: (s: ScreenId) => void;
   config?: ServerConfig;
   running?: { generate: boolean; edit: boolean };
-  onOpenCommand?: () => void;
 }) {
   const provName = defaultProviderLabel(config);
   const provKey = effectiveDefaultProvider(config);
@@ -132,20 +130,6 @@ export function TopNav({
             aria-hidden
           />
           <span className="truncate max-w-[140px]">{provName}</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenCommand}
-          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] text-muted hover:text-foreground transition-colors"
-          style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.08)",
-          }}
-          aria-label="打开命令面板"
-        >
-          <span className="hidden lg:inline">跳转到…</span>
-          <span className="kbd">⌘K</span>
         </button>
 
         <button

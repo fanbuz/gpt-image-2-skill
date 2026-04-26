@@ -7,7 +7,6 @@ import {
 } from "react";
 import { Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
-import { CommandPalette } from "@/components/command-palette";
 import { TopNav } from "@/components/shell/top-nav";
 import { WindowChrome } from "@/components/shell/window-chrome";
 import { type ScreenId, isScreenId } from "@/components/shell/screens";
@@ -80,7 +79,6 @@ function readInitialScreen(): ScreenId {
 
 export default function App() {
   const [screen, setScreenState] = useState<ScreenId>(readInitialScreen);
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const {
     data: config,
     error: configError,
@@ -110,7 +108,6 @@ export default function App() {
   );
 
   useGlobalShortcuts({
-    onCommand: () => setPaletteOpen(true),
     onScreen: (s) => {
       if (isScreenId(s)) setScreen(s);
     },
@@ -137,7 +134,6 @@ export default function App() {
             setScreen={setScreen}
             config={config}
             running={running}
-            onOpenCommand={() => setPaletteOpen(true)}
           />
 
           <main
@@ -161,13 +157,6 @@ export default function App() {
               </ScreenErrorBoundary>
             </div>
           </main>
-
-          <CommandPalette
-            open={paletteOpen}
-            onClose={() => setPaletteOpen(false)}
-            setScreen={setScreen}
-            latestJob={jobs?.[0]}
-          />
 
           {!config && (
             <div

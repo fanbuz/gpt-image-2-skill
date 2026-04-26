@@ -32,10 +32,13 @@
   --bg-hover: rgba(255, 255, 255, 0.05);
   --bg-pressed: rgba(255, 255, 255, 0.09);
 
-  /* glass-specific extras (liquid namespace) */
-  --lq-glass: rgba(20, 20, 28, 0.42);
-  --lq-glass-strong: rgba(24, 24, 34, 0.62);
-  --lq-glass-deep: rgba(10, 10, 14, 0.78);
+  /* glass-specific extras (liquid namespace) — alpha follows --glass-alpha
+     so the user can crank panel opacity in Settings → 外观. The values
+     here match the historical defaults (alpha = 0.42). */
+  --glass-alpha: 0.42;
+  --lq-glass: rgba(20, 20, 28, var(--glass-alpha));
+  --lq-glass-strong: rgba(24, 24, 34, calc(var(--glass-alpha) + 0.20));
+  --lq-glass-deep: rgba(10, 10, 14, calc(var(--glass-alpha) + 0.36));
   --lq-glass-row: rgba(255, 255, 255, 0.04);
   --lq-glass-row-hover: rgba(255, 255, 255, 0.07);
   --lq-blur: 28px;

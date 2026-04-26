@@ -115,4 +115,11 @@ export type Tweaks = {
    * laptops or when the user wants a calmer reading mode.
    */
   liquidBackground: boolean;
+  /**
+   * Glass panel opacity, expressed as a 0–100 percentage. Lower values
+   * make panels more see-through (more LiquidChrome bleeds through),
+   * higher values make panels more solid. Stored as a percentage so
+   * settings UI doesn't have to deal with floats.
+   */
+  glassOpacity: number;
 };

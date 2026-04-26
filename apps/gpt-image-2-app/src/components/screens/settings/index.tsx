@@ -563,6 +563,33 @@ function AppearancePanel() {
             />
           }
         />
+        <Row
+          title="面板透明度"
+          description="所有玻璃面板的不透明度。值越低背景越能透出，值越高内容越易读。"
+          control={
+            <div className="flex items-center gap-3 w-[240px]">
+              <input
+                type="range"
+                min={5}
+                max={95}
+                step={1}
+                value={tweaks.glassOpacity}
+                onChange={(e) =>
+                  setTweaks({ glassOpacity: Number(e.target.value) })
+                }
+                className="flex-1 cursor-pointer"
+                style={{
+                  accentColor: "#a78bfa",
+                  height: 4,
+                }}
+                aria-label="面板透明度"
+              />
+              <span className="font-mono text-[11px] text-faint w-10 text-right tabular-nums">
+                {tweaks.glassOpacity}%
+              </span>
+            </div>
+          }
+        />
       </Section>
 
       <Section title="排版">

@@ -19,7 +19,14 @@ const DEFAULT_TWEAKS: Tweaks = {
   notifyOnComplete: true,
   notifyOnFailure: true,
   liquidBackground: true,
+  glassOpacity: 42,
 };
+
+function clampOpacity(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_TWEAKS.glassOpacity;
+  return Math.min(95, Math.max(5, Math.round(n)));
+}
 
 const STORAGE_KEY = "gpt2.tweaks";
 
@@ -48,11 +55,11 @@ function load(): Tweaks {
       // Force back to liquid theme even if older payload had light/other.
       theme: "dark",
       accent: "violet",
-      // Older payloads may not have liquidBackground; default to on.
       liquidBackground:
         typeof parsed?.liquidBackground === "boolean"
           ? parsed.liquidBackground
           : true,
+      glassOpacity: clampOpacity(parsed?.glassOpacity),
     };
   } catch {
     return DEFAULT_TWEAKS;
@@ -68,6 +75,11 @@ export function TweaksProvider({ children }: { children: ReactNode }) {
     root.setAttribute("data-accent", tweaks.accent);
     root.setAttribute("data-font", tweaks.font);
     root.setAttribute("data-density", tweaks.density);
+    // Glass alpha as a CSS variable so .surface-panel and friends pick it up
+    root.style.setProperty(
+      "--glass-alpha",
+      String(tweaks.glassOpacity / 100),
+    );
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tweaks));
     } catch {
@@ -88,6 +100,9 @@ export function TweaksProvider({ children }: { children: ReactNode }) {
       const next = { ...prev, ...partial };
       if (partial.maxParallel !== undefined) {
         next.maxParallel = clampParallel(partial.maxParallel);
+      }
+      if (partial.glassOpacity !== undefined) {
+        next.glassOpacity = clampOpacity(partial.glassOpacity);
       }
       return next;
     });
