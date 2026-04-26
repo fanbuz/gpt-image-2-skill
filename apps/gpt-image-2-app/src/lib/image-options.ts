@@ -11,14 +11,19 @@ export const BACKGROUND_OPTIONS = [
 ] as const;
 
 export const POPULAR_SIZE_OPTIONS = [
-  { value: "auto", label: "自动" },
-  { value: "1024x1024", label: "1024x1024 · 方图" },
-  { value: "1536x1024", label: "1536x1024 · 横图" },
-  { value: "1024x1536", label: "1024x1536 · 竖图" },
-  { value: "2048x2048", label: "2048x2048 · 2K 方图" },
-  { value: "2048x1152", label: "2048x1152 · 2K 横图" },
-  { value: "3840x2160", label: "3840x2160 · 4K 横图" },
-  { value: "2160x3840", label: "2160x3840 · 4K 竖图" },
+  { value: "auto", label: "自动", description: "由模型自行决定" },
+  { value: "1024x1024", label: "1:1 · 方图 1K", description: "1024 × 1024" },
+  { value: "2048x2048", label: "1:1 · 方图 2K", description: "2048 × 2048" },
+  { value: "1536x1024", label: "3:2 · 横图", description: "1536 × 1024" },
+  { value: "1024x1536", label: "2:3 · 竖图", description: "1024 × 1536" },
+  { value: "2048x1152", label: "16:9 · 横图 2K", description: "2048 × 1152" },
+  { value: "1152x2048", label: "9:16 · 竖图 2K", description: "1152 × 2048" },
+  { value: "3840x2160", label: "16:9 · 4K 横图", description: "3840 × 2160" },
+  { value: "2160x3840", label: "9:16 · 4K 竖图", description: "2160 × 3840" },
+  { value: "2520x1080", label: "21:9 · 超宽", description: "2520 × 1080" },
+  { value: "3360x1440", label: "21:9 · 超宽 2K", description: "3360 × 1440" },
+  { value: "1280x720", label: "16:9 · 720p", description: "1280 × 720" },
+  { value: "1080x1080", label: "Instagram 方", description: "1080 × 1080" },
 ] as const;
 
 const MIN_TOTAL_PIXELS = 655_360;
@@ -26,7 +31,7 @@ const MAX_TOTAL_PIXELS = 8_294_400;
 const MAX_EDGE = 3_840;
 const MAX_ASPECT_RATIO = 3;
 
-export const OUTPUT_COUNT_OPTIONS = [1, 2, 4, 6, 10] as const;
+export const OUTPUT_COUNT_OPTIONS = [1, 2, 3, 4, 6, 8, 10] as const;
 export const OUTPUT_COUNT_MIN = 1;
 export const OUTPUT_COUNT_MAX = 10;
 

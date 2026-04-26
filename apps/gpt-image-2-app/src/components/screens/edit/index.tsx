@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Empty } from "@/components/ui/empty";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { GlassSelect } from "@/components/ui/select";
+import { GlassCombobox } from "@/components/ui/combobox";
 import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -35,6 +36,8 @@ import {
 } from "@/lib/job-feedback";
 import {
   normalizeOutputCount,
+  OUTPUT_COUNT_OPTIONS,
+  POPULAR_SIZE_OPTIONS,
   QUALITY_OPTIONS,
   validateImageSize,
   validateOutputCount,
@@ -75,30 +78,16 @@ function regionModeHint(mode: EditRegionMode) {
   return "请使用多图参考，或换一个支持局部编辑的凭证";
 }
 
-const SIZE_OPTIONS = [
-  { value: "auto", label: "自动" },
-  { value: "1024x1024", label: "1:1 · 1K" },
-  { value: "1536x1024", label: "16:9 · 1K" },
-  { value: "1024x1536", label: "9:16 · 1K" },
-  { value: "2048x2048", label: "1:1 · 2K" },
-  { value: "3840x2160", label: "16:9 · 4K" },
-  { value: "2160x3840", label: "9:16 · 4K" },
-];
-
 const FORMAT_OPTIONS = [
   { value: "png", label: "PNG" },
   { value: "jpeg", label: "JPEG" },
   { value: "webp", label: "WEBP" },
 ];
 
-const N_OPTIONS = [
-  { value: "1", label: "1" },
-  { value: "2", label: "2" },
-  { value: "4", label: "4" },
-  { value: "6", label: "6" },
-  { value: "8", label: "8" },
-  { value: "10", label: "10" },
-];
+const COUNT_OPTIONS = OUTPUT_COUNT_OPTIONS.map((n) => ({
+  value: String(n),
+  label: String(n),
+}));
 
 export function EditScreen({ config }: { config?: ServerConfig }) {
   const providerNames = useMemo(() => readProviderNames(config), [config]);
@@ -597,11 +586,13 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
             </Field>
 
             <div className="grid grid-cols-2 gap-2">
-              <Field label="尺寸">
-                <GlassSelect
+              <Field label="尺寸" hint={!sizeValidation.ok ? sizeValidation.message : undefined}>
+                <GlassCombobox
                   value={size}
                   onValueChange={setSize}
-                  options={SIZE_OPTIONS}
+                  options={POPULAR_SIZE_OPTIONS}
+                  placeholder="auto / 1536x1024"
+                  invalid={!sizeValidation.ok}
                 />
               </Field>
               <Field label="质量">
@@ -619,11 +610,13 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
                 />
               </Field>
               <Field label="数量">
-                <GlassSelect
+                <GlassCombobox
                   value={String(n)}
-                  onValueChange={(v) => setN(Number(v))}
-                  options={N_OPTIONS}
+                  onValueChange={(v) => setN(Number(v) || 1)}
+                  options={COUNT_OPTIONS}
                   disabled={!supportsMultipleOutputs}
+                  inputMode="numeric"
+                  placeholder="1-10"
                 />
               </Field>
             </div>

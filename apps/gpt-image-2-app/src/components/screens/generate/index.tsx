@@ -4,6 +4,7 @@ import { Sparkles, ListChecks, Image as ImageIcon, X } from "lucide-react";
 import GradientText from "@/components/reactbits/text/GradientText";
 import ShinyText from "@/components/reactbits/text/ShinyText";
 import { GlassSelect } from "@/components/ui/select";
+import { GlassCombobox } from "@/components/ui/combobox";
 import { useCreateGenerate, useJobs } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
 import {
@@ -13,6 +14,8 @@ import {
 } from "@/lib/job-feedback";
 import {
   normalizeOutputCount,
+  OUTPUT_COUNT_OPTIONS,
+  POPULAR_SIZE_OPTIONS,
   validateImageSize,
   validateOutputCount,
 } from "@/lib/image-options";
@@ -27,16 +30,6 @@ import {
 } from "@/lib/providers";
 import type { ServerConfig } from "@/lib/types";
 
-const SIZE_OPTIONS = [
-  { value: "auto", label: "自动" },
-  { value: "1024x1024", label: "1:1 · 1K" },
-  { value: "1536x1024", label: "16:9 · 1K" },
-  { value: "1024x1536", label: "9:16 · 1K" },
-  { value: "2048x2048", label: "1:1 · 2K" },
-  { value: "3840x2160", label: "16:9 · 4K" },
-  { value: "2160x3840", label: "9:16 · 4K" },
-];
-
 const QUALITY_CHIP_OPTIONS = [
   { value: "auto", label: "自动" },
   { value: "low", label: "低" },
@@ -50,14 +43,10 @@ const FORMAT_OPTIONS = [
   { value: "webp", label: "WEBP" },
 ];
 
-const N_OPTIONS = [
-  { value: "1", label: "1" },
-  { value: "2", label: "2" },
-  { value: "4", label: "4" },
-  { value: "6", label: "6" },
-  { value: "8", label: "8" },
-  { value: "10", label: "10" },
-];
+const COUNT_OPTIONS = OUTPUT_COUNT_OPTIONS.map((n) => ({
+  value: String(n),
+  label: String(n),
+}));
 
 export function GenerateScreen({
   config,
@@ -297,12 +286,15 @@ export function GenerateScreen({
 
           {/* parameter chips + CTA */}
           <div className="mt-3 flex items-center gap-2 flex-wrap">
-            <GlassSelect
+            <GlassCombobox
               variant="chip"
               label="尺寸"
               value={size}
-              options={SIZE_OPTIONS}
+              options={POPULAR_SIZE_OPTIONS}
               onValueChange={setSize}
+              placeholder="auto / 1536x1024"
+              minWidth="170px"
+              invalid={!sizeValidation.ok}
             />
             <GlassSelect
               variant="chip"
@@ -318,13 +310,15 @@ export function GenerateScreen({
               options={FORMAT_OPTIONS}
               onValueChange={setFormat}
             />
-            <GlassSelect
+            <GlassCombobox
               variant="chip"
               label="数量"
               value={String(n)}
-              options={N_OPTIONS}
-              onValueChange={(v) => setN(Number(v))}
+              options={COUNT_OPTIONS}
+              onValueChange={(v) => setN(Number(v) || 1)}
               disabled={!supportsMultipleOutputs}
+              inputMode="numeric"
+              minWidth="100px"
             />
             <div className="flex-1" />
             <button
