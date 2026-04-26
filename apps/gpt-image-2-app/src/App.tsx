@@ -132,7 +132,6 @@ export default function App() {
           <TopNav
             screen={screen}
             setScreen={setScreen}
-            config={config}
             running={running}
           />
 

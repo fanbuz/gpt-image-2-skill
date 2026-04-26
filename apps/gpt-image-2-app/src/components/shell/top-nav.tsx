@@ -1,27 +1,15 @@
-import { Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { SCREENS, type ScreenId } from "./screens";
-import {
-  defaultProviderLabel,
-  effectiveDefaultProvider,
-} from "@/lib/providers";
-import type { ServerConfig } from "@/lib/types";
 
 export function TopNav({
   screen,
   setScreen,
-  config,
   running,
 }: {
   screen: ScreenId;
   setScreen: (s: ScreenId) => void;
-  config?: ServerConfig;
   running?: { generate: boolean; edit: boolean };
 }) {
-  const provName = defaultProviderLabel(config);
-  const provKey = effectiveDefaultProvider(config);
-  const provHasKey = Boolean(provKey);
-
   return (
     <header className="relative h-14 shrink-0 z-30 flex items-center px-4 xl:px-5">
       {/* Left — brand chip */}
@@ -104,59 +92,6 @@ export function TopNav({
         })}
       </div>
 
-      {/* Right — provider chip + actions */}
-      <div className="ml-auto flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setScreen("settings")}
-          className="hidden md:inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-medium transition-colors"
-          style={{
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.10)",
-            color: provHasKey ? "var(--text)" : "var(--text-muted)",
-          }}
-          title={provHasKey ? "默认凭证" : "未配置凭证 — 点击前往设置"}
-        >
-          <span
-            className="h-2 w-2 rounded-full"
-            style={{
-              background: provHasKey
-                ? "var(--status-ok)"
-                : "var(--status-queued)",
-              boxShadow: provHasKey
-                ? "0 0 8px rgba(52,211,153,0.6)"
-                : undefined,
-            }}
-            aria-hidden
-          />
-          <span className="truncate max-w-[140px]">{provName}</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setScreen("settings")}
-          className="inline-flex items-center justify-center h-8 w-8 rounded-full text-muted hover:text-foreground transition-colors"
-          style={{
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.08)",
-          }}
-          aria-label="设置"
-        >
-          <SettingsIcon size={14} />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setScreen("generate")}
-          className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-[12.5px] font-semibold text-[#06060a] transition-colors hover:opacity-95"
-          style={{
-            background: "white",
-          }}
-        >
-          <Sparkles size={13} />
-          新建生成
-        </button>
-      </div>
     </header>
   );
 }
