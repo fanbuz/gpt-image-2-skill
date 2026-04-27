@@ -34,27 +34,30 @@ export const Input = forwardRef<HTMLInputElement, Props>(
       "aria-invalid": ariaInvalidProp,
       ...rest
     },
-    ref
+    ref,
   ) => {
     const id = useFieldId(idProp);
     const describedBy = useFieldDescribedBy(
-      typeof ariaDescribedByProp === "string" ? ariaDescribedByProp : undefined
+      typeof ariaDescribedByProp === "string" ? ariaDescribedByProp : undefined,
     );
     const invalid = useFieldInvalid(
       ariaInvalidProp === true || ariaInvalidProp === "true"
         ? true
         : ariaInvalidProp === false || ariaInvalidProp === "false"
           ? false
-          : undefined
+          : undefined,
     );
 
     return (
       <div
         className={cn(
-          "flex items-center gap-2 px-2.5 bg-raised border border-border rounded-md transition-colors focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-faint)]",
-          invalid && "border-status-err focus-within:border-status-err",
+          "flex items-center gap-2 px-2.5 rounded-md transition-colors",
+          "bg-[color:var(--w-04)] border border-border",
+          "focus-within:border-[color:var(--accent-55)] focus-within:bg-[color:var(--accent-06)] focus-within:shadow-[0_0_0_3px_var(--accent-14)]",
+          invalid &&
+            "border-status-err focus-within:border-status-err focus-within:shadow-[0_0_0_3px_var(--status-err-18)]",
           heights[size],
-          wrapperClassName
+          wrapperClassName,
         )}
         style={style}
       >
@@ -72,16 +75,16 @@ export const Input = forwardRef<HTMLInputElement, Props>(
           aria-describedby={describedBy}
           aria-invalid={invalid}
           className={cn(
-            "flex-1 bg-transparent border-none outline-none text-[13px] min-w-0",
+            "flex-1 bg-transparent border-none outline-none text-[13px] min-w-0 placeholder:text-faint",
             monospace && "font-mono",
-            className
+            className,
           )}
           {...rest}
         />
         {suffix}
       </div>
     );
-  }
+  },
 );
 
 Input.displayName = "Input";

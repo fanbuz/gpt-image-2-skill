@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { TweaksProvider } from "@/hooks/use-tweaks";
+import { ConfirmProvider } from "@/hooks/use-confirm";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -15,11 +16,19 @@ const queryClient = new QueryClient({
   },
 });
 
+// In dev mode, expose the QueryClient on window so we can inspect & mock data
+// from the browser console / preview eval. No-op in production builds.
+if (import.meta.env.DEV) {
+  (window as unknown as { __qc?: QueryClient }).__qc = queryClient;
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <TweaksProvider>
-        <App />
+        <ConfirmProvider>
+          <App />
+        </ConfirmProvider>
       </TweaksProvider>
     </QueryClientProvider>
   </React.StrictMode>

@@ -1,21 +1,30 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  Image as ImageIcon,
+  Loader2,
+  Plus,
+  Settings as SettingsIcon,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Empty } from "@/components/ui/empty";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { Select } from "@/components/ui/select";
+import { GlassSelect } from "@/components/ui/select";
+import { GlassCombobox } from "@/components/ui/combobox";
 import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip } from "@/components/ui/tooltip";
-import { Icon } from "@/components/icon";
 import {
-  ImageSizeInput,
-  OutputCountInput,
-} from "@/components/screens/shared/image-parameter-inputs";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Icon } from "@/components/icon";
 import { OutputTile } from "@/components/screens/shared/output-tile";
 import { MaskCanvas, type MaskExport, type MaskMode } from "./mask-canvas";
 import { ReferenceImageCard, type RefImage } from "./reference-card";
+import { LocalEditOnboarding } from "./local-edit-onboarding";
 import { providerKindLabel } from "@/lib/format";
 import { useCreateEdit } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
@@ -28,6 +37,8 @@ import {
 } from "@/lib/job-feedback";
 import {
   normalizeOutputCount,
+  OUTPUT_COUNT_OPTIONS,
+  POPULAR_SIZE_OPTIONS,
   QUALITY_OPTIONS,
   validateImageSize,
   validateOutputCount,
@@ -44,6 +55,7 @@ import {
 } from "@/lib/providers";
 import { openPath, revealPath, saveImages } from "@/lib/user-actions";
 import type { ProviderConfig, ServerConfig } from "@/lib/types";
+import { cn } from "@/lib/cn";
 
 type EditMode = "reference" | "region";
 type RefWithFile = RefImage & { file: File };
@@ -66,6 +78,17 @@ function regionModeHint(mode: EditRegionMode) {
     return "会额外发送一张选区标记图；用户上传图片顺序保持不变";
   return "请使用多图参考，或换一个支持局部编辑的凭证";
 }
+
+const FORMAT_OPTIONS = [
+  { value: "png", label: "PNG" },
+  { value: "jpeg", label: "JPEG" },
+  { value: "webp", label: "WEBP" },
+];
+
+const COUNT_OPTIONS = OUTPUT_COUNT_OPTIONS.map((n) => ({
+  value: String(n),
+  label: String(n),
+}));
 
 export function EditScreen({ config }: { config?: ServerConfig }) {
   const providerNames = useMemo(() => readProviderNames(config), [config]);
@@ -98,7 +121,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const [runError, setRunError] = useState<string | null>(null);
   const [runNotice, setRunNotice] = useState<string | null>(null);
   const promptId = useId();
-  const providerSelectId = useId();
   const brushSliderId = useId();
 
   useEffect(() => {
@@ -389,216 +411,303 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const saveAll = () => saveImages(outputPaths, "图片");
   const hasOutputs =
     outputs.some((output) => output.url) || outputPaths.length > 0;
-  const outputSubtitle = usesRegion
-    ? "设为目标图并涂抹要修改的区域，再点击右侧开始。"
-    : "上传一张或多张参考图，写清楚希望如何融合或改动。";
+
+  const submitDisabled =
+    isSubmitting ||
+    refs.length === 0 ||
+    !provider ||
+    Boolean(parameterError) ||
+    regionUnavailable;
 
   return (
-    <div className="edit-layout">
-      <div className="edit-refs flex flex-col overflow-auto border-r border-border bg-raised">
-        <div className="border-b border-border-faint p-4">
-          <div className="mb-2.5 flex items-center justify-between">
-            <div className="t-h3">
-              {usesRegion ? "目标图与参考图" : "参考图"}
-            </div>
-            <span
-              className={
-                referenceCountError
-                  ? "t-tiny font-mono text-status-err"
-                  : "t-tiny font-mono"
-              }
-            >
-              已上传 {refs.length}/{maxReferenceImages}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {refs.map((ref) => (
-              <ReferenceImageCard
-                key={ref.id}
-                ref_={ref}
-                active={ref.id === selectedRef}
-                role={
-                  usesRegion
-                    ? ref.id === targetRef?.id
-                      ? "target"
-                      : "reference"
-                    : undefined
-                }
-                onSelect={() => setSelectedRef(ref.id)}
-                onSetTarget={
-                  usesRegion
-                    ? () => {
-                        setTargetRefId(ref.id);
-                        setSelectedRef(ref.id);
-                      }
-                    : undefined
-                }
-                onRemove={() => removeRef(ref.id)}
-              />
-            ))}
+    <div className="relative h-full w-full overflow-hidden flex flex-col">
+      <LocalEditOnboarding active={usesRegion} />
+      {/* TOOLBAR — wraps when narrow, never clips */}
+      <header className="shrink-0 px-4 pt-3 pb-2 flex items-center gap-2 flex-wrap">
+        <Segmented
+          value={editMode}
+          onChange={(mode) => {
+            setEditMode(mode);
+            setRunError(null);
+            setRunNotice(null);
+          }}
+          ariaLabel="编辑模式"
+          size="sm"
+          options={[
+            { value: "reference", label: "多图参考", icon: "image" },
+            { value: "region", label: "局部编辑", icon: "mask" },
+          ]}
+        />
+
+        {/* Refs popover */}
+        <Popover>
+          <PopoverTrigger asChild>
             <button
               type="button"
-              onClick={() => {
-                if (refs.length >= maxReferenceImages) return;
-                fileInputRef.current?.click();
-              }}
-              disabled={refs.length >= maxReferenceImages}
-              className="touch-target flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-[1.5px] border-dashed border-border-strong bg-sunken text-muted disabled:cursor-not-allowed disabled:opacity-50"
+              className={cn(
+                "inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] transition-colors",
+                "border bg-[color:var(--w-04)] hover:bg-[color:var(--w-07)]",
+                referenceCountError
+                  ? "border-[color:var(--status-err)] text-[color:var(--status-err)]"
+                  : "border-border text-foreground",
+              )}
             >
-              <Icon name="plus" size={18} />
-              <span className="text-[11px]">添加</span>
+              <ImageIcon size={12} className="opacity-80" />
+              <span>参考图</span>
+              <span className="font-mono text-faint">
+                {refs.length}/{maxReferenceImages}
+              </span>
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*"
-              className="hidden"
-              onChange={(event) => {
-                addRef(event.target.files);
-                if (fileInputRef.current) fileInputRef.current.value = "";
-              }}
-            />
-          </div>
-          {usesRegion && (
-            <div className="mt-3 rounded-lg border border-border bg-sunken px-3 py-2 text-[11.5px] leading-relaxed text-muted">
-              遮罩只作用在标记为「目标图」的图片上；其他图片只作为风格、人物或物体参考。
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[380px]">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="text-[12px] font-semibold text-foreground">
+                {usesRegion ? "目标图与参考图" : "参考图"}
+              </div>
+              <span
+                className={cn(
+                  "text-[10.5px] font-mono",
+                  referenceCountError
+                    ? "text-[color:var(--status-err)]"
+                    : "text-faint",
+                )}
+              >
+                {refs.length}/{maxReferenceImages}
+              </span>
             </div>
-          )}
-        </div>
+            <div className="grid grid-cols-3 gap-2">
+              {refs.map((ref) => (
+                <ReferenceImageCard
+                  key={ref.id}
+                  ref_={ref}
+                  active={ref.id === selectedRef}
+                  role={
+                    usesRegion
+                      ? ref.id === targetRef?.id
+                        ? "target"
+                        : "reference"
+                      : undefined
+                  }
+                  onSelect={() => setSelectedRef(ref.id)}
+                  onSetTarget={
+                    usesRegion
+                      ? () => {
+                          setTargetRefId(ref.id);
+                          setSelectedRef(ref.id);
+                        }
+                      : undefined
+                  }
+                  onRemove={() => removeRef(ref.id)}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={refs.length >= maxReferenceImages}
+                className="touch-target flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-[1.5px] border-dashed border-border-strong bg-[color:var(--w-02)] text-muted hover:border-foreground/30 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+              >
+                <Plus size={16} />
+                <span className="text-[10.5px]">添加</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  addRef(event.target.files);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+              />
+            </div>
+            {usesRegion && (
+              <div className="mt-3 rounded-md border border-border-faint bg-[color:var(--w-04)] px-2.5 py-1.5 text-[11px] leading-relaxed text-muted">
+                遮罩只作用在标记为「目标图」的图片上；其他图片只作为风格、人物或物体参考。
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
 
-        {usesRegion ? (
-          <div className="border-b border-border-faint p-4">
-            <FieldLabel hint={targetRef ? "涂抹目标图" : "请先上传目标图"}>
-              <span className="inline-flex items-center gap-1.5">
-                局部选区
-                <Tooltip text="拖动指针涂抹；键盘可用方向键移动，空格绘制，Delete 清除">
+        <div className="flex-1" />
+
+        {provider && (
+          <span
+            className="hidden md:inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] text-foreground"
+            style={{
+              background: "var(--w-05)",
+              border: "1px solid var(--w-10)",
+            }}
+            title={providerKindLabel(providerCfg?.type)}
+          >
+            <Icon name="cpu" size={12} style={{ color: "var(--accent)" }} />
+            <span className="truncate max-w-[120px]">{provider}</span>
+          </span>
+        )}
+
+        {/* Params popover */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] text-foreground transition-colors hover:bg-[color:var(--w-07)]"
+              style={{
+                background: "var(--w-05)",
+                border: "1px solid var(--w-10)",
+              }}
+            >
+              <SettingsIcon size={12} />
+              参数
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[340px] space-y-3">
+            <div className="t-caps">
+              编辑参数
+            </div>
+
+            <Field label="凭证">
+              <GlassSelect
+                value={provider}
+                onValueChange={setProvider}
+                options={providerNames.map((p) => ({ value: p, label: p }))}
+                disabled={providerNames.length === 0}
+                placeholder="（无可用凭证）"
+              />
+              <div className="mt-1 flex items-center gap-1.5 text-[11px] text-faint">
+                <span
+                  className="t-mono truncate max-w-[180px]"
+                  title={providerCfg?.model ?? ""}
+                >
+                  {providerCfg?.model ?? "—"}
+                </span>
+                <span aria-hidden>·</span>
+                <span className="truncate">
+                  {providerKindLabel(providerCfg?.type)}
+                </span>
+              </div>
+            </Field>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="尺寸" hint={!sizeValidation.ok ? sizeValidation.message : undefined}>
+                <GlassCombobox
+                  value={size}
+                  onValueChange={setSize}
+                  options={POPULAR_SIZE_OPTIONS}
+                  placeholder="auto / 1536x1024"
+                  invalid={!sizeValidation.ok}
+                />
+              </Field>
+              <Field label="质量">
+                <GlassSelect
+                  value={quality}
+                  onValueChange={setQuality}
+                  options={QUALITY_OPTIONS}
+                />
+              </Field>
+              <Field label="格式">
+                <GlassSelect
+                  value={format}
+                  onValueChange={setFormat}
+                  options={FORMAT_OPTIONS}
+                />
+              </Field>
+              <Field label="数量">
+                <GlassCombobox
+                  value={String(n)}
+                  onValueChange={(v) => setN(Number(v) || 1)}
+                  options={COUNT_OPTIONS}
+                  disabled={!supportsMultipleOutputs}
+                  inputMode="numeric"
+                  placeholder="1-10"
+                />
+              </Field>
+            </div>
+
+            {usesRegion && (
+              <>
+                <div className="pt-2 mt-1 border-t border-[color:var(--w-06)]" />
+                <div className="t-caps">
+                  遮罩工具
+                </div>
+                <div className="space-y-2">
+                  <Segmented
+                    value={maskMode}
+                    onChange={setMaskMode}
+                    size="sm"
+                    ariaLabel="涂抹模式"
+                    options={[
+                      { value: "paint", label: "绘制", icon: "brush" },
+                      { value: "erase", label: "擦除", icon: "eraser" },
+                    ]}
+                  />
+                  <div className="flex items-center gap-2.5">
+                    <label
+                      htmlFor={brushSliderId}
+                      className="text-[11px] text-muted shrink-0"
+                    >
+                      笔刷
+                    </label>
+                    <input
+                      id={brushSliderId}
+                      type="range"
+                      min={8}
+                      max={80}
+                      value={brushSize}
+                      onChange={(event) =>
+                        setBrushSize(Number(event.target.value))
+                      }
+                      className="flex-1 cursor-pointer"
+                      style={{ accentColor: "var(--accent)", height: 4 }}
+                    />
+                    <span className="text-[11px] text-faint font-mono w-7 text-right tabular-nums">
+                      {brushSize}
+                    </span>
+                  </div>
                   <button
                     type="button"
-                    aria-label="查看局部选区操作提示"
-                    className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border bg-raised text-faint transition-colors hover:border-border-strong hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-[color:var(--accent)]"
+                    onClick={() => setClearKey((k) => k + 1)}
+                    className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md text-[11.5px] text-muted hover:text-foreground hover:bg-[color:var(--w-05)] transition-colors"
                   >
-                    <Icon name="info" size={11} aria-hidden="true" />
+                    <Trash2 size={11} /> 清除选区
                   </button>
-                </Tooltip>
-              </span>
-            </FieldLabel>
-            <div className="mb-2.5 mt-1.5 flex items-center gap-1.5">
-              <Segmented
-                value={maskMode}
-                onChange={setMaskMode}
-                size="sm"
-                ariaLabel="涂抹模式"
-                options={[
-                  { value: "paint", label: "绘制", icon: "brush" },
-                  { value: "erase", label: "擦除", icon: "eraser" },
-                ]}
-              />
-              <div className="flex-1" />
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="trash"
-                onClick={() => setClearKey((key) => key + 1)}
-                title="清除选区"
-                aria-label="清除选区"
-              />
-            </div>
-            <div className="mb-1 flex items-center gap-2">
-              <label htmlFor={brushSliderId} className="t-tiny min-w-[28px]">
-                笔刷
-              </label>
-              <input
-                id={brushSliderId}
-                type="range"
-                min={8}
-                max={80}
-                value={brushSize}
-                onChange={(event) => setBrushSize(Number(event.target.value))}
-                aria-valuemin={8}
-                aria-valuemax={80}
-                aria-valuenow={brushSize}
-                aria-valuetext={`${brushSize} 像素`}
-                className="flex-1"
-                style={{ accentColor: "var(--accent)" }}
-              />
-              <span
-                className="t-mono min-w-5 text-right text-faint"
-                aria-hidden="true"
+                </div>
+                <div className="rounded-md border border-border-faint bg-[color:var(--w-04)] px-2.5 py-1.5 text-[11px] leading-relaxed text-muted">
+                  {regionModeHint(editRegionMode)}
+                </div>
+              </>
+            )}
+          </PopoverContent>
+        </Popover>
+
+        <button
+          type="button"
+          onClick={handleRun}
+          disabled={submitDisabled}
+          className="inline-flex items-center justify-center gap-1.5 h-8 px-4 rounded-full text-[12px] font-semibold text-foreground transition-[background,opacity] hover:opacity-95 active:translate-y-[0.5px] disabled:opacity-45 disabled:cursor-not-allowed"
+          style={{
+            backgroundImage: "var(--accent-gradient-fill)",
+            border: "1px solid var(--accent-50)",
+            boxShadow: "var(--shadow-accent-glow)",
+          }}
+        >
+          {isSubmitting ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Sparkles size={12} />
+          )}
+          {isSubmitting ? "提交中…" : isTracking ? "再提交" : "应用"}
+        </button>
+      </header>
+
+      {/* CANVAS — full bleed, responsive */}
+      <main className="flex-1 min-h-0 px-4 py-2 flex items-center justify-center overflow-hidden">
+        <div className="surface-panel relative h-full w-full max-w-[min(70vh,820px)] overflow-hidden flex items-center justify-center p-4">
+          {usesRegion ? (
+            targetRef ? (
+              <div
+                className="w-full max-h-full"
+                style={{ maxWidth: "min(100%, calc(70vh - 64px))" }}
               >
-                {brushSize}
-              </span>
-            </div>
-            <div className="mt-2 rounded-lg border border-border bg-sunken px-3 py-2 text-[11.5px] leading-relaxed text-muted">
-              {regionModeHint(editRegionMode)}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="flex-1 p-4">
-          <FieldLabel
-            htmlFor={promptId}
-            hint={
-              <span className="flex items-center gap-1" aria-hidden="true">
-                <span className="kbd">⌘</span>
-                <span className="kbd">↵</span>
-              </span>
-            }
-          >
-            提示词
-          </FieldLabel>
-          <Textarea
-            id={promptId}
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            minHeight={120}
-            maxLength={4000}
-            placeholder={
-              usesRegion
-                ? "描述目标图选区里要变成什么..."
-                : "描述如何参考这些图片进行编辑..."
-            }
-          />
-          <div className="mt-2 flex items-center gap-1.5 text-[11px] text-faint">
-            <Icon name="info" size={11} aria-hidden="true" />
-            {usesRegion
-              ? "越具体，选区外越容易保持稳定。"
-              : "可以说明哪张图负责人物、风格、背景或物体。"}
-          </div>
-        </div>
-      </div>
-
-      <div className="edit-canvas gridpaper flex flex-col overflow-auto bg-background">
-        <div className="flex items-center gap-2.5 px-6 pb-3 pt-5">
-          <Segmented
-            value={editMode}
-            onChange={(mode) => {
-              setEditMode(mode);
-              setRunError(null);
-              setRunNotice(null);
-            }}
-            ariaLabel="编辑模式"
-            options={[
-              { value: "reference", label: "多图参考", icon: "image" },
-              { value: "region", label: "局部编辑", icon: "mask" },
-            ]}
-          />
-          <div className="flex-1" />
-          <span className="t-mono t-small">
-            {usesRegion
-              ? (targetRef?.name ?? "未选择目标图")
-              : (selectedRefObj?.name ?? refs[0]?.name ?? "—")}
-          </span>
-        </div>
-
-        <div className="flex justify-center px-6">
-          <div
-            style={{
-              width: "min(100%, clamp(280px, calc(100vh - 340px), 520px))",
-            }}
-          >
-            {usesRegion ? (
-              targetRef ? (
                 <MaskCanvas
                   imageUrl={targetRef.url}
                   seed={0}
@@ -620,268 +729,164 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
                     void submit(payload);
                   }}
                 />
-              ) : (
-                <div className="flex aspect-square items-center justify-center rounded-[10px] border border-border bg-sunken text-[12px] text-faint">
-                  请上传并设定目标图
-                </div>
-              )
-            ) : selectedRefObj || refs[0] ? (
-              <div className="relative aspect-square overflow-hidden rounded-[10px] border border-border bg-sunken">
-                <img
-                  src={(selectedRefObj ?? refs[0]).url}
-                  alt={(selectedRefObj ?? refs[0]).name}
-                  className="h-full w-full object-contain"
-                />
               </div>
             ) : (
-              <div className="flex aspect-square items-center justify-center rounded-[10px] border border-border bg-sunken text-[12px] text-faint">
-                请上传至少一张参考图
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 px-6 pb-2 pt-5">
-          <div className="t-h3">
-            {isWorking
-              ? `输出 · 请求 ${displayN} 张`
-              : hasOutputs
-                ? `输出 · ${outputs.length} 张`
-                : "输出 · 尚未生成"}
-          </div>
-          <div className="flex-1" />
-          {hasOutputs && (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="download"
-                onClick={saveSelected}
-              >
-                保存选中
-              </Button>
-              {outputs.length > 1 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon="download"
-                  onClick={saveAll}
-                >
-                  保存全部
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="folder"
-                onClick={() => revealPath(selectedPath)}
-              >
-                打开文件夹
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="reload"
-                onClick={handleRun}
-              >
-                重新生成
-              </Button>
-            </>
+              <Empty
+                icon="mask"
+                title="请上传并设定目标图"
+                subtitle="点击上方「参考图」按钮，再把其中一张设为目标图。"
+              />
+            )
+          ) : selectedRefObj || refs[0] ? (
+            <img
+              src={(selectedRefObj ?? refs[0]).url}
+              alt={(selectedRefObj ?? refs[0]).name}
+              className="max-h-full max-w-full object-contain rounded-md"
+            />
+          ) : (
+            <Empty
+              icon="image"
+              title="请上传至少一张参考图"
+              subtitle="点击上方「参考图」按钮添加，再描述如何修改。"
+            />
           )}
         </div>
+      </main>
 
-        <div className="px-6 pb-6">
-          {runError && !isWorking ? (
-            <Empty
-              icon="warn"
-              title="编辑失败"
-              subtitle={runError}
-              action={
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon="reload"
-                  onClick={handleRun}
-                >
-                  重试
-                </Button>
-              }
+      {/* BOTTOM — prompt + outputs strip + error */}
+      <footer className="shrink-0 px-4 pb-3 space-y-2">
+        {runError && !isWorking && (
+          <div className="surface-panel flex items-center gap-2 px-3 py-2 border border-[color:var(--status-err)]/40">
+            <Icon
+              name="warn"
+              size={13}
+              style={{ color: "var(--status-err)" }}
             />
-          ) : !hasOutputs && !isWorking ? (
-            <Empty icon="image" title="还没有输出" subtitle={outputSubtitle} />
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
+            <span className="text-[12px] flex-1" style={{ color: "var(--status-err)" }}>
+              {runError}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="reload"
+              onClick={handleRun}
+            >
+              重试
+            </Button>
+          </div>
+        )}
+
+        {runNotice && !isWorking && (
+          <div className="surface-panel px-3 py-1.5 text-[11.5px] leading-relaxed text-muted">
+            {runNotice} 已保留收到的图片；如果需要补齐，可以点「应用」重试。
+          </div>
+        )}
+
+        <div className="surface-panel p-2.5">
+          <div className="flex items-center gap-2 mb-1.5">
+            <FieldLabel htmlFor={promptId}>
+              {usesRegion ? "目标图选区里要变成什么" : "提示词"}
+            </FieldLabel>
+            <div className="flex-1" />
+            <span className="text-[10.5px] font-mono text-faint">
+              {prompt.length} / 4000
+            </span>
+          </div>
+          <Textarea
+            id={promptId}
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            minHeight={56}
+            maxLength={4000}
+            placeholder={
+              usesRegion
+                ? "描述目标图选区里要变成什么..."
+                : "描述如何参考这些图片进行编辑..."
+            }
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey))
+                handleRun();
+            }}
+          />
+        </div>
+
+        {(isWorking || hasOutputs) && (
+          <div className="surface-panel p-2.5">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[12px] font-semibold text-foreground">
+                {isWorking
+                  ? `生成中 · ${displayN} 张`
+                  : `输出 · ${outputs.length} 张`}
+              </span>
+              <div className="flex-1" />
+              {hasOutputs && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="download"
+                    onClick={saveSelected}
+                  >
+                    保存选中
+                  </Button>
+                  {outputs.length > 1 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon="download"
+                      onClick={saveAll}
+                    >
+                      全部
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="folder"
+                    onClick={() => revealPath(selectedPath)}
+                  >
+                    位置
+                  </Button>
+                </>
+              )}
+            </div>
+            <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
               {isWorking &&
                 !hasOutputs &&
-                Array.from({ length: displayN }).map((_, index) => (
+                Array.from({ length: displayN }).map((_, i) => (
                   <div
-                    key={index}
-                    className="flex aspect-square items-center justify-center rounded-lg border border-border text-[11px] font-mono text-faint animate-shimmer"
+                    key={i}
+                    className="shrink-0 h-20 w-20 rounded-md border border-border bg-[color:var(--w-04)] flex items-center justify-center text-[10px] font-mono text-faint animate-shimmer"
                     style={{
-                      background:
-                        "linear-gradient(90deg, var(--bg-sunken) 0%, var(--bg-hover) 40%, var(--bg-sunken) 80%)",
+                      background: "var(--skeleton-gradient-soft)",
                       backgroundSize: "200% 100%",
                     }}
                   >
-                    生成中 · {String.fromCharCode(65 + index)}
+                    {String.fromCharCode(65 + i)}
                   </div>
                 ))}
               {hasOutputs &&
                 outputs.map((output) => (
-                  <OutputTile
-                    key={output.index}
-                    output={output}
-                    onSelect={() => setSelectedOutput(output.index)}
-                    onDownload={() =>
-                      saveImages([api.outputPath(jobId!, output.index)], "图片")
-                    }
-                    onOpen={() =>
-                      openPath(api.outputPath(jobId!, output.index))
-                    }
-                  />
+                  <div key={output.index} className="shrink-0 w-20">
+                    <OutputTile
+                      output={output}
+                      onSelect={() => setSelectedOutput(output.index)}
+                      onDownload={() =>
+                        saveImages(
+                          [api.outputPath(jobId!, output.index)],
+                          "图片",
+                        )
+                      }
+                      onOpen={() =>
+                        openPath(api.outputPath(jobId!, output.index))
+                      }
+                    />
+                  </div>
                 ))}
             </div>
-          )}
-          {runNotice && !isWorking && (
-            <div className="mt-3 rounded-lg border border-[color:var(--warn-border,var(--border))] bg-sunken px-3 py-2 text-[12px] leading-relaxed text-muted">
-              {runNotice} 已保留收到的图片；如果需要补齐，可以点「重新生成」。
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="edit-settings parameter-shelf border-t border-border bg-raised xl:border-l xl:border-t-0">
-        <div className="parameter-scroll px-4 py-3.5">
-          <Field label="凭证" id={providerSelectId}>
-            <div className="flex h-9 items-center gap-1.5 rounded-md border border-border bg-sunken px-2.5 focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-faint)] transition-colors">
-              <Icon
-                name="cpu"
-                size={14}
-                aria-hidden="true"
-                style={{ color: "var(--accent)" }}
-              />
-              <select
-                id={providerSelectId}
-                value={provider}
-                onChange={(event) => setProvider(event.target.value)}
-                disabled={providerNames.length === 0}
-                className="flex-1 border-none bg-transparent text-[13px] font-medium outline-none disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {providerNames.length === 0 && (
-                  <option value="">（无可用凭证）</option>
-                )}
-                {providerNames.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-              {provider === defaultProvider && (
-                <Badge tone="neutral" size="sm">
-                  默认
-                </Badge>
-              )}
-            </div>
-            <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted">
-              <span
-                className="t-mono truncate max-w-[160px]"
-                title={providerCfg?.model ?? ""}
-              >
-                {providerCfg?.model ?? "—"}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span className="truncate">
-                {providerKindLabel(providerCfg?.type)}
-              </span>
-            </div>
-          </Field>
-
-          {usesRegion && (
-            <div className="mb-3 rounded-lg border border-border bg-sunken px-3 py-2 text-[11.5px] leading-relaxed text-muted">
-              <div className="font-semibold text-foreground">
-                {regionModeLabel(editRegionMode)}
-              </div>
-              <div>{regionModeHint(editRegionMode)}</div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="col-span-2">
-              <Field label="尺寸" hint="auto 或 16 倍数自定义尺寸">
-                <ImageSizeInput value={size} onChange={setSize} />
-              </Field>
-            </div>
-            <Field label="质量">
-              <Select
-                value={quality}
-                onChange={(event) => setQuality(event.target.value)}
-                options={QUALITY_OPTIONS}
-              />
-            </Field>
-            <Field label="格式">
-              <Select
-                value={format}
-                onChange={(event) => setFormat(event.target.value)}
-                options={["png", "jpeg", "webp"]}
-              />
-            </Field>
           </div>
-
-          <Field
-            label="输出数量"
-            hint={
-              supportsMultipleOutputs
-                ? "可以一次生成多张候选"
-                : "这个服务一次只返回一张"
-            }
-          >
-            {supportsMultipleOutputs ? (
-              <OutputCountInput value={n} onChange={setN} />
-            ) : (
-              <div className="flex h-9 items-center justify-between rounded-md border border-border bg-sunken px-2.5 text-[12px]">
-                <span className="font-semibold">1</span>
-                <span className="text-faint">会自动单张生成</span>
-              </div>
-            )}
-          </Field>
-        </div>
-
-        <div className="parameter-actions px-4 py-3.5">
-          <Button
-            variant="primary"
-            size="lg"
-            icon="sparkle"
-            onClick={handleRun}
-            disabled={
-              isSubmitting ||
-              refs.length === 0 ||
-              !provider ||
-              Boolean(parameterError) ||
-              regionUnavailable
-            }
-            kbd="⌘↵"
-            className="w-full justify-center"
-          >
-            {isSubmitting
-              ? "提交中..."
-              : isTracking
-                ? usesRegion
-                  ? "再提交局部编辑"
-                  : "再提交参考编辑"
-                : usesRegion
-                  ? "开始局部编辑"
-                  : "开始参考编辑"}
-          </Button>
-          <div className="mt-2 flex justify-between text-[11px] text-faint">
-            <span>
-              {usesRegion
-                ? `目标图 + ${Math.max(0, refs.length - 1)} 张参考`
-                : `${refs.length} 张参考图`}
-            </span>
-            <span className="t-mono">{displayN} 张</span>
-          </div>
-        </div>
-      </div>
+        )}
+      </footer>
     </div>
   );
 }

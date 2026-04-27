@@ -25,17 +25,28 @@ export function Dialog({
   return (
     <Radix.Root open={open} onOpenChange={onOpenChange}>
       <Radix.Portal>
-        <Radix.Overlay className="modal-overlay fixed inset-0 z-40 animate-fade-in" />
+        <Radix.Overlay
+          className="fixed inset-0 z-40 animate-fade-in"
+          style={{
+            background: "var(--k-55)",
+            backdropFilter: "blur(6px)",
+            WebkitBackdropFilter: "blur(6px)",
+          }}
+        />
         <Radix.Content
           style={{
             width,
             maxWidth: "calc(100vw - 48px)",
             maxHeight: `min(${maxHeight}px, calc(100vh - 48px))`,
+            backdropFilter: "blur(28px) saturate(140%)",
+            WebkitBackdropFilter: "blur(28px) saturate(140%)",
+            background: "var(--surface-floating-soft)",
           }}
           className={cn(
             "fixed left-1/2 top-1/2 z-50 grid -translate-x-1/2 -translate-y-1/2 overflow-hidden",
             "grid-rows-[auto_minmax(0,1fr)_auto]",
-            "bg-raised border border-border rounded-xl shadow-lg animate-fade-in",
+            "rounded-xl shadow-lg animate-fade-in",
+            "border border-border-strong",
           )}
         >
           {title && (
@@ -50,7 +61,7 @@ export function Dialog({
             {children}
           </div>
           {footer && (
-            <div className="flex shrink-0 justify-end gap-2 border-t border-border-faint bg-raised px-[18px] py-3">
+            <div className="flex shrink-0 justify-end gap-2 border-t border-border-faint px-[18px] py-3 bg-[color:var(--w-02)]">
               {footer}
             </div>
           )}
