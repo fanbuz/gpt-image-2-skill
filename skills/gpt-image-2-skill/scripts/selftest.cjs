@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 const path = require("node:path");
+const fs = require("node:fs");
+const os = require("node:os");
 const childProcess = require("node:child_process");
 
 const BASE_DIR = __dirname;
@@ -25,11 +27,30 @@ function main() {
   const config = runJson(["--json", "config", "inspect"]);
   const doctor = runJson(["--json", "doctor"]);
   const auth = runJson(["--json", "auth", "inspect"]);
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "gpt-image-2-skill-selftest-"));
+  const transparentPng = path.join(tempDir, "transparent.png");
+  fs.writeFileSync(
+    transparentPng,
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAHElEQVR4nGNgoBQwwhj/wQhFAizHRMgEyhVQDgB71QIIdIAIkgAAAABJRU5ErkJggg==",
+      "base64"
+    )
+  );
+  const transparent = runJson([
+    "--json",
+    "transparent",
+    "verify",
+    "--input",
+    transparentPng,
+    "--strict",
+  ]);
+  fs.rmSync(tempDir, { recursive: true, force: true });
   console.log(
     JSON.stringify(
       {
         ok: true,
         doctor_ok: doctor.ok === true,
+        transparent_verify_passed: transparent.passed === true,
         config_file: config.config_file ?? null,
         default_provider: config.config?.default_provider ?? null,
         resolved_provider: doctor.provider_selection?.resolved ?? null,

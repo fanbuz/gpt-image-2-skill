@@ -31,6 +31,8 @@ Common `code` values:
 | `network_error` | runtime | transport-level failure |
 | `http_error` | runtime | upstream returned non-2xx |
 | `invalid_body_json` | runtime | `request create` body file or stdin not valid JSON |
+| `transparent_verification_failed` | runtime | transparent PNG extraction completed but final alpha verification did not pass |
+| `transparent_input_mismatch` | runtime | dual-background extraction sources have different dimensions |
 
 ## Success envelopes by command
 
@@ -97,6 +99,82 @@ Returns the raw upstream JSON wrapped in the standard envelope:
 ```
 
 When `--expect-image` is set, the runtime decodes the first image payload into `--out-image` and adds `image_path` to `data`.
+
+### `transparent generate`
+
+Returns the final verified transparent PNG. The command fails with `transparent_verification_failed` if the final file does not pass the built-in gate.
+
+```json
+{
+  "ok": true,
+  "command": "transparent generate",
+  "provider": "codex",
+  "request": {
+    "prompt": "...",
+    "source_prompt": "...",
+    "method": "chroma",
+    "matte_color": "#00ff00",
+    "format": "png"
+  },
+  "source": {
+    "path": "/tmp/source.png",
+    "kept": false,
+    "generation": { "...": "images generate payload" }
+  },
+  "extraction": { "method": "chroma", "...": "..." },
+  "verification": {
+    "passed": true,
+    "input_has_alpha": true,
+    "alpha_min": 0,
+    "alpha_max": 255,
+    "transparent_ratio": 0.42,
+    "partial_pixels": 1234,
+    "warnings": []
+  },
+  "output": {
+    "path": "/tmp/asset.png",
+    "bytes": 123456,
+    "files": [{ "index": 0, "path": "/tmp/asset.png", "bytes": 123456 }]
+  }
+}
+```
+
+### `transparent extract`
+
+Runs local extraction only. Use `--strict` when the command should fail if verification does not pass.
+
+```json
+{
+  "ok": true,
+  "command": "transparent extract",
+  "method": "dual",
+  "extraction": { "method": "dual", "...": "..." },
+  "verification": { "passed": true, "...": "..." },
+  "output": { "path": "/tmp/asset.png", "files": [] }
+}
+```
+
+### `transparent verify`
+
+Verifies any image file as a transparent PNG deliverable. With `--strict`, a failed verification returns the standard error envelope.
+
+```json
+{
+  "ok": true,
+  "command": "transparent verify",
+  "passed": true,
+  "verification": {
+    "width": 2048,
+    "height": 2048,
+    "input_has_alpha": true,
+    "alpha_min": 0,
+    "alpha_max": 255,
+    "transparent_pixels": 1000000,
+    "partial_pixels": 50000,
+    "warnings": []
+  }
+}
+```
 
 ## When `--json` is omitted
 

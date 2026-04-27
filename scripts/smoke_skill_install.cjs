@@ -60,6 +60,7 @@ function main() {
     ensureFile(path.join(installedSkill, "agents", "openai.yaml"));
     ensureFile(path.join(installedSkill, "scripts", "gpt_image_2_skill.cjs"));
     ensureFile(path.join(installedSkill, "scripts", "selftest.cjs"));
+    ensureFile(path.join(installedSkill, "references", "transparent-png.md"));
 
     const env = { ...process.env, GPT_IMAGE_2_SKILL_BIN: LOCAL_BINARY };
     const selftest = run(

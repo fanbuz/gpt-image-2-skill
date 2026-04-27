@@ -54,6 +54,30 @@ Watch retry behavior live with `--json-events` and grep stderr for `"phase":"ret
 
 Use `2K` or `4K` aliases when in doubt.
 
+## `transparent_verification_failed`
+
+The transparent pipeline wrote an output image, but the final alpha gate did not pass. Do not deliver the file.
+
+Common causes:
+
+- the source background was not flat
+- the matte color appears inside the subject
+- the subject touches the image edge
+- a glow/smoke/glass asset was extracted with chroma instead of dual-background extraction
+- black/white dual sources were not aligned
+
+Fixes:
+
+- retry with `--report-dir` or `--keep-sources` so the source image can be inspected
+- use a different matte: `magenta`, `cyan`, `blue`, `green`, `black`, or `white`
+- generate source prompts that explicitly forbid shadows, gradients, textures, and scenery
+- for semi-transparent effects, generate aligned black/white source images and run `transparent extract --method dual`
+- always re-run `transparent verify --strict` on the final PNG
+
+## `transparent_input_mismatch`
+
+Dual extraction requires black/white source images with identical dimensions. Regenerate both images with the same `--size`, or use reference-image editing to preserve alignment.
+
 ## Moderation refusals (OpenAI)
 
 OpenAI may reject prompts. The runtime surfaces the upstream error verbatim under `error.detail`. Adjust the prompt or set `--moderation low` (where supported by the account) and retry.

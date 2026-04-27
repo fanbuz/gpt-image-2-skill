@@ -10,7 +10,7 @@ Run image generation and editing through one CLI surface that hides provider dif
 - Generate or edit an image and capture a structured result an agent can parse.
 - Switch between `OPENAI_API_KEY`, an OpenAI-compatible base URL, and Codex `auth.json` without changing command shape.
 - Respect shared provider config at `$CODEX_HOME/gpt-image-2-skill/config.json` so CLI, App, and Skill use the same default provider.
-- Need transparent backgrounds, masks, custom sizes up to 4K, or raw request bodies.
+- Need final transparent PNG deliverables, masks, custom sizes up to 4K, or raw request bodies.
 - Want live progress events (retries, multipart prep, Codex SSE) on stderr while the final JSON lands on stdout.
 
 ## Quick start
@@ -23,21 +23,35 @@ node scripts/gpt_image_2_skill.cjs --json config inspect
 node scripts/gpt_image_2_skill.cjs --json doctor
 node scripts/gpt_image_2_skill.cjs --json auth inspect
 
-# 2. Generate (auto-selects provider; OpenAI first, then Codex)
+# 2. Generate a final transparent PNG deliverable
+node scripts/gpt_image_2_skill.cjs --json --json-events \
+  transparent generate --prompt "..." --out /tmp/asset.png \
+  --size 2K --quality high
+
+# 3. Generate a normal image (auto-selects provider; OpenAI first, then Codex)
 node scripts/gpt_image_2_skill.cjs --json --json-events \
   images generate --prompt "..." --out /tmp/out.png \
-  --background transparent --format png --size 2K
+  --format png --size 2K
 
-# 3. Edit a reference image (OpenAI multipart)
+# 4. Edit a reference image (OpenAI multipart)
 node scripts/gpt_image_2_skill.cjs --json --json-events \
   images edit --prompt "..." --ref-image /tmp/in.png --out /tmp/out.png
 
-# 4. Raw request escape hatch
+# 5. Remove a controlled background from existing source images
+node scripts/gpt_image_2_skill.cjs --json \
+  transparent extract --input /tmp/source-green.png --out /tmp/asset.png \
+  --method chroma --matte-color '#00ff00' --strict
+
+# 6. Verify the final file before delivery
+node scripts/gpt_image_2_skill.cjs --json \
+  transparent verify --input /tmp/asset.png --strict
+
+# 7. Raw request escape hatch
 node scripts/gpt_image_2_skill.cjs --json \
   request create --request-operation generate \
   --body-file /tmp/body.json --out-image /tmp/out.png --expect-image
 
-# 5. Self-test (calls doctor + auth inspect)
+# 8. Self-test (calls doctor + auth inspect)
 node scripts/selftest.cjs
 ```
 
@@ -78,6 +92,54 @@ The prompt is for "what is in the picture"; background, size, format, count, and
 
 **Provider asymmetry**: `--background`, `--n`, `--moderation`, `--mask`, and `--input-fidelity` are honored only by OpenAI (and OpenAI-compatible bases that proxy them). Codex `image_generation` does not honor `--background`; the runtime accepts the flag but the upstream tool drops it. The other four return `code: "unsupported_option"` if passed with `--provider codex`.
 
+## Transparent PNG deliverables
+
+For transparent output, do not rely on provider-native transparency. Use the `transparent` command group as the Agent-facing tool layer:
+
+- `transparent generate` — prompt-to-final PNG. It generates a controlled matte source, extracts alpha locally, verifies the result, and only succeeds when the final PNG passes transparency checks.
+- `transparent extract` — local background removal from source images you generated yourself. Use this when the asset is difficult or when you need a custom background strategy.
+- `transparent verify` — final gate for any PNG before delivery. Use `--strict` when the file must be accepted or fail the task.
+
+The CLI is intentionally not a material classifier. The Agent should choose generation prompts and extraction methods based on the asset:
+
+| Asset type | Generation guidance | Extraction guidance |
+|---|---|---|
+| Opaque object, icon, sticker, product | Single isolated subject, clear margin, perfectly flat chroma matte. Pick a matte color absent from the object. | `transparent generate` or `transparent extract --method chroma --matte-color <color>` |
+| Thin edges, hair, fur, lace, chain, netting | Use high resolution, strong subject/background contrast, no contact shadow, no background-colored details. Try magenta/cyan/green mattes if one contaminates the edge. | Chroma extraction, then `transparent verify --strict`; retry with a different matte if edge residue appears. |
+| Glass, crystal, liquid, hologram | Ask for a centered asset on flat black and flat white backgrounds, keeping geometry identical. Use reference/edit flow when possible to keep alignment. | `transparent extract --method dual --dark-image black.png --light-image white.png` |
+| Glow, flame, smoke, mist, magic particles | Generate dark and light background variants. Avoid textured backgrounds and avoid bloom reaching the image edge unless the edge is intentional. | Prefer dual extraction; verify that `partial_pixels` is non-zero. |
+| Shadows | Decide whether the shadow is part of the asset. If not, explicitly forbid contact shadows. If yes, generate on a flat matte with enough margin. | Chroma for opaque shadow silhouettes; dual extraction for soft translucent shadows. |
+| Unknown or unusual material | Do not classify it first. Generate controlled source variants, run extraction candidates, and keep the one that passes verification with the cleanest edge. | Use `--report-dir` / `--keep-sources` while iterating, then deliver only the final PNG. |
+
+Examples:
+
+```bash
+# Simple asset: final transparent PNG, sources hidden unless there is a failure
+node scripts/gpt_image_2_skill.cjs --json --json-events \
+  transparent generate \
+  --prompt "a polished fantasy sword game asset, no text, no frame" \
+  --out /tmp/sword.png --size 2K --quality high
+
+# Agent-controlled chroma flow
+node scripts/gpt_image_2_skill.cjs --json --json-events \
+  images generate \
+  --prompt "a silver necklace, centered, on a perfectly flat pure magenta background, no shadow" \
+  --out /tmp/necklace-magenta.png --format png --size 2K
+node scripts/gpt_image_2_skill.cjs --json \
+  transparent extract --method chroma \
+  --input /tmp/necklace-magenta.png --matte-color magenta \
+  --out /tmp/necklace.png --strict
+
+# Semi-transparent material flow
+node scripts/gpt_image_2_skill.cjs --json \
+  transparent extract --method dual \
+  --dark-image /tmp/glow-on-black.png \
+  --light-image /tmp/glow-on-white.png \
+  --out /tmp/glow.png --strict
+```
+
+Always inspect the JSON verification fields before delivery: `passed`, `alpha_min`, `alpha_max`, `transparent_ratio`, `partial_pixels`, and `warnings`. If `passed` is false, do not deliver the file as a transparent PNG.
+
 ## Notes
 
 - `openai` defaults to `gpt-image-2`; `codex` defaults to `gpt-5.4` and delegates to `image_generation`.
@@ -92,6 +154,7 @@ Load on demand for deeper detail:
 
 - `references/providers.md` — OpenAI / OpenAI-compatible / Codex selection, auth sources, runtime resolution order.
 - `references/sizes-and-formats.md` — size aliases, custom constraints, format/quality/compression/background, shared vs OpenAI-only flags.
+- `references/transparent-png.md` — Agent playbook for prompt design, controlled mattes, dual-background extraction, verification, and retry loops.
 - `references/json-output.md` — `--json` stdout schema, success and error envelopes, per-command shapes.
 - `references/json-events.md` — `--json-events` JSONL phases (`request_started`, `multipart_prepared`, `retry_scheduled`) and Codex SSE passthrough.
 - `references/troubleshooting.md` — `runtime_unavailable`, `auth_missing`, Codex `401` refresh, retry policy, size rejections, moderation, timeouts.
