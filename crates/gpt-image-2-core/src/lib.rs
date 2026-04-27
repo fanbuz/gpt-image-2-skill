@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use url::Url;
 
+mod transparent;
+
 pub const CLI_NAME: &str = "gpt-image-2-skill";
 pub const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
 pub const DEFAULT_CODEX_ENDPOINT: &str = "https://chatgpt.com/backend-api/codex/responses";
@@ -335,6 +337,7 @@ pub enum Commands {
     History(HistoryCommand),
     Models(ModelsCommand),
     Images(ImagesCommand),
+    Transparent(transparent::TransparentCommand),
     Request(RequestCommand),
 }
 
@@ -4700,6 +4703,7 @@ fn dispatch(cli: &Cli) -> Result<CommandOutcome, AppError> {
             ModelsSubcommand::List => Ok(run_models_list()),
         },
         Commands::Images(command) => run_images_command(cli, &command.images_command),
+        Commands::Transparent(command) => transparent::run_transparent_command(cli, command),
         Commands::Request(command) => match &command.request_command {
             RequestSubcommand::Create(args) => run_request_create(cli, args),
         },
