@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   create-release:
@@ -285,3 +286,15 @@ jobs:
           git add Casks/gpt-image-2.rb
           git commit -m "chore: update gpt-image-2 cask to ${version}"
           git push
+
+  dispatch-post-release-verify:
+    needs: publish-homebrew-cask
+    runs-on: ubuntu-22.04
+    if: ${{ !inputs.release_draft && !inputs.prerelease && needs.publish-homebrew-cask.result == 'success' }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Dispatch post release verify with desktop cask
+        shell: bash
+        run: gh workflow run "Post Release Verify" --repo "${{ github.repository }}" -f version="${RELEASE_TAG#v}" -f verify_desktop_cask=true

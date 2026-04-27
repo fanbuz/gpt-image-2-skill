@@ -51,3 +51,5 @@ For non-draft, non-prerelease runs, the workflow also updates `Casks/gpt-image-2
 ```bash
 brew install --cask wangnov/tap/gpt-image-2
 ```
+
+After the cask update succeeds, the workflow dispatches `Post Release Verify` with `verify_desktop_cask=true` so the desktop app install path is checked only after the matching cask has been published.

@@ -7,6 +7,11 @@ on:
         description: Version without leading v
         required: true
         type: string
+      verify_desktop_cask:
+        description: Verify the desktop app Homebrew cask for this version
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -91,6 +96,7 @@ jobs:
 
   homebrew-cask:
     runs-on: macos-15
+    if: ${{ inputs.verify_desktop_cask }}
     env:
       VERSION: ${{ github.event_name == 'release' && github.event.release.tag_name || format('v{0}', inputs.version) }}
     steps:
