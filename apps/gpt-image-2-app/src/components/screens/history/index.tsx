@@ -352,7 +352,7 @@ function JobRowExpandable({
                     aria-label={`查看第 ${letter} 张`}
                   >
                     <SpotlightCard
-                      spotlightColor="rgba(167, 139, 250, 0.30)"
+                      spotlightColor="rgba(var(--accent-rgb), 0.30)"
                       className="!rounded-lg !p-0 !bg-transparent !border-0 !w-full !h-full absolute inset-0"
                     >
                       {url ? (

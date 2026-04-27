@@ -1,3 +1,5 @@
+import Magnet from "@/components/reactbits/components/Magnet";
+import CountUp from "@/components/reactbits/text/CountUp";
 import { cn } from "@/lib/cn";
 import { SCREENS, type ScreenId } from "./screens";
 
@@ -61,40 +63,52 @@ export function TopNav({
                   : 0;
           const isRunning = tabCount > 0;
           return (
-            <button
+            <Magnet
               key={s.id}
-              type="button"
-              onClick={() => setScreen(s.id)}
-              className={cn(
-                "relative inline-flex items-center gap-1.5 h-8 px-4 rounded-full text-[12.5px] font-medium transition-all",
-                isActive
-                  ? "text-foreground"
-                  : "text-muted hover:text-foreground hover:bg-[color:var(--w-05)]",
-              )}
-              style={
-                isActive
-                  ? {
-                      background: "var(--w-10)",
-                      boxShadow: "inset 0 1px 0 var(--w-10)",
-                    }
-                  : undefined
-              }
+              padding={24}
+              magnetStrength={14}
+              activeTransition="transform 220ms cubic-bezier(0.16, 1, 0.3, 1)"
+              inactiveTransition="transform 360ms cubic-bezier(0.32, 0.72, 0, 1)"
+              wrapperClassName="shrink-0"
             >
-              <span>{s.label}</span>
-              {isRunning && (
-                <span
-                  className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full text-[9.5px] font-mono font-semibold leading-none animate-pulse-subtle"
-                  style={{
-                    background: "var(--status-running-bg)",
-                    color: "var(--status-running)",
-                    boxShadow: "0 0 8px var(--status-running-60)",
-                  }}
-                  aria-label={`${tabCount} 个任务进行中`}
-                >
-                  {tabCount}
-                </span>
-              )}
-            </button>
+              <button
+                type="button"
+                onClick={() => setScreen(s.id)}
+                className={cn(
+                  "relative inline-flex items-center gap-1.5 h-8 px-4 rounded-full text-[12.5px] font-medium whitespace-nowrap transition-all",
+                  isActive
+                    ? "text-foreground"
+                    : "text-muted hover:text-foreground hover:bg-[color:var(--w-05)]",
+                )}
+                style={
+                  isActive
+                    ? {
+                        background: "var(--w-10)",
+                        boxShadow: "inset 0 1px 0 var(--w-10)",
+                      }
+                    : undefined
+                }
+              >
+                <span>{s.label}</span>
+                {isRunning && (
+                  <span
+                    className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full text-[9.5px] font-mono font-semibold leading-none animate-pulse-subtle tabular-nums"
+                    style={{
+                      background: "var(--status-running-bg)",
+                      color: "var(--status-running)",
+                      boxShadow: "0 0 8px var(--status-running-60)",
+                    }}
+                    aria-label={`${tabCount} 个任务进行中`}
+                  >
+                    <CountUp
+                      to={tabCount}
+                      duration={0.5}
+                      className="leading-none"
+                    />
+                  </span>
+                )}
+              </button>
+            </Magnet>
           );
         })}
       </div>

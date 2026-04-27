@@ -8,6 +8,13 @@ import {
   type ReactNode,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  DEFAULT_PRESET,
+  THEME_PRESETS,
+  isThemePresetId,
+  readUnlockedPresets,
+  type ThemePresetId,
+} from "@/lib/theme-presets";
 import type { Tweaks } from "@/lib/types";
 
 const DEFAULT_TWEAKS: Tweaks = {
@@ -20,6 +27,7 @@ const DEFAULT_TWEAKS: Tweaks = {
   notifyOnFailure: true,
   liquidBackground: true,
   glassOpacity: 42,
+  themePreset: DEFAULT_PRESET,
 };
 
 function clampOpacity(value: unknown): number {
@@ -48,6 +56,23 @@ function load(): Tweaks {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_TWEAKS;
     const parsed = JSON.parse(raw);
+    // Migration: payloads written before themePreset exists fall back
+    // to the default preset; payloads with a hidden preset that hasn't
+    // been unlocked also fall back so a leaked localStorage key can't
+    // skip the Easter egg gate.
+    // Explicit annotation — narrowing through `parsed?.themePreset`
+    // doesn't propagate from the type guard because `parsed` itself
+    // is `any` after JSON.parse.
+    let presetId: ThemePresetId = isThemePresetId(parsed?.themePreset)
+      ? (parsed.themePreset as ThemePresetId)
+      : DEFAULT_PRESET;
+    const presetMeta = THEME_PRESETS[presetId];
+    if (presetMeta.hidden) {
+      const unlocked = readUnlockedPresets();
+      if (!unlocked.has(presetId)) {
+        presetId = DEFAULT_PRESET;
+      }
+    }
     return {
       ...DEFAULT_TWEAKS,
       ...parsed,
@@ -60,6 +85,7 @@ function load(): Tweaks {
           ? parsed.liquidBackground
           : true,
       glassOpacity: clampOpacity(parsed?.glassOpacity),
+      themePreset: presetId,
     };
   } catch {
     return DEFAULT_TWEAKS;
@@ -71,10 +97,27 @@ export function TweaksProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement;
+    const preset = THEME_PRESETS[tweaks.themePreset];
     root.setAttribute("data-theme", tweaks.theme);
     root.setAttribute("data-accent", tweaks.accent);
     root.setAttribute("data-font", tweaks.font);
     root.setAttribute("data-density", tweaks.density);
+    root.setAttribute("data-theme-preset", tweaks.themePreset);
+    root.setAttribute("data-surface", preset.surfaceStyle);
+
+    // Token rewrites — drive every alpha ramp + gradient + veil through
+    // CSS variables so a preset switch retints the entire app in one
+    // frame without re-rendering React subtrees.
+    root.style.setProperty("--accent-rgb", preset.accentRgb);
+    root.style.setProperty("--accent-2-rgb", preset.accent2Rgb);
+    root.style.setProperty("--accent-3-rgb", preset.accent3Rgb);
+    root.style.setProperty("--accent", preset.accentSolid);
+    root.style.setProperty("--accent-2", preset.accent2Solid);
+    root.style.setProperty("--accent-3", preset.accent3Solid);
+    root.style.setProperty("--accent-gradient", preset.accentGradient);
+    root.style.setProperty("--bg-veil-soft", preset.veil.soft);
+    root.style.setProperty("--bg-veil-strong", preset.veil.strong);
+
     // Glass alpha as a CSS variable so .surface-panel and friends pick it up
     root.style.setProperty(
       "--glass-alpha",
@@ -86,6 +129,25 @@ export function TweaksProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
   }, [tweaks]);
+
+  // Trigger a brief brand-tinted veil pulse on preset change to mask
+  // the hard-cut on CSS variables. The .theme-pulse class lives on
+  // <body> for ~360ms, then the keyframe ends. Skipped on the very
+  // first effect run (initial mount).
+  const [lastPreset, setLastPreset] = useState(tweaks.themePreset);
+  useEffect(() => {
+    if (lastPreset === tweaks.themePreset) return;
+    setLastPreset(tweaks.themePreset);
+    const body = document.body;
+    body.classList.remove("theme-pulse");
+    // Force reflow so re-adding the class restarts the animation.
+    void body.offsetWidth;
+    body.classList.add("theme-pulse");
+    const timer = window.setTimeout(() => {
+      body.classList.remove("theme-pulse");
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [tweaks.themePreset, lastPreset]);
 
   useEffect(() => {
     void invoke("set_queue_concurrency", {
@@ -103,6 +165,18 @@ export function TweaksProvider({ children }: { children: ReactNode }) {
       }
       if (partial.glassOpacity !== undefined) {
         next.glassOpacity = clampOpacity(partial.glassOpacity);
+      }
+      // When the caller switches preset, sync the suggested font and
+      // density unless the same call also overrides them. Lets a tap
+      // on a preset card change "the whole look" while still letting
+      // a power user flip just font/density independently afterwards.
+      if (
+        partial.themePreset !== undefined &&
+        partial.themePreset !== prev.themePreset
+      ) {
+        const preset = THEME_PRESETS[partial.themePreset];
+        if (partial.font === undefined) next.font = preset.suggestedFont;
+        if (partial.density === undefined) next.density = preset.suggestedDensity;
       }
       return next;
     });
