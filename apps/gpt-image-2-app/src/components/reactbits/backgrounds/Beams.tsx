@@ -87,45 +87,84 @@ const Beams: FC<BeamsProps> = ({
       const { width, height } = canvas.getBoundingClientRect();
       const diagonal = Math.hypot(width, height);
       const phase = (time / 1000) * speed;
+      const field = diagonal * 1.35;
+      const thickness = Math.max(44, beamWidth * 24 + beamHeight * 1.7);
 
       ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = "#02040a";
+      ctx.fillStyle = "#020711";
+      ctx.fillRect(0, 0, width, height);
+
+      const ambient = ctx.createRadialGradient(
+        width * 0.55,
+        height * 0.42,
+        0,
+        width * 0.55,
+        height * 0.42,
+        diagonal * 0.72,
+      );
+      ambient.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.18)`);
+      ambient.addColorStop(0.42, "rgba(16, 185, 129, 0.08)");
+      ambient.addColorStop(1, "rgba(2, 7, 17, 0)");
+      ctx.fillStyle = ambient;
       ctx.fillRect(0, 0, width, height);
 
       ctx.save();
       ctx.translate(width / 2, height / 2);
       ctx.rotate((rotation * Math.PI) / 180);
-      ctx.translate(-width / 2, -height / 2);
-      ctx.globalCompositeOperation = "lighter";
+      ctx.translate(-field / 2, -field / 2);
+      ctx.globalCompositeOperation = "screen";
 
       for (let i = 0; i < beamNumber; i += 1) {
-        const lane = i / Math.max(1, beamNumber - 1);
-        const drift = Math.sin(phase * 0.42 + i * 1.7) * diagonal * scale;
-        const x = lane * diagonal - diagonal * 0.25 + drift;
-        const y = height / 2 + Math.cos(phase * 0.34 + i) * height * 0.18;
-        const thickness = Math.max(18, beamWidth * 18 + beamHeight * 0.8);
-        const length = diagonal * (0.52 + 0.08 * Math.sin(i + phase));
+        const lane = i / Math.max(1, beamNumber);
+        const travel = (phase * 76 + i * 53) % (field + thickness * 3);
+        const y = lane * field + travel - thickness * 1.5;
+        const drift = Math.sin(phase * 0.34 + i * 1.7) * field * scale;
+        const x = field * 0.5 + drift;
+        const length = field * (0.84 + 0.12 * Math.sin(i + phase * 0.5));
+        const glowAlpha = 0.2 + 0.1 * Math.sin(phase * 0.7 + i);
 
-        const gradient = ctx.createLinearGradient(x, y - thickness, x, y + thickness);
+        const gradient = ctx.createLinearGradient(
+          0,
+          y - thickness,
+          0,
+          y + thickness,
+        );
         gradient.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
-        gradient.addColorStop(0.48, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.34)`);
-        gradient.addColorStop(0.52, "rgba(255, 255, 255, 0.45)");
+        gradient.addColorStop(
+          0.34,
+          `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${glowAlpha})`,
+        );
+        gradient.addColorStop(
+          0.48,
+          `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.58)`,
+        );
+        gradient.addColorStop(0.52, "rgba(236, 253, 255, 0.82)");
+        gradient.addColorStop(0.66, "rgba(16, 185, 129, 0.22)");
         gradient.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
 
         ctx.save();
         ctx.translate(x, y);
         ctx.rotate(Math.sin(phase * 0.2 + i) * 0.08);
         ctx.fillStyle = gradient;
-        ctx.filter = "blur(18px)";
-        ctx.fillRect(-length / 2, -thickness / 2, length, thickness);
+        ctx.filter = "blur(16px)";
+        ctx.fillRect(-length / 2, -thickness, length, thickness * 2);
+        ctx.filter = "blur(1.8px)";
+        ctx.fillStyle = `rgba(236, 253, 255, ${0.34 + glowAlpha})`;
+        ctx.fillRect(
+          -length * 0.45,
+          -Math.max(1, beamWidth * 0.8),
+          length * 0.9,
+          Math.max(2, beamWidth * 1.2),
+        );
         ctx.restore();
       }
 
       ctx.restore();
+      ctx.filter = "none";
 
       if (noisePattern) {
-        ctx.globalCompositeOperation = "overlay";
-        ctx.globalAlpha = Math.min(0.28, 0.08 + noiseIntensity * 0.05);
+        ctx.globalCompositeOperation = "soft-light";
+        ctx.globalAlpha = Math.min(0.18, 0.05 + noiseIntensity * 0.035);
         ctx.fillStyle = noisePattern;
         ctx.fillRect(0, 0, width, height);
         ctx.globalAlpha = 1;

@@ -183,8 +183,8 @@ export const THEME_PRESETS: Record<ThemePresetId, ThemePreset> = {
     suggestedFont: "system",
     suggestedDensity: "comfortable",
     veil: {
-      soft: "rgba(4, 12, 20, 0.20)",
-      strong: "rgba(4, 12, 20, 0.62)",
+      soft: "rgba(4, 12, 20, 0.08)",
+      strong: "rgba(4, 12, 20, 0.48)",
     },
   },
   "mesh-mono": {
