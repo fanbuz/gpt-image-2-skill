@@ -6,7 +6,7 @@ Decision tree for the most common failures. Always run `--json doctor` first to 
 
 The Node wrapper could not resolve a Rust binary.
 
-Resolution order is: `GPT_IMAGE_2_SKILL_BIN` → `PATH` → repo-local `cargo run` → cached release binary → bootstrap download.
+Resolution order is: `GPT_IMAGE_2_SKILL_BIN` → `PATH` → Tauri App bundled CLI → repo-local `cargo run` → cached release binary → bootstrap download.
 
 Fixes:
 
@@ -16,6 +16,28 @@ Fixes:
 - or set `GPT_IMAGE_2_SKILL_BIN=/abs/path/to/gpt-image-2-skill`
 
 If bootstrap is undesirable in CI, set `GPT_IMAGE_2_SKILL_SKIP_BOOTSTRAP=1`.
+
+## Documented command is missing
+
+If a command from the skill docs fails with `unrecognized subcommand`, treat it as a stale CLI runtime first.
+
+Check upstream and local runtime versions:
+
+```bash
+npm view gpt-image-2-skill version
+command -v gpt-image-2-skill || true
+gpt-image-2-skill --version || true
+node scripts/gpt_image_2_skill.cjs --version
+```
+
+If `/Applications/GPT Image 2.app/Contents/Resources/bin/gpt-image-2-skill` exists but is older than upstream, ask the user before updating or replacing the app bundle. If no app bundle exists and the shell CLI is missing or stale, update the CLI silently:
+
+```bash
+npm install -g gpt-image-2-skill@latest
+command -v gpt-image-2-skill
+gpt-image-2-skill --version
+node scripts/selftest.cjs
+```
 
 ## `auth_missing`
 

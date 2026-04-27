@@ -74,7 +74,61 @@ OpenAI-compatible bases (e.g. `https://api.duckcoding.ai/v1`) work as long as th
 
 Codex `401` triggers exactly one access-token refresh, then a single retry. Refresh failures surface as `refresh_failed` errors.
 
-## Runtime resolution order
+## Runtime discovery and update
+
+There are two related questions:
+
+- freshness policy: which installed runtime should the Agent inspect or update before work?
+- wrapper resolution: which runtime will `node scripts/gpt_image_2_skill.cjs ...` actually execute?
+
+### Runtime freshness policy
+
+Check upstream first:
+
+```bash
+npm view gpt-image-2-skill version
+```
+
+Then inspect installed runtimes in this order:
+
+1. Tauri App bundled CLI. Standard macOS path:
+
+   ```bash
+   APP_CLI="/Applications/GPT Image 2.app/Contents/Resources/bin/gpt-image-2-skill"
+   [ -x "$APP_CLI" ] && "$APP_CLI" --version
+   ```
+
+   The app bundle is user-managed software. If it exists and is older than upstream, ask the user before updating or replacing the app. Do not silently modify `/Applications/GPT Image 2.app`.
+
+2. Shell CLI:
+
+   ```bash
+   command -v gpt-image-2-skill || true
+   gpt-image-2-skill --version || true
+   npm list -g --depth=0 gpt-image-2-skill || true
+   cargo install --list 2>/dev/null | rg -n 'gpt-image-2-skill' -C 1 || true
+   ```
+
+   If no app bundle exists and the shell CLI is missing or older than upstream, update silently:
+
+   ```bash
+   npm install -g gpt-image-2-skill@latest
+   command -v gpt-image-2-skill
+   gpt-image-2-skill --version
+   ```
+
+3. Skill wrapper runtime:
+
+   ```bash
+   node scripts/gpt_image_2_skill.cjs --json doctor
+   node scripts/selftest.cjs
+   ```
+
+If `gpt-image-2-skill --version` and `node scripts/gpt_image_2_skill.cjs --version` disagree, the shell and wrapper are using different runtimes. Fix the shell CLI when the user or examples call `gpt-image-2-skill` directly; otherwise prefer the wrapper in this skill directory for reproducible execution.
+
+Treat `unrecognized subcommand 'transparent'` or any documented command missing from `--help` as stale runtime evidence first.
+
+### Wrapper resolution order
 
 The Node wrapper at `scripts/gpt_image_2_skill.cjs` resolves the underlying Rust binary in this order:
 

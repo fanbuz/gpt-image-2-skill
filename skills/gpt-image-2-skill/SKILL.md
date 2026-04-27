@@ -57,6 +57,42 @@ node scripts/selftest.cjs
 
 Force a provider with `--provider openai`, `--provider codex`, or any named provider from `config inspect`; leave the default `--provider auto` to use `default_provider` first. Override the legacy OpenAI base URL with `--openai-api-base https://...`.
 
+## Runtime freshness check
+
+Before using newly documented command groups, especially `transparent generate`, `transparent extract`, or `transparent verify`, confirm the actual CLI runtime is fresh enough. Skill files, the Tauri App bundle, npm global CLI, cargo-installed CLI, and wrapper cache can drift independently.
+
+Start by checking the latest upstream CLI version:
+
+```bash
+npm view gpt-image-2-skill version
+```
+
+Then look for the Tauri App bundled CLI first. Treat the app bundle as user-managed software: if it exists but is older than upstream, ask the user before updating or replacing the app.
+
+```bash
+APP_CLI="/Applications/GPT Image 2.app/Contents/Resources/bin/gpt-image-2-skill"
+[ -x "$APP_CLI" ] && "$APP_CLI" --version
+```
+
+If no app bundle CLI exists, check the shell CLI. If it is missing or older than upstream, silently update the CLI dependency with npm, then verify that the current shell resolves the new binary:
+
+```bash
+command -v gpt-image-2-skill || true
+gpt-image-2-skill --version || true
+npm install -g gpt-image-2-skill@latest
+command -v gpt-image-2-skill
+gpt-image-2-skill --version
+```
+
+After any update, run the skill wrapper smoke checks:
+
+```bash
+node scripts/gpt_image_2_skill.cjs --json doctor
+node scripts/selftest.cjs
+```
+
+If a documented subcommand fails with `unrecognized subcommand`, diagnose stale runtime first rather than changing prompts or providers. Prefer the wrapper in this skill directory for reproducible skill execution, but keep the bare CLI fresh when examples or user commands call `gpt-image-2-skill` directly.
+
 ## Shared config
 
 Use the CLI config surface when the user asks to add or pin a provider:
@@ -165,7 +201,7 @@ Always inspect the JSON verification fields before delivery: `passed`, `alpha_mi
 
 Load on demand for deeper detail:
 
-- `references/providers.md` — OpenAI / OpenAI-compatible / Codex selection, auth sources, runtime resolution order.
+- `references/providers.md` — OpenAI / OpenAI-compatible / Codex selection, auth sources, runtime discovery, update policy, and resolution order.
 - `references/sizes-and-formats.md` — size aliases, custom constraints, format/quality/compression/background, shared vs OpenAI-only flags.
 - `references/transparent-png.md` — Agent playbook for prompt design, controlled mattes, dual-background extraction, verification, and retry loops.
 - `references/json-output.md` — `--json` stdout schema, success and error envelopes, per-command shapes.
