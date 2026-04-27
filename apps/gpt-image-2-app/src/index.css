@@ -55,10 +55,15 @@
   --text-faint: rgba(245, 245, 247, 0.45);
   --text-inverted: #06060a;
 
-  /* accent — fixed liquid violet→cyan brand gradient */
+  /* accent — RGB triplets drive the alpha ramps below; the solid hex
+     vars (--accent / --accent-2 / --accent-3) are kept for places that
+     can't use rgba(). Theme presets at runtime overwrite all six. */
+  --accent-rgb: 167, 139, 250;
+  --accent-2-rgb: 103, 232, 249;
+  --accent-3-rgb: 240, 171, 252;
   --accent: #a78bfa;
   --accent-hover: #c4b5fd;
-  --accent-faint: rgba(167, 139, 250, 0.14);
+  --accent-faint: rgba(var(--accent-rgb), 0.14);
   --accent-on: #06060a;
   --accent-2: #67e8f9;
   --accent-3: #f0abfc;
@@ -168,26 +173,27 @@
      literal in TSX.
      ────────────────────────────────────────────────────────── */
 
-  /* accent (violet #a78bfa) alpha ramp */
-  --accent-04: rgba(167, 139, 250, 0.04);
-  --accent-06: rgba(167, 139, 250, 0.06);
-  --accent-08: rgba(167, 139, 250, 0.08);
-  --accent-10: rgba(167, 139, 250, 0.10);
-  --accent-14: rgba(167, 139, 250, 0.14);
-  --accent-18: rgba(167, 139, 250, 0.18);
-  --accent-25: rgba(167, 139, 250, 0.25);
-  --accent-30: rgba(167, 139, 250, 0.30);
-  --accent-35: rgba(167, 139, 250, 0.35);
-  --accent-45: rgba(167, 139, 250, 0.45);
-  --accent-50: rgba(167, 139, 250, 0.50);
-  --accent-55: rgba(167, 139, 250, 0.55);
-  --accent-60: rgba(167, 139, 250, 0.60);
-  --accent-75: rgba(167, 139, 250, 0.75);
+  /* accent alpha ramp — driven by --accent-rgb so theme presets only
+     need to swap one RGB triplet to recolor every chip / hover / glow. */
+  --accent-04: rgba(var(--accent-rgb), 0.04);
+  --accent-06: rgba(var(--accent-rgb), 0.06);
+  --accent-08: rgba(var(--accent-rgb), 0.08);
+  --accent-10: rgba(var(--accent-rgb), 0.10);
+  --accent-14: rgba(var(--accent-rgb), 0.14);
+  --accent-18: rgba(var(--accent-rgb), 0.18);
+  --accent-25: rgba(var(--accent-rgb), 0.25);
+  --accent-30: rgba(var(--accent-rgb), 0.30);
+  --accent-35: rgba(var(--accent-rgb), 0.35);
+  --accent-45: rgba(var(--accent-rgb), 0.45);
+  --accent-50: rgba(var(--accent-rgb), 0.50);
+  --accent-55: rgba(var(--accent-rgb), 0.55);
+  --accent-60: rgba(var(--accent-rgb), 0.60);
+  --accent-75: rgba(var(--accent-rgb), 0.75);
 
-  /* accent-2 (cyan #67e8f9) alpha ramp — used sparingly */
-  --accent-2-06: rgba(103, 232, 249, 0.06);
-  --accent-2-14: rgba(103, 232, 249, 0.14);
-  --accent-2-30: rgba(103, 232, 249, 0.30);
+  /* accent-2 alpha ramp — used sparingly */
+  --accent-2-06: rgba(var(--accent-2-rgb), 0.06);
+  --accent-2-14: rgba(var(--accent-2-rgb), 0.14);
+  --accent-2-30: rgba(var(--accent-2-rgb), 0.30);
 
   /* white scrim alpha ramp (for hovers, soft fills, borders) */
   --w-02: rgba(255, 255, 255, 0.02);
@@ -234,8 +240,8 @@
   /* brand gradient variants — use these, never the raw linear-gradient() */
   --accent-gradient-fill: linear-gradient(
     135deg,
-    rgba(167, 139, 250, 0.95) 0%,
-    rgba(103, 232, 249, 0.92) 100%
+    rgba(var(--accent-rgb), 0.95) 0%,
+    rgba(var(--accent-2-rgb), 0.92) 100%
   );
   --accent-gradient-soft: linear-gradient(
     135deg,
@@ -526,12 +532,12 @@
   /* subtle radial light from top-left for depth */
   background-image: radial-gradient(
       120% 80% at 0% 0%,
-      rgba(167, 139, 250, 0.08) 0%,
+      rgba(var(--accent-rgb), 0.08) 0%,
       transparent 60%
     ),
     radial-gradient(
       100% 80% at 100% 100%,
-      rgba(103, 232, 249, 0.05) 0%,
+      rgba(var(--accent-2-rgb), 0.05) 0%,
       transparent 60%
     );
 }
@@ -564,6 +570,67 @@
     rgba(255, 255, 255, 0.06) 0%,
     rgba(255, 255, 255, 0) 38%
   );
+}
+
+/* Surface variants — driven by [data-surface] set by TweaksProvider.
+   Glass is the default (encoded in .surface-panel above). Paper drops
+   the backdrop blur and goes solid for a "paper card on a desk" feel,
+   matching Mesh Mono's static-grid aesthetic. Neon dims the surface
+   and adds an accent ring so Plasma / Letter Matrix presets feel like
+   lit-up consoles. Padding/radius are intentionally untouched here so
+   layout doesn't shift between presets. */
+[data-surface="paper"] .surface-panel {
+  background: var(--n-700);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-color: var(--w-12);
+  box-shadow: inset 0 1px 0 var(--w-04), var(--shadow-sm);
+}
+[data-surface="paper"] .surface-panel::before {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0) 32%
+  );
+}
+
+[data-surface="neon"] .surface-panel {
+  background: rgba(8, 10, 16, calc(var(--glass-alpha) + 0.18));
+  border-color: rgba(var(--accent-rgb), 0.35);
+  -webkit-backdrop-filter: blur(var(--lq-blur)) saturate(180%);
+  backdrop-filter: blur(var(--lq-blur)) saturate(180%);
+  box-shadow:
+    0 0 0 1px rgba(var(--accent-rgb), 0.18),
+    0 0 24px -4px rgba(var(--accent-rgb), 0.30),
+    var(--shadow-md);
+}
+[data-surface="neon"] .surface-panel::before {
+  background: linear-gradient(
+    180deg,
+    rgba(var(--accent-rgb), 0.18) 0%,
+    rgba(255, 255, 255, 0) 38%
+  );
+}
+
+/* Theme switch pulse — a brief brand-tinted veil at the moment of
+   preset change, masking the CSS-variable hard-cut. Triggered by
+   `body.classList.add('theme-pulse')` in use-tweaks.ts; the keyframe
+   fades the veil up to 0.6 alpha at 40% then back to 0, total 360ms.
+   ::after lives on .theme-pulse so the keyframe restarts every time
+   the class is re-added (after a forced reflow). */
+@keyframes theme-pulse-out {
+  0% { opacity: 0; }
+  40% { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+.theme-pulse::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: rgba(var(--accent-rgb), 0.10);
+  animation: theme-pulse-out 360ms ease-out forwards;
 }
 
 .image-overlay {
@@ -692,7 +759,7 @@
   --error-text: var(--text);
 
   --info-bg: rgba(16, 18, 28, 0.82);
-  --info-border: rgba(167, 139, 250, 0.32);
+  --info-border: rgba(var(--accent-rgb), 0.32);
   --info-text: var(--text);
 
   --warning-bg: rgba(26, 22, 14, 0.82);
@@ -725,15 +792,15 @@
 }
 
 [data-sonner-toast] [data-button] {
-  background: rgba(167, 139, 250, 0.18) !important;
+  background: rgba(var(--accent-rgb), 0.18) !important;
   color: var(--text) !important;
-  border: 1px solid rgba(167, 139, 250, 0.4) !important;
+  border: 1px solid rgba(var(--accent-rgb), 0.4) !important;
   font-weight: 500;
   border-radius: 8px !important;
   transition: background 120ms ease;
 }
 [data-sonner-toast] [data-button]:hover {
-  background: rgba(167, 139, 250, 0.26) !important;
+  background: rgba(var(--accent-rgb), 0.26) !important;
 }
 
 [data-sonner-toast] [data-cancel] {

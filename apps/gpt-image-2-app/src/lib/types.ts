@@ -94,6 +94,8 @@ export interface TestProviderResult {
   detail?: Record<string, unknown>;
 }
 
+import type { ThemePresetId } from "./theme-presets";
+
 export type Tweaks = {
   /**
    * Theme is single-value liquid dark — kept in the type only to preserve
@@ -110,16 +112,25 @@ export type Tweaks = {
   notifyOnComplete: boolean;
   notifyOnFailure: boolean;
   /**
-   * When true, render the WebGL LiquidChrome layer in WindowChrome.
-   * When false, fall back to a static dark background — saves GPU on
-   * laptops or when the user wants a calmer reading mode.
+   * @deprecated Superseded by `themePreset`. The Mesh Mono preset is
+   * now the static-background option; this flag is read from older
+   * localStorage payloads but no longer exposed in the UI. Will be
+   * removed once we're confident no old client persists it.
    */
   liquidBackground: boolean;
   /**
    * Glass panel opacity, expressed as a 0–100 percentage. Lower values
-   * make panels more see-through (more LiquidChrome bleeds through),
-   * higher values make panels more solid. Stored as a percentage so
-   * settings UI doesn't have to deal with floats.
+   * make panels more see-through, higher values make panels more solid.
+   * Semantics shift slightly per surface style: paper-style surfaces
+   * use it as a border-strength multiplier, neon-style uses it as a
+   * ring-radius multiplier. Stored as a percentage so settings UI
+   * doesn't have to deal with floats.
    */
   glassOpacity: number;
+  /**
+   * Active theme preset. Drives the WindowChrome background, the
+   * accent color triplets, surface style, and (on switch) suggested
+   * font/density. See `lib/theme-presets.ts`.
+   */
+  themePreset: ThemePresetId;
 };
