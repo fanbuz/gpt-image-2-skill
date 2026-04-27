@@ -29,6 +29,7 @@ type Props = {
 };
 
 const RERUN_STORAGE_KEY = "gpt2.pendingRerun";
+const DETAIL_IMAGE_SIZE = "min(340px, calc(100vw - 88px))";
 
 function fmtBytes(bytes?: number): string {
   if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return "—";
@@ -131,7 +132,7 @@ export function JobImageDetailDrawer({
         description={prompt ? prompt.slice(0, 80) : "（无提示词）"}
         width={520}
         footer={
-          <div className="flex w-full items-center gap-2">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -165,7 +166,7 @@ export function JobImageDetailDrawer({
                 再来一次
               </Button>
             )}
-            <div className="flex-1" />
+            <div className="min-w-2 flex-1" />
             {onDelete && job && (
               <Button
                 variant="ghost"
@@ -203,6 +204,7 @@ export function JobImageDetailDrawer({
               variant="primary"
               size="sm"
               icon="download"
+              className="ml-auto"
               disabled={!path}
               onClick={() => {
                 if (path) void saveImages([path], "图片");
@@ -213,24 +215,24 @@ export function JobImageDetailDrawer({
           </div>
         }
       >
-        <div className="p-5 space-y-5">
+        <div className="min-w-0 space-y-5 p-5">
           {/* Big image — TiltedCard for the brand "liquid" hover-tilt feel,
             wrapped in a button so click still escalates to fullscreen zoom. */}
-          <div className="relative flex items-center justify-center">
+          <div className="relative flex min-w-0 items-center justify-center overflow-hidden">
             {url ? (
               <button
                 type="button"
                 onClick={() => setZoomOpen(true)}
-                className="block w-full max-w-[340px] cursor-zoom-in rounded-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-55)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
+                className="mx-auto block w-full max-w-[340px] cursor-zoom-in rounded-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-55)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
                 aria-label={`查看第 ${letter} 张大图`}
               >
                 <TiltedCard
                   imageSrc={url}
                   altText={`第 ${letter} 张`}
                   containerWidth="100%"
-                  containerHeight="340px"
-                  imageWidth="340px"
-                  imageHeight="340px"
+                  containerHeight={DETAIL_IMAGE_SIZE}
+                  imageWidth={DETAIL_IMAGE_SIZE}
+                  imageHeight={DETAIL_IMAGE_SIZE}
                   rotateAmplitude={8}
                   scaleOnHover={1.04}
                   showMobileWarning={false}
@@ -316,14 +318,14 @@ export function JobImageDetailDrawer({
           <section className="surface-panel p-4 space-y-3.5">
             <div>
               <div className="t-caps mb-1.5">提示词</div>
-              <div className="text-[12.5px] text-foreground leading-relaxed whitespace-pre-wrap break-words">
+              <div className="break-anywhere whitespace-pre-wrap text-[12.5px] leading-relaxed text-foreground">
                 {prompt || "（无提示词）"}
               </div>
             </div>
 
             <div className="border-t border-[color:var(--w-06)]" />
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
               <Detail label="尺寸" value={size} />
               <Detail label="质量" value={quality} />
               <Detail label="格式" value={format} />
@@ -336,8 +338,8 @@ export function JobImageDetailDrawer({
 
             <div className="border-t border-[color:var(--w-06)]" />
 
-            <div className="flex items-center justify-between">
-              <div className="min-w-0">
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
                 <div className="t-caps">文件路径</div>
                 <div
                   className="font-mono text-[11px] text-muted mt-0.5 truncate"
@@ -350,6 +352,7 @@ export function JobImageDetailDrawer({
                 variant="ghost"
                 size="iconSm"
                 icon="external"
+                className="shrink-0"
                 disabled={!path}
                 onClick={() => {
                   if (path) void openPath(path);

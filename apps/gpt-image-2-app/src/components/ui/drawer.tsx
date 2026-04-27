@@ -35,6 +35,11 @@ export function Drawer({
   footer,
   children,
 }: Props) {
+  const drawerWidth =
+    typeof width === "number"
+      ? `min(${width}px, calc(100vw - 32px))`
+      : "min(640px, calc(100vw - 80px))";
+
   return (
     <Radix.Root open={open} onOpenChange={onOpenChange}>
       <Radix.Portal>
@@ -49,14 +54,14 @@ export function Drawer({
         <Radix.Content
           aria-describedby={undefined}
           style={{
-            width: width ?? "min(640px, calc(100vw - 80px))",
+            width: drawerWidth,
             backdropFilter: "blur(28px) saturate(140%)",
             WebkitBackdropFilter: "blur(28px) saturate(140%)",
             background: "var(--surface-floating-soft)",
             boxShadow: "var(--shadow-floating-side)",
           }}
           className={cn(
-            "fixed right-0 top-0 z-50 h-full grid overflow-hidden",
+            "fixed right-0 top-0 z-50 h-full grid min-w-0 overflow-hidden",
             "grid-rows-[auto_minmax(0,1fr)_auto]",
             "border-l border-[color:var(--w-10)]",
             "data-[state=open]:animate-in data-[state=open]:slide-in-from-right",
@@ -73,7 +78,7 @@ export function Drawer({
                   </Radix.Title>
                 )}
                 {description && (
-                  <Radix.Description className="text-[12px] text-muted truncate mt-0.5">
+                  <Radix.Description className="mt-0.5 line-clamp-2 break-anywhere text-[12px] leading-relaxed text-muted">
                     {description}
                   </Radix.Description>
                 )}
@@ -90,11 +95,11 @@ export function Drawer({
               </Radix.Close>
             </div>
           )}
-          <div className="min-h-0 overflow-y-auto overscroll-contain">
+          <div className="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain">
             {children}
           </div>
           {footer && (
-            <div className="flex shrink-0 items-center gap-2 px-5 py-3 border-t border-[color:var(--w-06)] bg-[color:var(--w-02)]">
+            <div className="flex min-w-0 shrink-0 items-center gap-2 overflow-hidden px-5 py-3 border-t border-[color:var(--w-06)] bg-[color:var(--w-02)]">
               {footer}
             </div>
           )}
