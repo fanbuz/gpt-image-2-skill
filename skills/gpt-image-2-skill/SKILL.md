@@ -44,7 +44,7 @@ node scripts/gpt_image_2_skill.cjs --json \
 
 # 6. Verify the final file before delivery
 node scripts/gpt_image_2_skill.cjs --json \
-  transparent verify --input /tmp/asset.png --strict
+  transparent verify --input /tmp/asset.png --profile icon --strict
 
 # 7. Raw request escape hatch
 node scripts/gpt_image_2_skill.cjs --json \
@@ -97,8 +97,21 @@ The prompt is for "what is in the picture"; background, size, format, count, and
 For transparent output, do not rely on provider-native transparency. Use the `transparent` command group as the Agent-facing tool layer:
 
 - `transparent generate` — prompt-to-final PNG. It generates a controlled matte source, extracts alpha locally, verifies the result, and only succeeds when the final PNG passes transparency checks.
-- `transparent extract` — local background removal from source images you generated yourself. Use this when the asset is difficult or when you need a custom background strategy.
-- `transparent verify` — final gate for any PNG before delivery. Use `--strict` when the file must be accepted or fail the task.
+- `transparent extract` — local background removal from controlled source images you generated yourself. It is not a general-purpose background remover for arbitrary photos.
+- `transparent verify` — final gate for any PNG before delivery. Use `--strict` and the right `--profile` when the file must be accepted or fail the task.
+
+A transparent deliverable is valid only if the final file has a real PNG alpha channel and passes verification. A visual appearance of transparency, a white background, or a checkerboard pattern is not sufficient.
+
+`--strict` is profile-based:
+
+| Profile | Use for | Extra strictness |
+|---|---|---|
+| `generic` | common alpha/file checks | does not over-police unusual assets |
+| `icon` | icons, stickers, game props | requires clean opaque core, margin, low stray noise |
+| `product` | product/object cutouts | similar to icon, with residue and edge checks |
+| `translucent` | glass, liquid, crystal | requires partial alpha |
+| `glow` | light ribbons, flame, smoke, particles | requires partial alpha and transparent margin |
+| `shadow` | soft shadow assets | requires partial alpha and transparent margin |
 
 The CLI is intentionally not a material classifier. The Agent should choose generation prompts and extraction methods based on the asset:
 
@@ -138,7 +151,7 @@ node scripts/gpt_image_2_skill.cjs --json \
   --out /tmp/glow.png --strict
 ```
 
-Always inspect the JSON verification fields before delivery: `passed`, `alpha_min`, `alpha_max`, `transparent_ratio`, `partial_pixels`, and `warnings`. If `passed` is false, do not deliver the file as a transparent PNG.
+Always inspect the JSON verification fields before delivery: `passed`, `alpha_min`, `alpha_max`, `transparent_ratio`, `partial_pixels`, and `warnings`. Also inspect quality fields: `checkerboard_detected`, `touches_edge`, `edge_margin_px`, `stray_pixel_count`, `largest_component_ratio`, `matte_residue_score`, `halo_score`, `transparent_rgb_scrubbed`, `quality_score`, and `failure_reasons`. If `passed` is false, do not deliver the file as a transparent PNG.
 
 ## Notes
 

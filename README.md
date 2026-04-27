@@ -137,6 +137,17 @@ gpt-image-2-skill --json \
   --dark-image ./glow-black.png \
   --light-image ./glow-white.png \
   --out ./glow-transparent.png \
+  --profile glow \
+  --strict
+```
+
+交付前可用 profile 化质量门检查真实 alpha、假透明棋盘格、边缘贴边、残留碎点、matte 色污染和透明 RGB 清理：
+
+```bash
+gpt-image-2-skill --json \
+  transparent verify \
+  --input ./glow-transparent.png \
+  --profile glow \
   --strict
 ```
 

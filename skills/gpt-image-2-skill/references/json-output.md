@@ -113,6 +113,7 @@ Returns the final verified transparent PNG. The command fails with `transparent_
     "prompt": "...",
     "source_prompt": "...",
     "method": "chroma",
+    "profile": "generic",
     "matte_color": "#00ff00",
     "format": "png"
   },
@@ -124,11 +125,24 @@ Returns the final verified transparent PNG. The command fails with `transparent_
   "extraction": { "method": "chroma", "...": "..." },
   "verification": {
     "passed": true,
+    "profile": "generic",
+    "is_png": true,
+    "has_alpha": true,
     "input_has_alpha": true,
     "alpha_min": 0,
     "alpha_max": 255,
     "transparent_ratio": 0.42,
     "partial_pixels": 1234,
+    "checkerboard_detected": false,
+    "touches_edge": false,
+    "edge_margin_px": 96,
+    "stray_pixel_count": 0,
+    "largest_component_ratio": 1.0,
+    "matte_residue_score": 0.01,
+    "halo_score": 0.0,
+    "transparent_rgb_scrubbed": true,
+    "quality_score": 0.99,
+    "failure_reasons": [],
     "warnings": []
   },
   "output": {
@@ -148,7 +162,18 @@ Runs local extraction only. Use `--strict` when the command should fail if verif
   "ok": true,
   "command": "transparent extract",
   "method": "dual",
-  "extraction": { "method": "dual", "...": "..." },
+  "profile": "glow",
+  "extraction": {
+    "method": "dual",
+    "rgb_scrubbed": true,
+    "dual_alignment": {
+      "score": 0.92,
+      "passed": true,
+      "negative_delta_ratio": 0.0,
+      "delta_channel_noise": 0.03,
+      "color_space": "srgb"
+    }
+  },
   "verification": { "passed": true, "...": "..." },
   "output": { "path": "/tmp/asset.png", "files": [] }
 }
@@ -162,15 +187,31 @@ Verifies any image file as a transparent PNG deliverable. With `--strict`, a fai
 {
   "ok": true,
   "command": "transparent verify",
+  "profile": "icon",
   "passed": true,
   "verification": {
+    "profile": "icon",
     "width": 2048,
     "height": 2048,
+    "is_png": true,
+    "has_alpha": true,
     "input_has_alpha": true,
     "alpha_min": 0,
     "alpha_max": 255,
     "transparent_pixels": 1000000,
     "partial_pixels": 50000,
+    "checkerboard_detected": false,
+    "touches_edge": false,
+    "edge_margin_px": 80,
+    "component_count": 1,
+    "largest_component_ratio": 0.99,
+    "stray_pixel_count": 24,
+    "alpha_noise_score": 0.00001,
+    "matte_residue_score": null,
+    "halo_score": 0.0,
+    "transparent_rgb_scrubbed": true,
+    "quality_score": 0.99,
+    "failure_reasons": [],
     "warnings": []
   }
 }

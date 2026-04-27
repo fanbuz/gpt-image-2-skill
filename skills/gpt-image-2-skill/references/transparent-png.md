@@ -7,10 +7,12 @@ Use this reference when the user asks for a final transparent-background PNG. Th
 | Command | Role |
 |---|---|
 | `transparent generate` | Prompt-to-final PNG. Generates one controlled matte source, extracts alpha locally, verifies, and fails if the final PNG is not usable. |
-| `transparent extract` | Local alpha extraction from existing source images. Use this for difficult assets, custom source prompts, or multi-background flows. |
-| `transparent verify` | Final acceptance gate. Use `--strict` before delivery. |
+| `transparent extract` | Local alpha extraction from controlled source images. Use this for difficult assets, custom source prompts, or multi-background flows. It is not a general-purpose remover for arbitrary photos. |
+| `transparent verify` | Final acceptance gate. Use `--strict` with the right `--profile` before delivery. |
 
 Do not treat provider-native `--background transparent` as the reliable path, especially with Codex. Controlled backgrounds plus local extraction are the reliable path.
+
+A transparent deliverable is valid only if the final file has a real PNG alpha channel and passes quality verification. Visual transparency, white backgrounds, and checkerboard patterns are not sufficient.
 
 ## Default loop
 
@@ -18,8 +20,31 @@ Do not treat provider-native `--background transparent` as the reliable path, es
 2. If verification fails, keep sources with `--report-dir` and inspect the source matte.
 3. Change the matte color or source prompt, then call `transparent extract`.
 4. For translucency or glow, create black and white variants and use dual extraction.
-5. Run `transparent verify --strict` on the final PNG.
+5. Run `transparent verify --profile <profile> --strict` on the final PNG.
 6. Deliver only the verified PNG unless the user asked for diagnostics.
+
+## Strict profiles
+
+`--strict` is profile-based. The default `generic` profile checks common alpha/file validity without over-policing unusual assets. Select a stricter profile when the asset type is known:
+
+| Profile | Use for | Extra strictness |
+|---|---|---|
+| `generic` | unknown or unusual assets | PNG alpha exists, real transparent area exists, checkerboard rejected |
+| `icon` | icons, stickers, game props | clean opaque core, enough margin, low stray pixels |
+| `product` | product/object cutouts | clean opaque core, enough margin, low residue/noise |
+| `translucent` | glass, liquid, crystal | partial alpha required; alpha max does not need to be 255 |
+| `glow` | light ribbons, flame, smoke, particles | partial alpha required; transparent margin required |
+| `shadow` | soft shadow assets | partial alpha required; transparent margin required |
+
+Examples:
+
+```bash
+node scripts/gpt_image_2_skill.cjs --json \
+  transparent verify --input /tmp/sword.png --profile icon --strict
+
+node scripts/gpt_image_2_skill.cjs --json \
+  transparent verify --input /tmp/flowlight.png --profile glow --strict
+```
 
 ## Prompt rules for controlled mattes
 
@@ -81,7 +106,7 @@ Use dual-background extraction. Generate or edit two aligned source images:
 - one on pure black
 - one on pure white
 
-Use reference editing where possible so the geometry remains aligned.
+Dual extraction requires the dark and light images to be geometrically identical or near-identical. Do not independently generate black-background and white-background variants unless the provider can preserve geometry. Prefer generating one source asset, then using reference-image editing or background replacement to create the paired background.
 
 ```bash
 node scripts/gpt_image_2_skill.cjs --json \
@@ -92,6 +117,7 @@ node scripts/gpt_image_2_skill.cjs --json \
 ```
 
 Dual extraction preserves semi-transparency better than chroma extraction.
+The CLI reports `dual_alignment` diagnostics (`score`, `passed`, `negative_delta_ratio`, `delta_channel_noise`, and `color_space`). If alignment looks bad, regenerate the pair through an edit/reference flow.
 
 ### Glow, flame, smoke, mist, magic particles
 
@@ -117,7 +143,7 @@ Always verify:
 
 ```bash
 node scripts/gpt_image_2_skill.cjs --json \
-  transparent verify --input /tmp/asset.png --strict
+  transparent verify --input /tmp/asset.png --profile icon --strict
 ```
 
 Important fields:
@@ -125,12 +151,32 @@ Important fields:
 | Field | Meaning |
 |---|---|
 | `passed` | The CLI acceptance gate. Deliver only if true. |
+| `profile` | The strictness profile used for quality gating. |
 | `input_has_alpha` | The file is encoded with alpha. |
 | `alpha_min` | Should be near 0 for a real transparent background. |
 | `alpha_max` | Should be greater than 20; fully semi-transparent assets do not need 255. |
 | `transparent_ratio` | Confirms there is actual transparent background area. |
 | `partial_pixels` | Important for glow, smoke, glass, hair edges, and shadows. |
+| `checkerboard_detected` | Reject visual fake transparency. |
+| `touches_edge` / `edge_margin_px` | Detect edge contact and likely cropping. |
+| `stray_pixel_count` / `largest_component_ratio` | Detect isolated background fragments. |
+| `matte_residue_score` | Detect expected matte-color contamination when `--expected-matte-color` is provided. |
+| `halo_score` | Detect strong black/white halos in semi-transparent pixels. |
+| `transparent_rgb_scrubbed` | Confirms fully transparent pixels have RGB cleared. |
+| `quality_score` | Summary score for ranking candidates. |
+| `failure_reasons` | Machine-readable reasons to drive retries. |
 | `warnings` | Edge contact or missing semi-transparency warnings. |
+
+When verifying chroma output, pass the matte if known:
+
+```bash
+node scripts/gpt_image_2_skill.cjs --json \
+  transparent verify \
+  --input /tmp/asset.png \
+  --expected-matte-color magenta \
+  --profile product \
+  --strict
+```
 
 ## Failure handling
 
@@ -142,6 +188,21 @@ Important fields:
 | No semi-transparent pixels for glow/glass | Use dual extraction instead of chroma. |
 | Dual extraction looks noisy | The two source images are not aligned; regenerate via edit/reference flow. |
 | Object touches image edge | Regenerate with more margin or larger canvas. |
+| `checkerboard_detected` | Reject and regenerate with controlled matte; checkerboard is not alpha. |
+| `transparent_rgb_scrubbed` is false | Re-run extraction so fully transparent pixels are RGB-scrubbed. |
+| `failure_reasons` includes `profile_requires_partial_alpha` | Use dual extraction or a translucent/glow/shadow source strategy. |
+| `failure_reasons` includes `too_many_stray_pixels` | Retry with cleaner matte, stronger margin, or a different profile if particles are intentional. |
+
+Retry tree:
+
+1. If no alpha channel: run `transparent extract` or reject provider-native transparency.
+2. If checkerboard is detected: reject it as fake transparency and regenerate with controlled matte.
+3. If matte residue is high: retry with a different matte color.
+4. If the subject touches the edge: regenerate with larger margin or canvas.
+5. If transparent area is too small: strengthen isolated-subject and margin prompt.
+6. If stray pixels are high: retry with a cleaner matte or inspect whether particles are intentional.
+7. If partial alpha is zero but the asset should be soft/translucent: use dual extraction.
+8. If dual alignment is poor: recreate paired backgrounds from one source using image edit/reference flow.
 
 Keep source files only while iterating:
 

@@ -63,6 +63,9 @@ Common causes:
 - the source background was not flat
 - the matte color appears inside the subject
 - the subject touches the image edge
+- a checkerboard image is masquerading as transparency
+- fully transparent pixels still contain matte-colored RGB values
+- strict profile requirements do not match the asset type
 - a glow/smoke/glass asset was extracted with chroma instead of dual-background extraction
 - black/white dual sources were not aligned
 
@@ -72,7 +75,21 @@ Fixes:
 - use a different matte: `magenta`, `cyan`, `blue`, `green`, `black`, or `white`
 - generate source prompts that explicitly forbid shadows, gradients, textures, and scenery
 - for semi-transparent effects, generate aligned black/white source images and run `transparent extract --method dual`
-- always re-run `transparent verify --strict` on the final PNG
+- choose a profile explicitly: `--profile icon`, `product`, `translucent`, `glow`, or `shadow`
+- pass `--expected-matte-color <color>` during verification when checking chroma residue
+- always re-run `transparent verify --profile <profile> --strict` on the final PNG
+
+Use `failure_reasons` from the JSON to pick the retry:
+
+| Reason | Retry |
+|---|---|
+| `missing_alpha_channel` | run local extraction or reject provider-native transparency |
+| `checkerboard_detected` | reject and regenerate with controlled matte |
+| `subject_touches_edge` / `effect_touches_edge` | regenerate with larger margin |
+| `matte_residue_too_high` | retry with a different matte color |
+| `profile_requires_partial_alpha` | use dual extraction or a translucent/glow/shadow source flow |
+| `too_many_stray_pixels` | retry with cleaner matte or verify the selected profile fits the asset |
+| `transparent_rgb_not_scrubbed` | re-run extraction so transparent RGB is scrubbed |
 
 ## `transparent_input_mismatch`
 
