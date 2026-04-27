@@ -26,6 +26,7 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
+    chunkSizeWarningLimit: 800,
     outDir: "dist",
     sourcemap: true,
     rollupOptions: {
@@ -34,10 +35,8 @@ export default defineConfig({
           const moduleId = id.replaceAll("\\", "/");
           if (!moduleId.includes("node_modules")) return undefined;
           if (moduleId.includes("/ogl/")) return "vendor-webgl";
-          if (
-            moduleId.includes("/three/") ||
-            moduleId.includes("/@react-three/")
-          ) {
+          if (moduleId.includes("/@react-three/")) return "vendor-react-three";
+          if (moduleId.includes("/three/")) {
             return "vendor-three";
           }
           if (moduleId.includes("/lucide-react/")) return "vendor-icons";
