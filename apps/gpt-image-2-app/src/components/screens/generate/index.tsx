@@ -4,6 +4,10 @@ import { Sparkles, ListChecks, Loader2, Image as ImageIcon, X } from "lucide-rea
 import { motion, AnimatePresence } from "motion/react";
 import GradientText from "@/components/reactbits/text/GradientText";
 import ShinyText from "@/components/reactbits/text/ShinyText";
+import ClickSpark from "@/components/reactbits/components/ClickSpark";
+import ElectricBorder from "@/components/reactbits/components/ElectricBorder";
+import { useTweaks } from "@/hooks/use-tweaks";
+import { THEME_PRESETS } from "@/lib/theme-presets";
 import { GlassSelect } from "@/components/ui/select";
 import { GlassCombobox } from "@/components/ui/combobox";
 import { useCreateGenerate, useJobs } from "@/hooks/use-jobs";
@@ -72,6 +76,11 @@ export function GenerateScreen({
 }) {
   const providerNames = useMemo(() => readProviderNames(config), [config]);
   const defaultProvider = effectiveDefaultProvider(config);
+  // Read the active theme's accent hex so ElectricBorder + ClickSpark
+  // (both of which need a real CSS color value, not a var() reference)
+  // tint to whatever preset is active.
+  const { tweaks } = useTweaks();
+  const accentHex = THEME_PRESETS[tweaks.themePreset].accentSolid;
   const [prompt, setPrompt] = useState("");
   const [provider, setProvider] = useState<string>("");
   const [size, setSize] = useState("1024x1024");
@@ -281,8 +290,14 @@ export function GenerateScreen({
         )}
       >
         {/* Hero — spans both columns in split mode so the form/gallery
-            split sits beneath a single banner. */}
-        <div
+            split sits beneath a single banner. Mount-time blur fade in
+            the spirit of reactbits's BlurText, scoped to the whole hero
+            so GradientText / ShinyText still drive the steady-state
+            animation. */}
+        <motion.div
+          initial={{ opacity: 0, filter: "blur(12px)", y: -6 }}
+          animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
+          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
             "flex flex-col items-center text-center",
             hasSplit && "lg:col-span-2 lg:mb-2",
@@ -325,7 +340,7 @@ export function GenerateScreen({
               aria-hidden
             />
           </div>
-        </div>
+        </motion.div>
 
         {/* Form panel */}
         <section
@@ -501,6 +516,14 @@ export function GenerateScreen({
                 className="shrink-0 w-[88px]"
               />
             </div>
+            <ClickSpark
+              sparkColor={accentHex}
+              sparkCount={10}
+              sparkRadius={22}
+              sparkSize={8}
+              duration={500}
+              className="inline-flex"
+            >
             <button
               type="button"
               onClick={() => {
@@ -550,6 +573,7 @@ export function GenerateScreen({
                 </>
               )}
             </button>
+            </ClickSpark>
           </div>
         </section>
 
@@ -609,27 +633,40 @@ export function GenerateScreen({
                       duration: 0.4,
                       ease: [0.16, 1, 0.3, 1],
                     }}
-                    className="aspect-square rounded-md overflow-hidden ring-1 ring-[color:var(--accent-30)] bg-[color:var(--bg-sunken)] relative"
+                    className="aspect-square relative"
                     aria-label="生成中"
                   >
-                    {/* Shimmer wash */}
-                    <div
-                      className="absolute inset-0 animate-shimmer"
-                      style={{
-                        background: "var(--skeleton-gradient-soft)",
-                        backgroundSize: "200% 100%",
-                      }}
-                    />
-                    {/* Center spinner + label */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
-                      <Loader2
-                        size={18}
-                        className="animate-spin text-[color:var(--accent)]"
-                      />
-                      <span className="text-[10px] text-faint">
-                        生成中…
-                      </span>
-                    </div>
+                    {/* ElectricBorder paints the accent-tinted electric
+                        border around each pending tile so "GPU is working"
+                        is visible at a glance, not just generic shimmer. */}
+                    <ElectricBorder
+                      color={accentHex}
+                      speed={1.1}
+                      chaos={0.55}
+                      borderRadius={6}
+                      className="absolute inset-0"
+                    >
+                      <div className="relative h-full w-full overflow-hidden rounded-md bg-[color:var(--bg-sunken)]">
+                        {/* Shimmer wash */}
+                        <div
+                          className="absolute inset-0 animate-shimmer"
+                          style={{
+                            background: "var(--skeleton-gradient-soft)",
+                            backgroundSize: "200% 100%",
+                          }}
+                        />
+                        {/* Center spinner + label */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
+                          <Loader2
+                            size={18}
+                            className="animate-spin text-[color:var(--accent)]"
+                          />
+                          <span className="text-[10px] text-faint">
+                            生成中…
+                          </span>
+                        </div>
+                      </div>
+                    </ElectricBorder>
                   </motion.div>
                 ))}
                 {recentCompleted.map((job) => {
