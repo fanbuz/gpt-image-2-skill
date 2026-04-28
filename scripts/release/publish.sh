@@ -46,6 +46,7 @@ if [[ "$EXECUTE" -eq 1 ]]; then
     Cargo.lock \
     crates/gpt-image-2-core/Cargo.toml \
     crates/gpt-image-2-skill/Cargo.toml \
+    crates/gpt-image-2-web/Cargo.toml \
     apps/gpt-image-2-app/src-tauri/Cargo.toml \
     apps/gpt-image-2-app/src-tauri/tauri.conf.json \
     apps/gpt-image-2-app/package.json \
