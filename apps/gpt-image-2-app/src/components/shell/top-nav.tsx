@@ -1,7 +1,6 @@
 import type { MouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import GlassSurface from "@/components/reactbits/components/GlassSurface";
-import Magnet from "@/components/reactbits/components/Magnet";
 import CountUp from "@/components/reactbits/text/CountUp";
 import logoUrl from "@/assets/logo.png";
 import { cn } from "@/lib/cn";
@@ -61,15 +60,21 @@ export function TopNav({
       {/* Left — brand chip */}
       <div className="flex items-center gap-2">
         <GlassSurface
-          height={36}
-          borderRadius={999}
-          backgroundOpacity={0.14}
-          distortionScale={-26}
+          width={196}
+          height={40}
+          borderRadius={50}
+          borderWidth={0.07}
+          backgroundOpacity={0}
+          saturation={1}
+          distortionScale={-180}
+          displace={0.5}
           redOffset={0}
-          greenOffset={2}
-          blueOffset={4}
-          className="inline-flex"
-          contentClassName="gap-2 px-3"
+          greenOffset={10}
+          blueOffset={20}
+          mixBlendMode="screen"
+          className="inline-flex shrink-0"
+          contentClassName="gap-2"
+          contentPadding="0 14px"
         >
           <img
             src={logoUrl}
@@ -86,17 +91,21 @@ export function TopNav({
       {/* Center — screen tabs */}
       <GlassSurface
         data-no-window-drag
-        height={40}
-        borderRadius={999}
-        backgroundOpacity={0.18}
-        saturation={1.55}
-        distortionScale={-24}
+        width={348}
+        height={44}
+        borderRadius={50}
+        borderWidth={0.07}
+        backgroundOpacity={0}
+        saturation={1}
+        distortionScale={-180}
+        displace={0.5}
         redOffset={0}
-        greenOffset={2}
-        blueOffset={5}
-        surfaceBackground="var(--surface-nav-strong)"
+        greenOffset={10}
+        blueOffset={20}
+        mixBlendMode="screen"
         className="absolute left-1/2 top-2 -translate-x-1/2"
-        contentClassName="gap-0.5 p-1"
+        contentClassName="gap-0.5"
+        contentPadding={4}
       >
         {SCREENS.map((s) => {
           const isActive = s.id === screen;
@@ -110,13 +119,9 @@ export function TopNav({
                   : 0;
           const isRunning = tabCount > 0;
           return (
-            <Magnet
+            <div
               key={s.id}
-              padding={24}
-              magnetStrength={14}
-              activeTransition="transform 220ms cubic-bezier(0.16, 1, 0.3, 1)"
-              inactiveTransition="transform 360ms cubic-bezier(0.32, 0.72, 0, 1)"
-              wrapperClassName="shrink-0"
+              className="shrink-0"
             >
               <button
                 type="button"
@@ -131,8 +136,8 @@ export function TopNav({
                 style={
                   isActive
                     ? {
-                        background: "var(--w-10)",
-                        boxShadow: "inset 0 1px 0 var(--w-10)",
+                        background: "rgba(255, 255, 255, 0.14)",
+                        boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.16)",
                       }
                     : undefined
                 }
@@ -156,7 +161,7 @@ export function TopNav({
                   </span>
                 )}
               </button>
-            </Magnet>
+            </div>
           );
         })}
       </GlassSurface>
