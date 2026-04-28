@@ -64,10 +64,10 @@ export function TopNav({
           height={40}
           borderRadius={50}
           borderWidth={0.07}
-          backgroundOpacity={0}
+          backgroundOpacity={0.1}
           saturation={1}
-          opacity={0.55}
-          distortionScale={-180}
+          opacity={0.68}
+          distortionScale={-210}
           blur={11}
           displace={0.5}
           redOffset={0}
@@ -97,10 +97,10 @@ export function TopNav({
         height={44}
         borderRadius={50}
         borderWidth={0.07}
-        backgroundOpacity={0}
+        backgroundOpacity={0.1}
         saturation={1}
-        opacity={0.55}
-        distortionScale={-180}
+        opacity={0.68}
+        distortionScale={-210}
         blur={11}
         displace={0.5}
         redOffset={0}
