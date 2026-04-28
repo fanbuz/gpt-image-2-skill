@@ -1,13 +1,13 @@
 import type { CSSProperties } from "react";
+import logoUrl from "@/assets/logo.png";
 
-const HUES: readonly [string, string, string][] = [
-  ["#f5e4d0", "#d9946a", "#8b4a2b"],
-  ["#dce5ee", "#7a9ec4", "#3a5877"],
-  ["#e4ecd8", "#88a866", "#3e553a"],
-  ["#f1dde1", "#c782a1", "#704055"],
-  ["#e8e1f0", "#9888c2", "#473867"],
-  ["#f4e9cf", "#d0a94b", "#7a5c22"],
-];
+function variantSeed(seed: number, variant: string): number {
+  const variantSum = Array.from(variant).reduce(
+    (sum, char) => sum + char.charCodeAt(0),
+    0,
+  );
+  return Math.abs(seed * 37 + variantSum) || 1;
+}
 
 export function PlaceholderImage({
   seed = 1,
@@ -20,44 +20,71 @@ export function PlaceholderImage({
   label?: string;
   style?: CSSProperties;
 }) {
-  const h = HUES[Math.abs(seed) % HUES.length];
-  const gId = `g-${seed}-${variant}`;
-  const rId = `r-${seed}-${variant}`;
+  const n = variantSeed(seed, variant);
+  const bloomX = 24 + ((n * 17) % 52);
+  const bloomY = 20 + ((n * 29) % 56);
+  const tilt = ((n % 7) - 3) * 1.5;
+
   return (
-    <svg
-      width="100%"
-      height="100%"
-      viewBox="0 0 400 400"
-      preserveAspectRatio="xMidYMid slice"
-      style={{ display: "block", ...style }}
+    <div
+      role={label ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      className="relative flex h-full w-full items-center justify-center overflow-hidden"
+      style={{
+        background: `
+          radial-gradient(82% 76% at ${bloomX}% ${bloomY}%, var(--accent-35), transparent 62%),
+          radial-gradient(74% 68% at ${100 - bloomX}% ${100 - bloomY}%, var(--accent-2-30), transparent 58%),
+          var(--image-placeholder-bg)
+        `,
+        ...style,
+      }}
     >
-      <defs>
-        <linearGradient id={gId} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor={h[0]} />
-          <stop offset="0.55" stopColor={h[1]} />
-          <stop offset="1" stopColor={h[2]} />
-        </linearGradient>
-        <radialGradient id={rId} cx={`${(seed * 13) % 100}%`} cy={`${(seed * 7) % 100}%`} r="60%">
-          <stop offset="0" stopColor="white" stopOpacity="0.5" />
-          <stop offset="1" stopColor="white" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <rect width="400" height="400" fill={`url(#${gId})`} />
-      <rect width="400" height="400" fill={`url(#${rId})`} />
-      <g opacity="0.85">
-        <ellipse cx={120 + ((seed * 37) % 160)} cy={260 + ((seed * 23) % 80)} rx="80" ry="24" fill={h[2]} opacity="0.3" />
-        <circle cx={200 + ((seed * 11) % 50)} cy={180 + ((seed * 17) % 40)} r={40 + (seed % 20)} fill={h[2]} opacity="0.55" />
-        <path
-          d={`M${60 + (seed % 50)} 320 Q200 ${220 + (seed % 60)} ${360 - (seed % 50)} 320 L400 400 L0 400 Z`}
-          fill={h[2]}
-          opacity="0.45"
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-70"
+        style={{
+          background:
+            "linear-gradient(135deg, var(--w-12), transparent 34%, var(--w-04) 68%, transparent)",
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-[16%] top-[16%] h-px opacity-70"
+        style={{
+          background:
+            "linear-gradient(90deg, transparent, var(--w-20), transparent)",
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="relative flex aspect-square w-[46%] min-w-6 max-w-[72px] items-center justify-center rounded-[var(--r-lg)] border border-[color:var(--w-16)] bg-[color:var(--w-08)]"
+        style={{
+          transform: `rotate(${tilt}deg)`,
+          backdropFilter: "blur(12px) saturate(145%)",
+          WebkitBackdropFilter: "blur(12px) saturate(145%)",
+          boxShadow: "var(--shadow-accent-glow)",
+        }}
+      >
+        <img
+          src={logoUrl}
+          alt=""
+          className="h-[68%] w-[68%] object-contain drop-shadow-[0_0_18px_var(--accent-45)]"
+          draggable={false}
         />
-      </g>
+      </div>
       {label && (
-        <text x="14" y="24" fontFamily="var(--f-mono)" fontSize="11" fill={h[2]} opacity="0.7">
+        <span
+          className="absolute bottom-2 left-2 max-w-[calc(100%-var(--d-pad))] truncate rounded-[var(--r-sm)] border border-[color:var(--w-10)] px-1.5 py-0.5 font-mono text-[10px] text-faint"
+          style={{
+            background: "var(--k-45)",
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
+          }}
+        >
           {label}
-        </text>
+        </span>
       )}
-    </svg>
+    </div>
   );
 }

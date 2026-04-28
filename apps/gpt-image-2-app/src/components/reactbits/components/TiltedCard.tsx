@@ -16,6 +16,7 @@ interface TiltedCardProps {
   showTooltip?: boolean;
   overlayContent?: React.ReactNode;
   displayOverlayContent?: boolean;
+  onImageError?: React.ReactEventHandler<HTMLImageElement>;
 }
 
 const springValues: SpringOptions = {
@@ -37,7 +38,8 @@ export default function TiltedCard({
   showMobileWarning = true,
   showTooltip = true,
   overlayContent = null,
-  displayOverlayContent = false
+  displayOverlayContent = false,
+  onImageError
 }: TiltedCardProps) {
   const ref = useRef<HTMLElement>(null);
   const x = useMotionValue(0);
@@ -120,6 +122,7 @@ export default function TiltedCard({
           src={imageSrc}
           alt={altText}
           className="absolute top-0 left-0 object-cover rounded-[15px] will-change-transform [transform:translateZ(0)]"
+          onError={onImageError}
           style={{
             width: imageWidth,
             height: imageHeight

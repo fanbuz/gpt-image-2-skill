@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import * as Radix from "@radix-ui/react-dialog";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Drawer } from "@/components/ui/drawer";
@@ -15,6 +15,7 @@ import {
   jobOutputPath,
   jobOutputUrl,
 } from "@/lib/job-outputs";
+import { PlaceholderImage } from "@/components/screens/shared/placeholder-image";
 
 type Props = {
   job: Job | null;
@@ -61,6 +62,8 @@ export function JobImageDetailDrawer({
 }: Props) {
   const confirm = useConfirm();
   const [zoomOpen, setZoomOpen] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
+  const [thumbFailed, setThumbFailed] = useState<Set<number>>(new Set());
 
   const handleRerun = () => {
     if (!job) return;
@@ -91,6 +94,14 @@ export function JobImageDetailDrawer({
   const activePosition = Math.max(0, outputIndexes.indexOf(activeOutputIndex));
   const url = job ? jobOutputUrl(job, activeOutputIndex) : null;
   const path = job ? jobOutputPath(job, activeOutputIndex) : null;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [url]);
+
+  useEffect(() => {
+    setThumbFailed(new Set());
+  }, [job?.id, outputCount]);
 
   const md = (job?.metadata ?? {}) as Record<string, unknown>;
   const prompt = ((md.prompt as string | undefined) ?? "").trim();
@@ -219,7 +230,7 @@ export function JobImageDetailDrawer({
           {/* Big image — TiltedCard for the brand "liquid" hover-tilt feel,
             wrapped in a button so click still escalates to fullscreen zoom. */}
           <div className="relative flex min-w-0 items-center justify-center overflow-hidden">
-            {url ? (
+            {url && !imageFailed ? (
               <button
                 type="button"
                 onClick={() => setZoomOpen(true)}
@@ -237,11 +248,15 @@ export function JobImageDetailDrawer({
                   scaleOnHover={1.04}
                   showMobileWarning={false}
                   showTooltip={false}
+                  onImageError={() => setImageFailed(true)}
                 />
               </button>
             ) : (
-              <div className="flex h-[340px] w-full items-center justify-center rounded-lg border border-[color:var(--w-08)] bg-[color:var(--w-02)] text-[12.5px] text-faint">
-                暂无图片预览
+              <div className="h-[340px] w-full overflow-hidden rounded-lg border border-[color:var(--w-08)] bg-[color:var(--w-02)]">
+                <PlaceholderImage
+                  seed={activeOutputIndex + 23}
+                  variant={`detail-${job?.id ?? "empty"}`}
+                />
               </div>
             )}
 
@@ -287,7 +302,7 @@ export function JobImageDetailDrawer({
                     aria-label={`第 ${i + 1} 张`}
                     title={`第 ${i + 1} 张`}
                   >
-                    {tUrl ? (
+                    {tUrl && !thumbFailed.has(outputIndex) ? (
                       <img
                         src={tUrl}
                         alt=""
@@ -295,9 +310,17 @@ export function JobImageDetailDrawer({
                         decoding="async"
                         className="h-full w-full object-cover"
                         draggable={false}
+                        onError={() =>
+                          setThumbFailed((prev) =>
+                            new Set(prev).add(outputIndex),
+                          )
+                        }
                       />
                     ) : (
-                      <div className="h-full w-full bg-[color:var(--w-04)]" />
+                      <PlaceholderImage
+                        seed={outputIndex + i + 19}
+                        variant={`detail-thumb-${job.id}`}
+                      />
                     )}
                     <span
                       className="absolute bottom-0 left-0 right-0 h-3.5 flex items-center justify-center text-[8.5px] font-mono text-foreground"
@@ -385,7 +408,7 @@ export function JobImageDetailDrawer({
             <Radix.Title className="sr-only">
               {outputCount > 1 ? `作品 ${letter}` : "作品详情"}
             </Radix.Title>
-            {url && (
+            {url && !imageFailed && (
               <RevealImage
                 src={url}
                 alt={`第 ${letter} 张大图`}

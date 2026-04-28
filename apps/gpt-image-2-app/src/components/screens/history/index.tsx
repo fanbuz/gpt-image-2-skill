@@ -24,6 +24,7 @@ import SpotlightCard from "@/components/reactbits/components/SpotlightCard";
 import { useConfirm } from "@/hooks/use-confirm";
 import type { Job, JobStatus } from "@/lib/types";
 import { cn } from "@/lib/cn";
+import { PlaceholderImage } from "@/components/screens/shared/placeholder-image";
 import { JobImageDetailDrawer } from "./job-image-detail-drawer";
 
 type FilterValue = "all" | "running" | "completed" | "failed";
@@ -125,6 +126,46 @@ function StatusChip({ status }: { status: JobStatus }) {
   );
 }
 
+function JobPreviewImage({
+  url,
+  seed,
+  variant,
+  imageClassName = "h-full w-full object-cover",
+  placeholderClassName = "h-full w-full",
+}: {
+  url: string | null;
+  seed: number;
+  variant: string;
+  imageClassName?: string;
+  placeholderClassName?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [url]);
+
+  if (url && !failed) {
+    return (
+      <img
+        src={url}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className={imageClassName}
+        draggable={false}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <div className={placeholderClassName}>
+      <PlaceholderImage seed={seed} variant={variant} />
+    </div>
+  );
+}
+
 function JobRowExpandable({
   index,
   job,
@@ -208,21 +249,11 @@ function JobRowExpandable({
         </span>
 
         <div className="relative h-14 w-20 shrink-0 rounded-md overflow-hidden ring-1 ring-[color:var(--w-10)] transition-transform duration-200 ease-out group-hover:scale-[1.02]">
-          {thumbUrl ? (
-            <img
-              src={thumbUrl}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              className="h-full w-full object-cover"
-              draggable={false}
-            />
-          ) : (
-            <div
-              className="h-full w-full"
-              style={{ background: "var(--image-placeholder-bg)" }}
-            />
-          )}
+          <JobPreviewImage
+            url={thumbUrl}
+            seed={index * 17 + outputCount}
+            variant={`history-thumb-${job.id}`}
+          />
           {(isRunning || isQueueing) && (
             <div className="absolute inset-0 backdrop-blur-[2px] bg-[color:var(--k-40)] flex items-center justify-center">
               {isRunning ? (
@@ -355,18 +386,13 @@ function JobRowExpandable({
                       spotlightColor="rgba(var(--accent-rgb), 0.30)"
                       className="!rounded-lg !p-0 !bg-transparent !border-0 !w-full !h-full absolute inset-0"
                     >
-                      {url ? (
-                        <img
-                          src={url}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          className="absolute inset-0 h-full w-full object-cover"
-                          draggable={false}
-                        />
-                      ) : (
-                        <div className="absolute inset-0 bg-[color:var(--w-04)]" />
-                      )}
+                      <JobPreviewImage
+                        url={url}
+                        seed={index * 37 + outputIndex + i}
+                        variant={`history-output-${job.id}-${outputIndex}`}
+                        imageClassName="absolute inset-0 h-full w-full object-cover"
+                        placeholderClassName="absolute inset-0"
+                      />
                       <span
                         className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10.5px] font-mono font-semibold text-foreground"
                         style={{
