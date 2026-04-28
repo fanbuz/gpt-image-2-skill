@@ -9,6 +9,9 @@ documentation.workspace = true
 authors.workspace = true
 description = "Self-hosted Docker/Web server for GPT Image 2."
 
+[package.metadata.dist]
+dist = false
+
 [dependencies]
 axum = "0.8.7"
 gpt-image-2-core = { path = "../gpt-image-2-core", version = "0.3.1" }
