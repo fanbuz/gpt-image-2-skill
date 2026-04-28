@@ -66,8 +66,9 @@ export function TopNav({
           borderWidth={0.07}
           backgroundOpacity={0}
           saturation={1}
+          opacity={0.55}
           distortionScale={-180}
-          blur={3.5}
+          blur={11}
           displace={0.5}
           redOffset={0}
           greenOffset={10}
@@ -98,8 +99,9 @@ export function TopNav({
         borderWidth={0.07}
         backgroundOpacity={0}
         saturation={1}
+        opacity={0.55}
         distortionScale={-180}
-        blur={3.5}
+        blur={11}
         displace={0.5}
         redOffset={0}
         greenOffset={10}
