@@ -67,11 +67,12 @@ export function TopNav({
           backgroundOpacity={0}
           saturation={1}
           distortionScale={-180}
+          blur={6}
           displace={0.5}
           redOffset={0}
           greenOffset={10}
           blueOffset={20}
-          mixBlendMode="screen"
+          mixBlendMode="difference"
           className="inline-flex shrink-0"
           contentClassName="gap-2"
           contentPadding="0 14px"
@@ -98,11 +99,12 @@ export function TopNav({
         backgroundOpacity={0}
         saturation={1}
         distortionScale={-180}
+        blur={6}
         displace={0.5}
         redOffset={0}
         greenOffset={10}
         blueOffset={20}
-        mixBlendMode="screen"
+        mixBlendMode="difference"
         className="absolute left-1/2 top-2 -translate-x-1/2"
         contentClassName="gap-0.5"
         contentPadding={4}
