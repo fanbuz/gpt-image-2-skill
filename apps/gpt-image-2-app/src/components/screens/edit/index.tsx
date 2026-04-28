@@ -25,6 +25,7 @@ import { OutputTile } from "@/components/screens/shared/output-tile";
 import { MaskCanvas, type MaskExport, type MaskMode } from "./mask-canvas";
 import { ReferenceImageCard, type RefImage } from "./reference-card";
 import { LocalEditOnboarding } from "./local-edit-onboarding";
+import ElasticSlider from "@/components/reactbits/components/ElasticSlider";
 import { providerKindLabel } from "@/lib/format";
 import { useCreateEdit } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
@@ -642,26 +643,22 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
                   />
                   <div className="flex items-center gap-2.5">
                     <label
-                      htmlFor={brushSliderId}
+                      id={`${brushSliderId}-label`}
                       className="text-[11px] text-muted shrink-0"
                     >
                       笔刷
                     </label>
-                    <input
+                    <ElasticSlider
                       id={brushSliderId}
-                      type="range"
+                      value={brushSize}
                       min={8}
                       max={80}
-                      value={brushSize}
-                      onChange={(event) =>
-                        setBrushSize(Number(event.target.value))
-                      }
-                      className="flex-1 cursor-pointer"
-                      style={{ accentColor: "var(--accent)", height: 4 }}
+                      step={1}
+                      onChange={setBrushSize}
+                      ariaLabelledBy={`${brushSliderId}-label`}
+                      className="min-w-0 flex-1"
+                      valueWidthClassName="w-8"
                     />
-                    <span className="text-[11px] text-faint font-mono w-7 text-right tabular-nums">
-                      {brushSize}
-                    </span>
                   </div>
                   <button
                     type="button"

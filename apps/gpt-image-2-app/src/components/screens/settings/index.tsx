@@ -45,6 +45,7 @@ import {
   type ThemePresetId,
 } from "@/lib/theme-presets";
 import ScrambleText from "@/components/reactbits/text/ScrambleText";
+import ElasticSlider from "@/components/reactbits/components/ElasticSlider";
 import { cn } from "@/lib/cn";
 
 // Visible preset order in the Appearance gallery. Hidden presets join
@@ -718,26 +719,16 @@ function AppearancePanel() {
           title="面板透明度"
           description={opacityHint}
           control={
-            <div className="flex items-center gap-3 w-[240px]">
-              <input
-                type="range"
+            <div className="w-[252px]">
+              <ElasticSlider
+                value={tweaks.glassOpacity}
                 min={5}
                 max={95}
                 step={1}
-                value={tweaks.glassOpacity}
-                onChange={(e) =>
-                  setTweaks({ glassOpacity: Number(e.target.value) })
-                }
-                className="flex-1 cursor-pointer"
-                style={{
-                  accentColor: "var(--accent)",
-                  height: 4,
-                }}
-                aria-label="面板透明度"
+                onChange={(glassOpacity) => setTweaks({ glassOpacity })}
+                valueSuffix="%"
+                ariaLabel="面板透明度"
               />
-              <span className="font-mono text-[11px] text-faint w-10 text-right tabular-nums">
-                {tweaks.glassOpacity}%
-              </span>
             </div>
           }
         />
