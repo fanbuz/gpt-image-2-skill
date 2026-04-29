@@ -1,6 +1,8 @@
 import { type KeyboardEvent } from "react";
+import { motion } from "motion/react";
 import { Icon } from "@/components/icon";
 import { cn } from "@/lib/cn";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
 export type RefImage = {
   id: string;
@@ -24,6 +26,7 @@ export function ReferenceImageCard({
   onSetTarget?: () => void;
   onRemove?: () => void;
 }) {
+  const reducedMotion = useReducedMotion();
   const roleLabel =
     role === "target" ? "目标图" : role === "reference" ? "参考图" : "参考图";
   const ariaLabel = `${roleLabel}：${ref_.name}${ref_.hasMask ? "，已绘制遮罩" : ""}`;
@@ -46,13 +49,19 @@ export function ReferenceImageCard({
   };
 
   return (
-    <div
+    <motion.div
       role="button"
       tabIndex={0}
       aria-label={ariaLabel}
       aria-pressed={Boolean(active)}
       onClick={onSelect}
       onKeyDown={handleKey}
+      initial={
+        reducedMotion ? false : { opacity: 0, scale: 0.96, y: 3 }
+      }
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      whileTap={reducedMotion ? undefined : { scale: 0.985 }}
+      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
         "relative aspect-square rounded-lg overflow-hidden cursor-pointer transition-all bg-sunken",
         "border-[1.5px]",
@@ -122,6 +131,6 @@ export function ReferenceImageCard({
       >
         <Icon name="x" size={12} aria-hidden="true" />
       </button>
-    </div>
+    </motion.div>
   );
 }

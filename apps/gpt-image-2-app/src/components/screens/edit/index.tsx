@@ -865,7 +865,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
       {/* BOTTOM — prompt + outputs strip + error */}
       <footer className="shrink-0 px-4 pb-3 space-y-2">
         {runError && !isWorking && (
-          <div className="surface-panel flex items-center gap-2 px-3 py-2 border border-[color:var(--status-err)]/40">
+          <div className="surface-panel flex items-center gap-2 px-3 py-2 border border-[color:var(--status-err)]/40 animate-fade-up">
             <Icon
               name="warn"
               size={13}
@@ -886,7 +886,7 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
         )}
 
         {runNotice && !isWorking && (
-          <div className="surface-panel px-3 py-1.5 text-[11.5px] leading-relaxed text-muted">
+          <div className="surface-panel px-3 py-1.5 text-[11.5px] leading-relaxed text-muted animate-fade-up">
             {runNotice} 已保留收到的图片；如果需要补齐，可以点「应用」重试。
           </div>
         )}
@@ -967,18 +967,27 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
                 Array.from({ length: displayN }).map((_, i) => (
                   <div
                     key={i}
-                    className="shrink-0 h-20 w-20 rounded-md border border-border bg-[color:var(--w-04)] flex items-center justify-center text-[10px] font-mono text-faint animate-shimmer"
-                    style={{
-                      background: "var(--skeleton-gradient-soft)",
-                      backgroundSize: "200% 100%",
-                    }}
+                    className="shrink-0 animate-fade-up"
+                    style={{ animationDelay: `${i * 65}ms` }}
                   >
-                    {String.fromCharCode(65 + i)}
+                    <div
+                      className="h-20 w-20 rounded-md border border-border bg-[color:var(--w-04)] flex items-center justify-center text-[10px] font-mono text-faint animate-shimmer"
+                      style={{
+                        background: "var(--skeleton-gradient-soft)",
+                        backgroundSize: "200% 100%",
+                      }}
+                    >
+                      {String.fromCharCode(65 + i)}
+                    </div>
                   </div>
                 ))}
               {hasOutputs &&
                 outputs.map((output) => (
-                  <div key={output.index} className="shrink-0 w-20">
+                  <div
+                    key={output.index}
+                    className="shrink-0 w-20 animate-fade-up"
+                    style={{ animationDelay: `${output.index * 45}ms` }}
+                  >
                     <OutputTile
                       output={output}
                       onSelect={() => setSelectedOutput(output.index)}
