@@ -58,7 +58,7 @@ export function TopNav({
       )}
     >
       {/* Left — brand chip */}
-      <div className="flex items-center gap-2">
+      <div className="hidden md:flex items-center gap-2">
         <GlassSurface
           width={196}
           height={40}
@@ -93,7 +93,7 @@ export function TopNav({
       {/* Center — screen tabs */}
       <GlassSurface
         data-no-window-drag
-        width={288}
+        width="min(288px, calc(100vw - 32px))"
         height={44}
         borderRadius={50}
         borderWidth={0.07}

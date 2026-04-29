@@ -449,7 +449,8 @@ export function GenerateScreen({
           "relative h-full w-full overflow-y-auto",
           // Default (no history yet, OR narrow viewport): hero-centered
           // single-column stack — same feel as the original onboarding hero.
-          "px-10 pb-12 pt-4 flex flex-col items-center justify-center",
+          "px-4 pb-8 pt-3 sm:px-10 sm:pb-12 sm:pt-4 flex flex-col items-center justify-start",
+          !hasSplit && "sm:justify-center",
           // Split mode (lg+ AND has completed work): hero spans top, form
           // pinned to the left column, gallery on the right. Closes the
           // prompt → result loop on a single screen.
@@ -468,7 +469,7 @@ export function GenerateScreen({
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
             "flex flex-col items-center text-center",
-            hasSplit && "lg:col-span-2 lg:mb-2",
+            hasSplit && "hidden lg:flex lg:col-span-2 lg:mb-2",
           )}
         >
           <img
@@ -522,7 +523,7 @@ export function GenerateScreen({
         {/* Form panel */}
         <section
           className={cn(
-            "surface-panel mt-9 w-full max-w-[640px] p-5",
+            "surface-panel mt-3 w-full max-w-[640px] p-4 sm:mt-9 sm:p-5",
             // Split mode: pin to left column, drop top margin (the grid
             // gap takes over), drop the centering max-width.
             hasSplit && "lg:col-start-1 lg:mt-0 lg:max-w-none",
@@ -652,9 +653,9 @@ export function GenerateScreen({
             </div>
           </div>
 
-          {/* parameter chips + CTA — single row, scroll if too narrow */}
-          <div className="mt-3 flex items-center gap-2">
-            <div className="flex flex-1 min-w-0 items-center gap-2 overflow-x-auto scrollbar-none pb-px">
+          {/* parameter chips + CTA */}
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-1 sm:min-w-0 sm:items-center sm:gap-2 sm:overflow-x-auto sm:scrollbar-none sm:pb-px">
               <GlassCombobox
                 variant="chip"
                 label="尺寸"
@@ -662,7 +663,7 @@ export function GenerateScreen({
                 options={POPULAR_SIZE_OPTIONS}
                 onValueChange={setSize}
                 placeholder="WxH"
-                className="shrink-0 w-[150px]"
+                className="col-span-2 w-full min-w-0 sm:col-span-1 sm:w-[150px] sm:shrink-0"
                 invalid={!sizeValidation.ok}
               />
               <GlassSelect
@@ -671,7 +672,7 @@ export function GenerateScreen({
                 value={quality}
                 options={QUALITY_CHIP_OPTIONS}
                 onValueChange={setQuality}
-                className="shrink-0"
+                className="w-full justify-between sm:w-auto sm:shrink-0"
               />
               <GlassSelect
                 variant="chip"
@@ -679,7 +680,7 @@ export function GenerateScreen({
                 value={format}
                 options={FORMAT_OPTIONS}
                 onValueChange={setFormat}
-                className="shrink-0"
+                className="w-full justify-between sm:w-auto sm:shrink-0"
               />
               <GlassCombobox
                 variant="chip"
@@ -690,7 +691,7 @@ export function GenerateScreen({
                 disabled={!supportsMultipleOutputs}
                 inputMode="numeric"
                 placeholder="1-10"
-                className="shrink-0 w-[88px]"
+                className="col-span-2 w-full min-w-0 sm:col-span-1 sm:w-[88px] sm:shrink-0"
               />
             </div>
             <ClickSpark
@@ -699,7 +700,7 @@ export function GenerateScreen({
               sparkRadius={22}
               sparkSize={8}
               duration={500}
-              className="inline-flex"
+              className="w-full sm:inline-flex sm:w-auto"
             >
             <button
               type="button"
@@ -708,7 +709,7 @@ export function GenerateScreen({
                 handleRun();
               }}
               disabled={submitDisabled}
-              className="relative overflow-hidden inline-flex items-center justify-center gap-1.5 h-11 px-6 rounded-full text-[14px] font-semibold text-foreground transition-[background,transform,opacity] hover:opacity-95 active:translate-y-[0.5px] disabled:opacity-45 disabled:cursor-not-allowed"
+              className="relative overflow-hidden inline-flex w-full items-center justify-center gap-1.5 h-11 px-6 rounded-full text-[14px] font-semibold text-foreground transition-[background,transform,opacity] hover:opacity-95 active:translate-y-[0.5px] disabled:opacity-45 disabled:cursor-not-allowed sm:w-auto"
               style={{
                 backgroundImage: "var(--accent-gradient-fill)",
                 border: "1px solid var(--accent-50)",
