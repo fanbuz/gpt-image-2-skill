@@ -56,6 +56,10 @@ function normalizeInterfaceMode(value: unknown): InterfaceMode {
   return value === "legacy" ? "legacy" : "modern";
 }
 
+function normalizeTheme(value: unknown): Tweaks["theme"] {
+  return value === "light" ? "light" : "dark";
+}
+
 function load(): Tweaks {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -82,8 +86,7 @@ function load(): Tweaks {
       ...DEFAULT_TWEAKS,
       ...parsed,
       maxParallel: clampParallel(parsed?.maxParallel),
-      // Force back to liquid theme even if older payload had light/other.
-      theme: "dark",
+      theme: normalizeTheme(parsed?.theme),
       accent: "violet",
       liquidBackground:
         typeof parsed?.liquidBackground === "boolean"
@@ -104,7 +107,9 @@ export function TweaksProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const root = document.documentElement;
     const preset = THEME_PRESETS[tweaks.themePreset];
-    root.setAttribute("data-theme", tweaks.theme);
+    const activeTheme =
+      tweaks.interfaceMode === "legacy" ? tweaks.theme : "dark";
+    root.setAttribute("data-theme", activeTheme);
     root.setAttribute("data-accent", tweaks.accent);
     root.setAttribute("data-font", tweaks.font);
     root.setAttribute("data-density", tweaks.density);

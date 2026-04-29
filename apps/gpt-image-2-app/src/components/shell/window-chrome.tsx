@@ -207,9 +207,7 @@ function LegacyWindowChrome({ children }: { children: ReactNode }) {
         className="pointer-events-none absolute inset-0 z-0"
         style={{
           backgroundImage:
-            "radial-gradient(70% 55% at 8% 0%, rgba(88, 166, 255, 0.14) 0%, transparent 58%)," +
-            "radial-gradient(60% 65% at 100% 18%, rgba(139, 92, 246, 0.12) 0%, transparent 58%)," +
-            "linear-gradient(135deg, rgba(11, 13, 18, 0.98) 0%, rgba(13, 17, 25, 0.98) 50%, rgba(8, 10, 15, 0.98) 100%)",
+            "var(--legacy-window-bg, radial-gradient(70% 55% at 8% 0%, rgba(88, 166, 255, 0.14) 0%, transparent 58%), radial-gradient(60% 65% at 100% 18%, rgba(139, 92, 246, 0.12) 0%, transparent 58%), linear-gradient(135deg, rgba(11, 13, 18, 0.98) 0%, rgba(13, 17, 25, 0.98) 50%, rgba(8, 10, 15, 0.98) 100%))",
         }}
       />
       <div
@@ -217,7 +215,7 @@ function LegacyWindowChrome({ children }: { children: ReactNode }) {
         className="pointer-events-none absolute inset-0 z-[1] opacity-[0.22]"
         style={{
           backgroundImage:
-            "radial-gradient(rgba(255, 255, 255, 0.2) 0.7px, transparent 0.7px)",
+            "radial-gradient(var(--legacy-noise, rgba(255, 255, 255, 0.2)) 0.7px, transparent 0.7px)",
           backgroundSize: "4px 4px",
         }}
       />

@@ -4,6 +4,7 @@ import { ClassicGenerateScreen } from "@/components/legacy/classic-generate";
 import { ClassicHistoryScreen } from "@/components/legacy/classic-history";
 import { SettingsScreen } from "@/components/screens/settings";
 import { Button } from "@/components/ui/button";
+import { useTweaks } from "@/hooks/use-tweaks";
 import { cn } from "@/lib/cn";
 import {
   defaultProviderLabel,
@@ -90,20 +91,23 @@ function ClassicSidebar({
     <aside className="classic-sidebar flex w-[224px] shrink-0 flex-col border-r border-border-faint bg-[rgba(10,10,14,0.72)]">
       <div
         data-tauri-drag-region
-        className="flex h-14 items-center border-b border-border-faint px-4"
+        className="flex h-14 items-center border-b border-border-faint pb-0 pl-[86px] pr-4"
       >
-        <div className="flex min-w-0 items-center gap-2">
+        <div data-tauri-drag-region className="flex min-w-0 items-center gap-2">
           <img
+            data-tauri-drag-region
             src={logoUrl}
             alt=""
             className="h-8 w-8 shrink-0 rounded-md object-contain shadow-md ring-1 ring-white/10"
             draggable={false}
           />
-          <div className="min-w-0 leading-tight">
-            <div className="truncate text-[13px] font-semibold tracking-tight">
+          <div data-tauri-drag-region className="min-w-0 leading-tight">
+            <div data-tauri-drag-region className="truncate text-[13px] font-semibold tracking-tight">
               GPT Image 2
             </div>
-            <div className="text-[10.5px] text-faint">经典工作台</div>
+            <div data-tauri-drag-region className="text-[10.5px] text-faint">
+              经典工作台
+            </div>
           </div>
         </div>
       </div>
@@ -160,6 +164,8 @@ function ClassicToolbar({
   setScreen: (screen: ScreenId) => void;
 }) {
   const meta = TITLES[screen];
+  const { tweaks, setTweaks } = useTweaks();
+  const light = tweaks.theme === "light";
   return (
     <header
       data-tauri-drag-region
@@ -173,11 +179,11 @@ function ClassicToolbar({
             "linear-gradient(90deg, transparent, rgba(255,255,255,0.07) 12%, rgba(255,255,255,0.07) 88%, transparent)",
         }}
       />
-      <div className="min-w-0 flex-1">
-        <div className="t-h2 truncate text-foreground tracking-tight">
+      <div data-tauri-drag-region className="min-w-0 flex-1">
+        <div data-tauri-drag-region className="t-h2 truncate text-foreground tracking-tight">
           {meta.title}
         </div>
-        <div className="t-small mt-px hidden truncate lg:block">
+        <div data-tauri-drag-region className="t-small mt-px hidden truncate lg:block">
           {meta.subtitle}
         </div>
       </div>
@@ -188,6 +194,13 @@ function ClassicToolbar({
         onClick={() => setScreen("settings")}
         aria-label="打开设置"
         aria-pressed={screen === "settings"}
+      />
+      <Button
+        variant="ghost"
+        size="icon"
+        icon={light ? "moon" : "sun"}
+        onClick={() => setTweaks({ theme: light ? "dark" : "light" })}
+        aria-label={light ? "切换到暗色主题" : "切换到亮色主题"}
       />
       <Button
         variant="solidDark"
