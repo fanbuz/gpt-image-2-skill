@@ -64,6 +64,7 @@ import {
 } from "@/lib/providers";
 import { openPath, revealPath, saveImages } from "@/lib/user-actions";
 import {
+  isTauriRuntime,
   useGlobalImagePaste,
   useTauriImageDrop,
 } from "@/hooks/use-image-ingest";
@@ -273,6 +274,10 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   useTauriImageDrop(addRefFiles, setIsDraggingImages);
 
   const handleCanvasDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (isTauriRuntime()) {
+      event.preventDefault();
+      return;
+    }
     if (!dataTransferHasImage(event.dataTransfer)) return;
     event.preventDefault();
     dragDepthRef.current += 1;
@@ -280,12 +285,20 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   };
 
   const handleCanvasDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (isTauriRuntime()) {
+      event.preventDefault();
+      return;
+    }
     if (!dataTransferHasImage(event.dataTransfer)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
   };
 
   const handleCanvasDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (isTauriRuntime()) {
+      event.preventDefault();
+      return;
+    }
     if (!dataTransferHasImage(event.dataTransfer)) return;
     event.preventDefault();
     dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
@@ -293,6 +306,10 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   };
 
   const handleCanvasDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (isTauriRuntime()) {
+      event.preventDefault();
+      return;
+    }
     if (!dataTransferHasImage(event.dataTransfer)) return;
     event.preventDefault();
     dragDepthRef.current = 0;

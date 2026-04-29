@@ -245,7 +245,7 @@ export default function App() {
           )}
           <Toaster
             position="top-right"
-            theme="dark"
+            theme={legacyInterface ? tweaks.theme : "dark"}
             closeButton
             richColors
           />

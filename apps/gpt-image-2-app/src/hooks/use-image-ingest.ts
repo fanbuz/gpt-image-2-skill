@@ -22,7 +22,10 @@ type TauriDroppedImages = {
   ignored: number;
 };
 
-function isTauriRuntime() {
+let lastTauriDropSignature = "";
+let lastTauriDropAt = 0;
+
+export function isTauriRuntime() {
   if (typeof window === "undefined") return false;
   return Boolean(window.__TAURI_INTERNALS__ || window.__TAURI__);
 }
@@ -42,6 +45,21 @@ async function readTauriDroppedImages(paths: string[]) {
     files: payload.files.map(tauriDroppedFileToFile),
     ignored: payload.ignored,
   };
+}
+
+function isRepeatedTauriDrop(paths: string[]) {
+  const signature = paths.slice().sort().join("\n");
+  const now = Date.now();
+  if (
+    signature &&
+    signature === lastTauriDropSignature &&
+    now - lastTauriDropAt < 900
+  ) {
+    return true;
+  }
+  lastTauriDropSignature = signature;
+  lastTauriDropAt = now;
+  return false;
 }
 
 export function useGlobalImagePaste(onImages: AddImages) {
@@ -84,6 +102,7 @@ export function useTauriImageDrop(
           if (payload.type !== "drop") return;
 
           onDragActiveChange?.(false);
+          if (isRepeatedTauriDrop(payload.paths)) return;
           void readTauriDroppedImages(payload.paths)
             .then((result) => {
               if (disposed) return;
