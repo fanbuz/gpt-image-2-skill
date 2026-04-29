@@ -362,76 +362,80 @@ fn output_extension(format: Option<&str>) -> &str {
     }
 }
 
-fn provider_supports_n(provider: Option<&str>) -> bool {
-    let config = load_config().ok();
-    let selected = provider
+fn selected_provider_from_config(
+    config: Option<&AppConfig>,
+    provider: Option<&str>,
+) -> Option<String> {
+    provider
         .and_then(|name| {
             let name = name.trim();
             if name.is_empty() || name == "auto" {
                 None
             } else {
-                Some(name)
+                Some(name.to_string())
             }
         })
         .or_else(|| {
             config
-                .as_ref()
                 .and_then(|config| config.default_provider.as_deref())
                 .filter(|name| !name.is_empty() && *name != "auto")
-        });
+                .map(ToString::to_string)
+        })
+}
 
-    match selected {
-        Some("codex") => false,
-        Some("openai") => true,
-        Some(name) => config
-            .as_ref()
-            .and_then(|config| config.providers.get(name))
-            .map(|provider| {
-                provider
-                    .supports_n
-                    .unwrap_or(provider.provider_type == "openai")
-            })
-            .unwrap_or(false),
-        None => true,
+fn provider_supports_n_from_config(config: Option<&AppConfig>, provider: Option<&str>) -> bool {
+    let selected = selected_provider_from_config(config, provider);
+    let Some(name) = selected.as_deref() else {
+        return true;
+    };
+    if let Some(provider) = config.and_then(|config| config.providers.get(name)) {
+        return provider
+            .supports_n
+            .unwrap_or(provider.provider_type == "openai");
+    }
+    match name {
+        "codex" => false,
+        "openai" => true,
+        _ => false,
+    }
+}
+
+fn provider_supports_n(provider: Option<&str>) -> bool {
+    let config = load_config().ok();
+    provider_supports_n_from_config(config.as_ref(), provider)
+}
+
+fn default_edit_region_mode_for_provider_type(provider_type: &str) -> String {
+    match provider_type {
+        "openai" => "native-mask".to_string(),
+        "codex" => "reference-hint".to_string(),
+        _ => "reference-hint".to_string(),
+    }
+}
+
+fn provider_edit_region_mode_from_config(
+    config: Option<&AppConfig>,
+    provider: Option<&str>,
+) -> String {
+    let selected = selected_provider_from_config(config, provider);
+    let Some(name) = selected.as_deref() else {
+        return "reference-hint".to_string();
+    };
+    if let Some(provider) = config.and_then(|config| config.providers.get(name)) {
+        return provider.edit_region_mode.clone().unwrap_or_else(|| {
+            default_edit_region_mode_for_provider_type(&provider.provider_type)
+        });
+    }
+    match name {
+        "openai" => "native-mask".to_string(),
+        "codex" => "reference-hint".to_string(),
+        _ => "reference-hint".to_string(),
     }
 }
 
 fn provider_edit_region_mode(provider: Option<&str>) -> String {
     let config = load_config().ok();
-    let selected = provider
-        .and_then(|name| {
-            let name = name.trim();
-            if name.is_empty() || name == "auto" {
-                None
-            } else {
-                Some(name)
-            }
-        })
-        .or_else(|| {
-            config
-                .as_ref()
-                .and_then(|config| config.default_provider.as_deref())
-                .filter(|name| !name.is_empty() && *name != "auto")
-        });
-
-    match selected {
-        Some("openai") => "native-mask".to_string(),
-        Some("codex") => "reference-hint".to_string(),
-        Some(name) => config
-            .as_ref()
-            .and_then(|config| config.providers.get(name))
-            .map(|provider| {
-                provider.edit_region_mode.clone().unwrap_or_else(|| {
-                    match provider.provider_type.as_str() {
-                        "openai" => "native-mask".to_string(),
-                        "codex" => "reference-hint".to_string(),
-                        _ => "reference-hint".to_string(),
-                    }
-                })
-            })
-            .unwrap_or_else(|| "reference-hint".to_string()),
-        None => "reference-hint".to_string(),
-    }
+    provider_edit_region_mode_from_config(config.as_ref(), provider)
 }
 
 fn selected_provider_name(provider: Option<&str>) -> String {
@@ -1879,6 +1883,71 @@ fn open_system_path(path: &Path, reveal: bool) -> Result<(), String> {
                 Err("系统没有成功打开文件。".to_string())
             }
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn openai_compatible_provider() -> ProviderConfig {
+        ProviderConfig {
+            provider_type: "openai-compatible".to_string(),
+            api_base: Some("https://example.com/v1".to_string()),
+            endpoint: None,
+            model: Some("gpt-image-2".to_string()),
+            credentials: BTreeMap::new(),
+            supports_n: Some(false),
+            edit_region_mode: Some("reference-hint".to_string()),
+        }
+    }
+
+    #[test]
+    fn configured_openai_name_overrides_builtin_capabilities() {
+        let mut config = AppConfig::default();
+        config
+            .providers
+            .insert("openai".to_string(), openai_compatible_provider());
+
+        assert!(!provider_supports_n_from_config(
+            Some(&config),
+            Some("openai")
+        ));
+        assert_eq!(
+            provider_edit_region_mode_from_config(Some(&config), Some("openai")),
+            "reference-hint"
+        );
+    }
+
+    #[test]
+    fn default_provider_uses_configured_openai_capabilities() {
+        let mut config = AppConfig {
+            default_provider: Some("openai".to_string()),
+            ..Default::default()
+        };
+        config
+            .providers
+            .insert("openai".to_string(), openai_compatible_provider());
+
+        assert!(!provider_supports_n_from_config(Some(&config), None));
+        assert_eq!(
+            provider_edit_region_mode_from_config(Some(&config), None),
+            "reference-hint"
+        );
+    }
+
+    #[test]
+    fn builtin_openai_capabilities_are_fallback_when_config_absent() {
+        let config = AppConfig::default();
+
+        assert!(provider_supports_n_from_config(
+            Some(&config),
+            Some("openai")
+        ));
+        assert_eq!(
+            provider_edit_region_mode_from_config(Some(&config), Some("openai")),
+            "native-mask"
+        );
+    }
 }
 
 pub fn run() {
