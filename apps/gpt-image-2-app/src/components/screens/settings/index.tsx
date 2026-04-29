@@ -687,6 +687,26 @@ function AppearancePanel() {
   return (
     <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-5 space-y-4">
       <Section title="主题">
+        <Row
+          title="界面版本"
+          description={
+            tweaks.interfaceMode === "legacy"
+              ? "经典三栏会复用旧工作台外观，并禁用常驻动态背景以降低资源占用。"
+              : "新版界面使用主题背景、玻璃胶囊和作品墙；适合视觉调试。"
+          }
+          control={
+            <Segmented
+              value={tweaks.interfaceMode}
+              onChange={(interfaceMode) => setTweaks({ interfaceMode })}
+              size="sm"
+              ariaLabel="界面版本"
+              options={[
+                { value: "modern", label: "新版" },
+                { value: "legacy", label: "经典三栏" },
+              ]}
+            />
+          }
+        />
         <div className="space-y-2.5 px-4 py-3.5 sm:px-5">
           <div>
             <div className="text-[13px] font-semibold text-foreground">

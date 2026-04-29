@@ -136,6 +136,10 @@ export function WindowChrome({ children }: { children: ReactNode }) {
   const animated = !reducedMotion;
   const presetId = tweaks.themePreset;
 
+  if (tweaks.interfaceMode === "legacy") {
+    return <LegacyWindowChrome>{children}</LegacyWindowChrome>;
+  }
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-background">
       {/* Animated background layer — mounts the preset's background
@@ -190,6 +194,33 @@ export function WindowChrome({ children }: { children: ReactNode }) {
         />
       )}
 
+      <div className="relative z-[2] h-full w-full">{children}</div>
+    </div>
+  );
+}
+
+function LegacyWindowChrome({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-background">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          backgroundImage:
+            "radial-gradient(70% 55% at 8% 0%, rgba(88, 166, 255, 0.14) 0%, transparent 58%)," +
+            "radial-gradient(60% 65% at 100% 18%, rgba(139, 92, 246, 0.12) 0%, transparent 58%)," +
+            "linear-gradient(135deg, rgba(11, 13, 18, 0.98) 0%, rgba(13, 17, 25, 0.98) 50%, rgba(8, 10, 15, 0.98) 100%)",
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-[1] opacity-[0.22]"
+        style={{
+          backgroundImage:
+            "radial-gradient(rgba(255, 255, 255, 0.2) 0.7px, transparent 0.7px)",
+          backgroundSize: "4px 4px",
+        }}
+      />
       <div className="relative z-[2] h-full w-full">{children}</div>
     </div>
   );

@@ -15,7 +15,7 @@ import {
   readUnlockedPresets,
   type ThemePresetId,
 } from "@/lib/theme-presets";
-import type { Tweaks } from "@/lib/types";
+import type { InterfaceMode, Tweaks } from "@/lib/types";
 
 const DEFAULT_TWEAKS: Tweaks = {
   theme: "dark",
@@ -28,6 +28,7 @@ const DEFAULT_TWEAKS: Tweaks = {
   liquidBackground: true,
   glassOpacity: 42,
   themePreset: DEFAULT_PRESET,
+  interfaceMode: "modern",
 };
 
 function clampOpacity(value: unknown): number {
@@ -49,6 +50,10 @@ function clampParallel(value: unknown): number {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return DEFAULT_TWEAKS.maxParallel;
   return Math.min(8, Math.max(1, Math.round(n)));
+}
+
+function normalizeInterfaceMode(value: unknown): InterfaceMode {
+  return value === "legacy" ? "legacy" : "modern";
 }
 
 function load(): Tweaks {
@@ -86,6 +91,7 @@ function load(): Tweaks {
           : true,
       glassOpacity: clampOpacity(parsed?.glassOpacity),
       themePreset: presetId,
+      interfaceMode: normalizeInterfaceMode(parsed?.interfaceMode),
     };
   } catch {
     return DEFAULT_TWEAKS;
@@ -103,6 +109,7 @@ export function TweaksProvider({ children }: { children: ReactNode }) {
     root.setAttribute("data-font", tweaks.font);
     root.setAttribute("data-density", tweaks.density);
     root.setAttribute("data-theme-preset", tweaks.themePreset);
+    root.setAttribute("data-interface-mode", tweaks.interfaceMode);
     root.setAttribute("data-surface", preset.surfaceStyle);
 
     // Token rewrites — drive every alpha ramp + gradient + veil through

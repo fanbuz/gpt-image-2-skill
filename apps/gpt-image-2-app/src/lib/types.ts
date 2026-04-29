@@ -98,6 +98,8 @@ export interface TestProviderResult {
 
 import type { ThemePresetId } from "./theme-presets";
 
+export type InterfaceMode = "modern" | "legacy";
+
 export type Tweaks = {
   /**
    * Theme is single-value liquid dark — kept in the type only to preserve
@@ -135,4 +137,10 @@ export type Tweaks = {
    * font/density. See `lib/theme-presets.ts`.
    */
   themePreset: ThemePresetId;
+  /**
+   * Visual shell mode. "modern" is the new themed canvas; "legacy"
+   * restores the older three-column workbench and intentionally avoids
+   * always-on animated backgrounds/glass filters.
+   */
+  interfaceMode: InterfaceMode;
 };
