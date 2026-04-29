@@ -5,6 +5,7 @@ import {
   useCallback,
   useState,
 } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { Toaster } from "sonner";
 import { Button } from "@/components/ui/button";
 import { TopNav } from "@/components/shell/top-nav";
@@ -17,6 +18,7 @@ import { SettingsScreen } from "@/components/screens/settings";
 import { useConfig } from "@/hooks/use-config";
 import { useJobNotifications } from "@/hooks/use-job-notifications";
 import { useJobs } from "@/hooks/use-jobs";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { useGlobalShortcuts } from "@/hooks/use-shortcuts";
 import { OPEN_JOB_EVENT } from "@/lib/job-navigation";
 
@@ -78,6 +80,7 @@ function readInitialScreen(): ScreenId {
 
 export default function App() {
   const [screen, setScreenState] = useState<ScreenId>(readInitialScreen);
+  const reducedMotion = useReducedMotion();
   const {
     data: config,
     error: configError,
@@ -143,25 +146,46 @@ export default function App() {
             className="flex-1 min-h-0 relative"
             aria-label={screen}
           >
-            <div key={screen} className="animate-fade-in h-full">
-              <ScreenErrorBoundary onReset={() => setScreenState(screen)}>
-                {screen === "generate" && (
-                  <GenerateScreen
-                    config={config}
-                    onOpenEdit={() => setScreen("edit")}
-                    onOpenHistory={() => setScreen("history")}
-                    onOpenJob={openJob}
-                  />
-                )}
-                {screen === "edit" && <EditScreen config={config} />}
-                {screen === "history" && (
-                  <HistoryScreen
-                    onSwitchToGenerate={() => setScreen("generate")}
-                  />
-                )}
-                {screen === "settings" && <SettingsScreen config={config} />}
-              </ScreenErrorBoundary>
-            </div>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={screen}
+                className="absolute inset-0 h-full"
+                initial={
+                  reducedMotion
+                    ? false
+                    : { opacity: 0, y: 6, filter: "blur(6px)" }
+                }
+                animate={
+                  reducedMotion
+                    ? { opacity: 1 }
+                    : { opacity: 1, y: 0, filter: "blur(0px)" }
+                }
+                exit={
+                  reducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, y: -4, filter: "blur(4px)" }
+                }
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <ScreenErrorBoundary onReset={() => setScreenState(screen)}>
+                  {screen === "generate" && (
+                    <GenerateScreen
+                      config={config}
+                      onOpenEdit={() => setScreen("edit")}
+                      onOpenHistory={() => setScreen("history")}
+                      onOpenJob={openJob}
+                    />
+                  )}
+                  {screen === "edit" && <EditScreen config={config} />}
+                  {screen === "history" && (
+                    <HistoryScreen
+                      onSwitchToGenerate={() => setScreen("generate")}
+                    />
+                  )}
+                  {screen === "settings" && <SettingsScreen config={config} />}
+                </ScreenErrorBoundary>
+              </motion.div>
+            </AnimatePresence>
           </main>
 
           {!config && (

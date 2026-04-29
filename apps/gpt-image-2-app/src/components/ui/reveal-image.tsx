@@ -23,6 +23,7 @@ export function RevealImage({
   className,
   duration = 360,
   style,
+  onError,
   ...rest
 }: Props) {
   const [loaded, setLoaded] = useState(false);
@@ -35,7 +36,10 @@ export function RevealImage({
     <img
       src={src}
       onLoad={() => setLoaded(true)}
-      onError={() => setLoaded(true)}
+      onError={(event) => {
+        setLoaded(true);
+        onError?.(event);
+      }}
       className={cn("motion-reduce:transition-none", className)}
       style={{
         opacity: loaded ? 1 : 0,

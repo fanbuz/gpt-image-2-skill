@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/icon";
+import { RevealImage } from "@/components/ui/reveal-image";
 import { PlaceholderImage } from "./placeholder-image";
 
 type OutputMeta = {
@@ -61,7 +62,7 @@ export function OutputTile({
       style={{ background: "var(--bg-sunken)" }}
     >
       {showImage ? (
-        <img
+        <RevealImage
           src={output.url}
           alt={`候选 ${letter.toUpperCase()}`}
           loading="lazy"
