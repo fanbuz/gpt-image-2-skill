@@ -93,7 +93,7 @@ export function TopNav({
       {/* Center — screen tabs */}
       <GlassSurface
         data-no-window-drag
-        width={348}
+        width={288}
         height={44}
         borderRadius={50}
         borderWidth={0.07}
