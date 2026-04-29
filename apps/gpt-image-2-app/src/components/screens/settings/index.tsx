@@ -46,6 +46,7 @@ import {
 } from "@/lib/theme-presets";
 import ScrambleText from "@/components/reactbits/text/ScrambleText";
 import { cn } from "@/lib/cn";
+import { credentialSecretDisplay } from "@/lib/credential-display";
 
 // Visible preset order in the Appearance gallery. Hidden presets join
 // at the tail once unlocked (see HIDDEN_PRESETS).
@@ -313,12 +314,6 @@ function CredIcon({ kind }: { kind: ProviderConfig["type"] }) {
   );
 }
 
-function maskKey(value: string | undefined): string {
-  if (!value) return "—";
-  if (value.length <= 8) return value.replace(/.(?=.{3})/g, "•");
-  return `${value.slice(0, 3)}${"•".repeat(12)}${value.slice(-4)}`;
-}
-
 type CredCardProps = {
   name: string;
   prov: ProviderConfig;
@@ -346,12 +341,7 @@ function CredCard({
     (c) =>
       c?.source === "file" || c?.source === "env" || c?.source === "keychain",
   );
-  const apiKeyDisplay =
-    apiKeyCredential?.value && typeof apiKeyCredential.value === "string"
-      ? maskKey(apiKeyCredential.value)
-      : apiKeyCredential
-        ? maskKey("sk-loaded-from-secret-store")
-        : null;
+  const apiKeyDisplay = credentialSecretDisplay(apiKeyCredential);
 
   return (
     <div
