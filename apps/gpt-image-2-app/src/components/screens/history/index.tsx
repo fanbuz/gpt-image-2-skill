@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -225,7 +225,7 @@ function JobRowExpandable({
           }
         }}
         className={cn(
-          "group relative flex w-full items-center gap-4 px-4 py-3 text-left transition-colors cursor-pointer",
+          "group relative grid w-full grid-cols-[80px_minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-3 py-3 text-left transition-colors cursor-pointer sm:flex sm:items-center sm:gap-4 sm:px-4",
           "focus-visible:outline-none focus-visible:bg-[color:var(--w-04)]",
           expanded
             ? "bg-[color:var(--accent-08)]"
@@ -244,7 +244,7 @@ function JobRowExpandable({
               : "w-0 opacity-0 group-hover:w-[2px] group-hover:opacity-70",
           )}
         />
-        <span className="w-6 text-center text-[12px] text-faint font-mono shrink-0">
+        <span className="hidden w-6 shrink-0 text-center font-mono text-[12px] text-faint sm:inline-block">
           {index}
         </span>
 
@@ -284,7 +284,7 @@ function JobRowExpandable({
           )}
         </div>
 
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 self-center sm:flex-1">
           <div className="text-[13px] text-foreground truncate">{prompt}</div>
           <div className="text-[11px] text-faint mt-0.5 font-mono flex items-center gap-1.5">
             {ratio && <span>{ratio}</span>}
@@ -303,13 +303,24 @@ function JobRowExpandable({
               </>
             )}
           </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden">
+            <StatusChip status={status} />
+            <span className="font-mono text-[11px] text-faint">
+              {formatTime(job.updated_at || job.created_at)}
+            </span>
+            {totalBytes(job) && (
+              <span className="font-mono text-[11px] text-faint">
+                {totalBytes(job)}
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="w-[120px] shrink-0">
+        <div className="hidden w-[120px] shrink-0 sm:block">
           <StatusChip status={status} />
         </div>
 
-        <div className="w-[140px] shrink-0 text-right">
+        <div className="hidden w-[140px] shrink-0 text-right sm:block">
           <div className="text-[11.5px] text-muted font-mono">
             {formatTime(job.updated_at || job.created_at)}
           </div>
@@ -320,7 +331,7 @@ function JobRowExpandable({
           )}
         </div>
 
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-0.5 self-center">
           {showCancel && (
             <button
               type="button"
@@ -348,12 +359,7 @@ function JobRowExpandable({
 
       {/* EXPANDED CONTENT */}
       {expanded && (
-        <div
-          className="px-4 pb-4 pt-1"
-          style={{
-            paddingLeft: "calc(16px + 24px + 16px + 80px)",
-          }}
-        >
+        <div className="px-3 pb-4 pt-1 sm:px-4 sm:pl-[calc(16px+24px+16px+80px)]">
           {/* full prompt */}
           <div className="mb-3 text-[12.5px] leading-relaxed text-muted whitespace-pre-wrap break-words pr-4">
             {prompt}
@@ -362,10 +368,10 @@ function JobRowExpandable({
           {/* output grid */}
           {outputCount > 0 ? (
             <div
-              className="grid gap-2"
+              className="grid grid-cols-2 gap-2 sm:[grid-template-columns:repeat(var(--history-output-cols),minmax(0,1fr))]"
               style={{
-                gridTemplateColumns: `repeat(${Math.min(outputCount, 4)}, minmax(0, 1fr))`,
-              }}
+                "--history-output-cols": Math.min(outputCount, 4),
+              } as CSSProperties}
             >
               {outputIndexes.map((outputIndex, i) => {
                 const url = jobOutputUrl(job, outputIndex);
@@ -417,7 +423,7 @@ function JobRowExpandable({
           )}
 
           {/* row of actions */}
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             {outputCount > 0 && (
               <>
                 <Button
@@ -566,9 +572,9 @@ export function HistoryScreen({
     : null;
 
   return (
-    <div className="relative h-full w-full overflow-hidden flex flex-col px-8 pb-6 pt-3">
+    <div className="relative flex h-full w-full flex-col overflow-hidden px-4 pb-4 pt-3 sm:px-8 sm:pb-6">
       {/* header */}
-      <header className="flex items-end justify-between mb-5">
+      <header className="mb-4 flex items-end justify-between gap-3 sm:mb-5">
         <div className="flex items-baseline gap-3">
           <h1 className="t-screen-title text-foreground">生成队列</h1>
           <span
@@ -598,7 +604,7 @@ export function HistoryScreen({
       </header>
 
       {/* filters */}
-      <div className="flex items-center gap-1 mb-4">
+      <div className="mb-4 flex items-center gap-1 overflow-x-auto scrollbar-none">
         {FILTERS.map((f) => (
           <button
             key={f.value}
@@ -671,7 +677,7 @@ export function HistoryScreen({
           )}
         </div>
 
-        <footer className="flex items-center gap-2 px-4 py-2.5 border-t border-border-faint text-[11.5px] text-faint">
+        <footer className="hidden items-center gap-2 border-t border-border-faint px-4 py-2.5 text-[11.5px] text-faint sm:flex">
           <Folder size={11} className="opacity-70" />
           <span>
             点击行展开查看作品组；点单张图打开右侧详情。任务在后台依次处理。

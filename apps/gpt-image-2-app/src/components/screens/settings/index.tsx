@@ -124,7 +124,7 @@ function Section({
       style={{ background: "var(--w-02)" }}
     >
       {(title || description) && (
-        <header className="border-b border-border-faint px-5 py-3">
+        <header className="border-b border-border-faint px-4 py-3 sm:px-5">
           <div className="t-h3">{title}</div>
           {description && (
             <div className="mt-0.5 text-[12px] text-muted">{description}</div>
@@ -146,14 +146,14 @@ function Row({
   control: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-4 px-5 py-3.5">
+    <div className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:gap-4 sm:px-5">
       <div className="min-w-0 flex-1">
         <div className="text-[13px] font-semibold text-foreground">{title}</div>
         {description && (
           <div className="mt-0.5 text-[11.5px] text-muted">{description}</div>
         )}
       </div>
-      <div className="shrink-0">{control}</div>
+      <div className="w-full min-w-0 sm:w-auto sm:shrink-0">{control}</div>
     </div>
   );
 }
@@ -173,7 +173,7 @@ function PathRow({
   // path text in their clipboard.
   const [copyTrigger, setCopyTrigger] = useState(0);
   return (
-    <div className="flex items-center gap-4 px-5 py-3">
+    <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-5">
       <div className="min-w-0 flex-1">
         <div className="text-[13px] font-semibold text-foreground">{title}</div>
         <div
@@ -187,7 +187,7 @@ function PathRow({
           />
         </div>
       </div>
-      <div className="flex shrink-0 gap-0.5">
+      <div className="flex shrink-0 gap-0.5 self-end sm:self-auto">
         <Button
           variant="ghost"
           size="iconSm"
@@ -229,11 +229,11 @@ function SettingsNav({
   setTab: (t: SettingsTab) => void;
 }) {
   return (
-    <aside className="flex flex-col gap-2">
-      <div className="px-2 pt-1 pb-2">
+    <aside className="flex min-w-0 shrink-0 flex-col gap-2">
+      <div className="px-2 pt-1 pb-1 sm:pb-2">
         <div className="t-title text-foreground">设置</div>
       </div>
-      <div className="surface-panel flex flex-col p-1.5 gap-0.5">
+      <div className="surface-panel flex gap-1.5 overflow-x-auto p-1.5 scrollbar-none md:flex-col md:gap-0.5 md:overflow-visible">
         {NAV.map((n) => {
           const I = n.icon;
           const active = n.id === tab;
@@ -243,7 +243,7 @@ function SettingsNav({
               type="button"
               onClick={() => setTab(n.id)}
               className={cn(
-                "flex items-center gap-2.5 h-9 px-3 rounded-md text-[13px] transition-colors text-left",
+                "flex h-9 shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-[13px] transition-colors md:w-full",
                 active
                   ? "bg-[color:var(--w-10)] text-foreground border border-[color:var(--w-10)]"
                   : "border border-transparent text-muted hover:text-foreground hover:bg-[color:var(--w-05)]",
@@ -264,7 +264,7 @@ function SettingsNav({
 function PanelHeader({ tab }: { tab: SettingsTab }) {
   const meta = TAB_TITLES[tab];
   return (
-    <header className="px-6 pt-5 pb-4 border-b border-border-faint">
+    <header className="border-b border-border-faint px-4 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5">
       <div className="t-h2">{meta.title}</div>
       <div className="mt-0.5 text-[12px] text-muted">{meta.subtitle}</div>
     </header>
@@ -357,7 +357,7 @@ function CredCard({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 px-3.5 py-3 rounded-xl border transition-colors",
+        "flex flex-wrap items-start gap-3 rounded-xl border px-3.5 py-3 transition-colors",
         isDefault
           ? "border-[color:var(--accent-30)] bg-[color:var(--accent-04)]"
           : "border-border bg-[color:var(--w-04)] hover:bg-[color:var(--w-05)]",
@@ -390,11 +390,11 @@ function CredCard({
           {prov.api_base && (
             <div className="text-[11.5px] text-muted">
               <span className="text-faint">Base URL </span>
-              <span className="font-mono">{prov.api_base}</span>
+              <span className="break-all font-mono">{prov.api_base}</span>
             </div>
           )}
           {apiKeyDisplay && (
-            <div className="text-[11.5px] text-muted flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-muted">
               <span className="text-faint">API Key </span>
               <span className="font-mono">{apiKeyDisplay}</span>
               <Eye size={12} className="opacity-50" aria-hidden />
@@ -408,7 +408,7 @@ function CredCard({
         </div>
       </div>
 
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="flex w-full shrink-0 items-center justify-end gap-1 sm:w-auto">
         <button
           type="button"
           onClick={onTest}
@@ -517,7 +517,7 @@ function CredsPanel({ config }: { config?: ServerConfig }) {
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto p-5">
+    <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-5">
       {names.length === 0 ? (
         <Empty
           icon="providers"
@@ -685,9 +685,9 @@ function AppearancePanel() {
         : "玻璃面板的不透明度。值越低背景越能透出，值越高内容越易读。";
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto p-5 space-y-4">
+    <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-5 space-y-4">
       <Section title="主题">
-        <div className="space-y-2.5 px-5 py-3.5">
+        <div className="space-y-2.5 px-4 py-3.5 sm:px-5">
           <div>
             <div className="text-[13px] font-semibold text-foreground">
               主题预设
@@ -787,7 +787,7 @@ function RuntimePanel() {
       : `当前 ${running} 个在跑，${queued} 个排队`;
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto p-5 space-y-4">
+    <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-5 space-y-4">
       <Section
         title="队列"
         description="控制可以同时在跑的任务数量，避免一次性吃掉网络或 CPU。"
@@ -872,7 +872,7 @@ function AboutPanel() {
   };
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto p-5 space-y-4">
+    <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-5 space-y-4">
       <header className="px-1 pt-0.5 space-y-1">
         <div className="flex items-baseline gap-2">
           <button
@@ -920,10 +920,10 @@ export function SettingsScreen({ config }: { config?: ServerConfig } = {}) {
   const [tab, setTab] = useState<SettingsTab>("creds");
 
   return (
-    <div className="grid h-full grid-cols-[200px_minmax(0,1fr)] gap-5 px-6 pb-6 pt-2 overflow-hidden">
+    <div className="flex h-full flex-col gap-3 overflow-hidden px-4 pb-4 pt-3 md:grid md:grid-cols-[200px_minmax(0,1fr)] md:gap-5 md:px-6 md:pb-6 md:pt-2">
       <SettingsNav tab={tab} setTab={setTab} />
 
-      <div className="surface-panel overflow-hidden flex flex-col min-h-0">
+      <div className="surface-panel flex min-h-0 flex-1 flex-col overflow-hidden">
         <PanelHeader tab={tab} />
 
         {tab === "creds" && <CredsPanel config={config} />}

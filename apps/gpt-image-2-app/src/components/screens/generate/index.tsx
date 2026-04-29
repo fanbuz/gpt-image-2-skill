@@ -469,7 +469,7 @@ export function GenerateScreen({
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
             "flex flex-col items-center text-center",
-            hasSplit && "hidden lg:flex lg:col-span-2 lg:mb-2",
+            hasSplit && "mb-1 lg:col-span-2 lg:mb-2",
           )}
         >
           <img
@@ -478,10 +478,16 @@ export function GenerateScreen({
             aria-hidden="true"
             className={cn(
               "mb-3 h-16 w-16 object-contain drop-shadow-[0_0_22px_var(--accent-30)]",
-              hasSplit && "lg:h-14 lg:w-14",
+              hasSplit &&
+                "mb-1 h-10 w-10 sm:mb-2 sm:h-12 sm:w-12 lg:mb-3 lg:h-14 lg:w-14",
             )}
           />
-          <div className="t-display flex items-baseline gap-3">
+          <div
+            className={cn(
+              "t-display flex items-baseline gap-3",
+              hasSplit && "gap-2 text-[34px] sm:text-[44px] lg:text-[64px]",
+            )}
+          >
             <span className="text-foreground">GPT</span>
             <GradientText
               colors={[
@@ -499,7 +505,12 @@ export function GenerateScreen({
             </GradientText>
             <span className="text-foreground">2</span>
           </div>
-          <div className="mt-3 inline-flex items-center gap-2">
+          <div
+            className={cn(
+              "mt-3 inline-flex items-center gap-2",
+              hasSplit && "mt-2",
+            )}
+          >
             <Sparkles
               size={11}
               className="opacity-50 text-foreground animate-pulse-subtle"

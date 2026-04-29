@@ -132,7 +132,7 @@ export function TopNav({
                 data-no-window-drag
                 onClick={() => setScreen(s.id)}
                 className={cn(
-                  "relative inline-flex items-center gap-1.5 h-8 px-4 rounded-full text-[12.5px] font-medium whitespace-nowrap transition-all",
+                  "relative inline-flex items-center gap-1.5 h-8 min-h-8 px-4 rounded-full text-[12.5px] font-medium whitespace-nowrap transition-all",
                   isActive
                     ? "text-foreground"
                     : "text-muted hover:text-foreground hover:bg-[color:var(--w-05)]",
@@ -140,10 +140,11 @@ export function TopNav({
                 style={
                   isActive
                     ? {
+                        minHeight: 32,
                         background: "rgba(255, 255, 255, 0.14)",
                         boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.16)",
                       }
-                    : undefined
+                    : { minHeight: 32 }
                 }
               >
                 <span>{s.label}</span>
