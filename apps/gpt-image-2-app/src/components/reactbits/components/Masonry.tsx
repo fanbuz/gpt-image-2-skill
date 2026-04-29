@@ -100,13 +100,11 @@ export default function Masonry<T>({
               y: item.y,
               width: item.width,
               height: item.height,
-              filter: "blur(0px)",
               scale: 1,
             }}
             exit={{
               opacity: 0,
               scale: 0.96,
-              filter: "blur(8px)",
               transition: { duration: 0.18 },
             }}
             transition={{
@@ -136,7 +134,6 @@ function initialState<T>(
         y: item.y - 80,
         width: item.width,
         height: item.height,
-        filter: "blur(10px)",
       };
     case "center":
       return {
@@ -145,7 +142,6 @@ function initialState<T>(
         y: item.y,
         width: item.width,
         height: item.height,
-        filter: "blur(10px)",
         scale: 0.94,
       };
     case "bottom":
@@ -156,7 +152,6 @@ function initialState<T>(
         y: item.y + 80,
         width: item.width,
         height: item.height,
-        filter: "blur(10px)",
       };
   }
 }

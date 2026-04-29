@@ -446,7 +446,7 @@ export function GenerateScreen({
     <div className="relative h-full w-full overflow-hidden">
       <div
         className={cn(
-          "relative h-full w-full overflow-y-auto",
+          "scrollbar-none relative h-full w-full overflow-y-auto",
           // Default (no history yet, OR narrow viewport): hero-centered
           // single-column stack — same feel as the original onboarding hero.
           "px-4 pb-8 pt-3 sm:px-10 sm:pb-12 sm:pt-4 flex flex-col items-center justify-start",
@@ -459,13 +459,11 @@ export function GenerateScreen({
         )}
       >
         {/* Hero — spans both columns in split mode so the form/gallery
-            split sits beneath a single banner. Mount-time blur fade in
-            the spirit of reactbits's BlurText, scoped to the whole hero
-            so GradientText / ShinyText still drive the steady-state
-            animation. */}
+            split sits beneath a single banner. Keep the steady state free
+            of CSS filters so text stays pixel-sharp over animated glass. */}
         <motion.div
-          initial={{ opacity: 0, filter: "blur(12px)", y: -6 }}
-          animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
             "flex flex-col items-center text-center",
@@ -666,7 +664,7 @@ export function GenerateScreen({
 
           {/* parameter chips + CTA */}
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-1 sm:min-w-0 sm:items-center sm:gap-2 sm:overflow-x-auto sm:scrollbar-none sm:pb-px">
+            <div className="scrollbar-none grid w-full grid-cols-2 gap-2 sm:flex sm:flex-1 sm:min-w-0 sm:items-center sm:gap-2 sm:overflow-x-auto sm:pb-px">
               <GlassCombobox
                 variant="chip"
                 label="尺寸"

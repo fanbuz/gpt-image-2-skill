@@ -153,17 +153,17 @@ export default function App() {
                 initial={
                   reducedMotion
                     ? false
-                    : { opacity: 0, y: 6, filter: "blur(6px)" }
+                    : { opacity: 0, y: 6 }
                 }
                 animate={
                   reducedMotion
                     ? { opacity: 1 }
-                    : { opacity: 1, y: 0, filter: "blur(0px)" }
+                    : { opacity: 1, y: 0 }
                 }
                 exit={
                   reducedMotion
                     ? { opacity: 0 }
-                    : { opacity: 0, y: -4, filter: "blur(4px)" }
+                    : { opacity: 0, y: -4 }
                 }
                 transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
               >
