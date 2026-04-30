@@ -15,10 +15,6 @@
     "enabled": true,
     "head_sampling_rate": 1
   },
-  "limits": {
-    "cpu_ms": 50,
-    "subrequests": 1
-  },
   "vars": {
     "RELAY_ENABLED": "true",
     "RELAY_MODE": "open",
