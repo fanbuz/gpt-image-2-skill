@@ -374,3 +374,5 @@ jobs:
           submodules: recursive
       - name: Dispatch npm publish workflow
         run: gh workflow run "Publish npm Packages" --repo "${{ github.repository }}" -f tag="${{ needs.plan.outputs.tag }}"
+      - name: Dispatch static Pages deploy workflow
+        run: gh workflow run "Deploy Static Page" --repo "${{ github.repository }}" -f tag="${{ needs.plan.outputs.tag }}"

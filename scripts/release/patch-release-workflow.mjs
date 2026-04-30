@@ -22,7 +22,7 @@ const announceCheckoutMarker = `      - uses: actions/checkout@v6
 `;
 const dispatchStepName = "      - name: Dispatch npm publish workflow";
 const dispatchStepPattern =
-  /      - name: Dispatch npm publish workflow\n        run: gh workflow run "Publish npm Packages" --repo "\$\{\{ github\.repository \}\}" -f tag="\$\{\{ needs\.plan\.outputs\.tag \}\}"\n/g;
+  /      - name: Dispatch npm publish workflow\n        run: gh workflow run "Publish npm Packages" --repo "\$\{\{ github\.repository \}\}" -f tag="\$\{\{ needs\.plan\.outputs\.tag \}\}"\n(?:      - name: Dispatch static Pages deploy workflow\n        run: gh workflow run "Deploy Static Page" --repo "\$\{\{ github\.repository \}\}" -f tag="\$\{\{ needs\.plan\.outputs\.tag \}\}"\n)?/g;
 const permissionsBlock = `permissions:
   "contents": "write"
 `;
@@ -54,6 +54,8 @@ const wixStep = `      - name: Refresh WiX path
 
 const dispatchSteps = `      - name: Dispatch npm publish workflow
         run: gh workflow run "Publish npm Packages" --repo "\${{ github.repository }}" -f tag="\${{ needs.plan.outputs.tag }}"
+      - name: Dispatch static Pages deploy workflow
+        run: gh workflow run "Deploy Static Page" --repo "\${{ github.repository }}" -f tag="\${{ needs.plan.outputs.tag }}"
 `;
 const legacyLinuxDepsStepPattern =
   /      - name: Install Linux keyring build dependencies\n        if: \$\{\{ runner\.os == 'Linux' \}\}\n        run: \|\n(?:          .+\n)+/;
