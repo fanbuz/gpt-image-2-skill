@@ -48,6 +48,19 @@ app-build-http:
 app-test-browser:
     npm --prefix apps/gpt-image-2-app run test:browser
 
+# Run the Cloudflare relay Worker tests and type-check.
+relay-test:
+    npm --prefix workers/gpt-image-2-relay run test
+    npm --prefix workers/gpt-image-2-relay run typecheck
+
+# Dry-run the Cloudflare relay Worker deployment.
+relay-dry:
+    npm --prefix workers/gpt-image-2-relay run dry-run
+
+# Deploy the Cloudflare relay Worker route for image.codex-pool.com/api/relay*.
+relay-deploy:
+    npm --prefix workers/gpt-image-2-relay run deploy
+
 # Start the HTTP-backed frontend dev server.
 dev-http-frontend:
     cd apps/gpt-image-2-app && VITE_GPT_IMAGE_2_API_BASE=/api npm run dev
