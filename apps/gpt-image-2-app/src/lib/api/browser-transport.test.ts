@@ -268,6 +268,27 @@ describe("browserApi", () => {
     ]);
   });
 
+  it("explains Cloudflare 1016 origin DNS failures from the relay", async () => {
+    installBrowserGlobals({ __GPT_IMAGE_2_RELAY_BASE__: "/api/relay" });
+    await __resetBrowserApiForTests();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "https://api.duckcoding.com/v1/models") {
+          throw new TypeError("Failed to fetch");
+        }
+        return new Response("error code: 1016", { status: 530 });
+      }),
+    );
+    await addProvider({ api_base: "https://api.duckcoding.com/v1" });
+
+    const result = await browserApi.testProvider("mock");
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("上游服务域名无法解析");
+    expect(result.message).toContain("api.duckcoding.com");
+  });
+
   it("emits a quota warning event when browser storage is nearly full", async () => {
     vi.stubGlobal("navigator", {
       storage: {

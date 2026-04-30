@@ -445,8 +445,24 @@ async function fetchProvider(endpoint: string, init: RequestInit) {
   }
 }
 
-async function parseErrorResponse(response: Response) {
+function explainOriginDnsError(endpoint?: string) {
+  let hostHint = "";
+  try {
+    const host = endpoint ? new URL(endpoint).hostname : "";
+    if (host) {
+      hostHint = ` 当前 Base URL 域名：${host}。`;
+    }
+  } catch {
+    /* ignore */
+  }
+  return `上游服务域名无法解析或回源失败（Cloudflare 1016/530）。请检查 Base URL 是否写错，或换一个当前可公网访问的服务地址。${hostHint}`;
+}
+
+async function parseErrorResponse(response: Response, endpoint?: string) {
   const text = await response.text().catch(() => "");
+  if (response.status === 530 && /error code:\s*1016/i.test(text)) {
+    return explainOriginDnsError(endpoint);
+  }
   try {
     const json = JSON.parse(text) as OpenAiImagePayload;
     return json.error?.message || text || response.statusText;
@@ -486,7 +502,9 @@ async function fetchJson(
     throw networkError(error, endpoint);
   }
   if (!response.ok) {
-    throw new Error(`${response.status} ${await parseErrorResponse(response)}`);
+    throw new Error(
+      `${response.status} ${await parseErrorResponse(response, endpoint)}`,
+    );
   }
   return (await response.json()) as OpenAiImagePayload;
 }
@@ -512,7 +530,9 @@ async function fetchMultipart(
     throw networkError(error, endpoint);
   }
   if (!response.ok) {
-    throw new Error(`${response.status} ${await parseErrorResponse(response)}`);
+    throw new Error(
+      `${response.status} ${await parseErrorResponse(response, endpoint)}`,
+    );
   }
   return (await response.json()) as OpenAiImagePayload;
 }
@@ -1054,7 +1074,10 @@ export const browserApi: ApiClient = {
         return {
           ok: false,
           latency_ms,
-          message: `${response.status} ${await parseErrorResponse(response)}`,
+          message: `${response.status} ${await parseErrorResponse(
+            response,
+            endpoint,
+          )}`,
         };
       }
       return { ok: true, latency_ms, message: "连接正常" };
