@@ -114,7 +114,12 @@ Returns the final verified transparent PNG. The command fails with `transparent_
     "source_prompt": "...",
     "method": "chroma",
     "profile": "generic",
+    "material": null,
+    "requested_matte_color": "#00ff00",
     "matte_color": "#00ff00",
+    "matte_color_source": "auto-sampled",
+    "threshold": 28.0,
+    "softness": 34.0,
     "spill_suppression": 0.85,
     "format": "png"
   },
@@ -143,6 +148,8 @@ Returns the final verified transparent PNG. The command fails with `transparent_
     "matte_residue_score": 0.01,
     "halo_score": 0.0,
     "transparent_rgb_scrubbed": true,
+    "alpha_health_score": 1.0,
+    "residue_score": 0.99,
     "quality_score": 0.99,
     "failure_reasons": [],
     "warnings": []
@@ -165,6 +172,7 @@ Runs local extraction only. Use `--strict` when the command should fail if verif
   "command": "transparent extract",
   "method": "dual",
   "profile": "glow",
+  "material": null,
   "extraction": {
     "method": "dual",
     "rgb_scrubbed": true,
@@ -181,7 +189,7 @@ Runs local extraction only. Use `--strict` when the command should fail if verif
 }
 ```
 
-Chroma extraction reports `threshold`, `softness`, and `spill_suppression`; `spill_suppression` is a `0..1` matte-edge cleanup strength and defaults to `0.85`.
+Chroma extraction reports `matte_color`, `matte_color_source`, `threshold`, `softness`, `spill_suppression`, and `material`. `matte_color_source` is `"auto-sampled"` when `--matte-color auto` was used or no matte was provided, and `"provided"` when a color was explicit. `spill_suppression` is a `0..1` matte-edge cleanup strength and defaults to `0.85`.
 
 ### `transparent verify`
 
@@ -215,6 +223,8 @@ Verifies any image file as a transparent PNG deliverable. With `--strict`, a fai
     "matte_residue_score": null,
     "halo_score": 0.0,
     "transparent_rgb_scrubbed": true,
+    "alpha_health_score": 1.0,
+    "residue_score": 0.99,
     "quality_score": 0.99,
     "failure_reasons": [],
     "warnings": []

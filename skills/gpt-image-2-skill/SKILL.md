@@ -40,7 +40,7 @@ node scripts/gpt_image_2_skill.cjs --json --json-events \
 # 5. Remove a controlled background from existing source images
 node scripts/gpt_image_2_skill.cjs --json \
   transparent extract --input /tmp/source-green.png --out /tmp/asset.png \
-  --method chroma --matte-color '#00ff00' --strict
+  --method chroma --matte-color auto --strict
 
 # 6. Verify the final file before delivery
 node scripts/gpt_image_2_skill.cjs --json \
@@ -143,22 +143,33 @@ A transparent deliverable is valid only if the final file has a real PNG alpha c
 | Profile | Use for | Extra strictness |
 |---|---|---|
 | `generic` | common alpha/file checks | does not over-police unusual assets |
-| `icon` | icons, stickers, game props | requires clean opaque core, margin, low stray noise |
+| `icon` | clean single-subject icons and props | requires clean opaque core, margin, low stray noise |
 | `product` | product/object cutouts | similar to icon, with residue and edge checks |
+| `sticker` | decals, badges, multi-detail props | allows more intentional small components than `icon` |
+| `seal` | stamps, seals, logos with inner marks | allows split components such as ring + center symbol |
 | `translucent` | glass, liquid, crystal | requires partial alpha |
 | `glow` | light ribbons, flame, smoke, particles | requires partial alpha and transparent margin |
 | `shadow` | soft shadow assets | requires partial alpha and transparent margin |
+| `effect` | hard-alpha particles, bursts, UI effects | transparent margin without requiring partial alpha |
 
 The CLI is intentionally not a material classifier. The Agent should choose generation prompts and extraction methods based on the asset:
 
 | Asset type | Generation guidance | Extraction guidance |
 |---|---|---|
-| Opaque object, icon, sticker, product | Single isolated subject, clear margin, perfectly flat chroma matte. Pick a matte color absent from the object. | `transparent generate` or `transparent extract --method chroma --matte-color <color>` |
+| Opaque object, icon, sticker, product | Single isolated subject, clear margin, perfectly flat chroma matte. Pick a matte color absent from the object. | `transparent generate` or `transparent extract --method chroma --matte-color auto` |
 | Thin edges, hair, fur, lace, chain, netting | Use high resolution, strong subject/background contrast, no contact shadow, no background-colored details. Try magenta/cyan/green mattes if one contaminates the edge. | Chroma extraction with `--spill-suppression` when needed, then verify with `--expected-matte-color`; retry with a different matte if residue remains. |
 | Glass, crystal, liquid, hologram | Ask for a centered asset on flat black and flat white backgrounds, keeping geometry identical. Use reference/edit flow when possible to keep alignment. | `transparent extract --method dual --dark-image black.png --light-image white.png` |
 | Glow, flame, smoke, mist, magic particles | Generate dark and light background variants. Avoid textured backgrounds and avoid bloom reaching the image edge unless the edge is intentional. | Prefer dual extraction; verify that `partial_pixels` is non-zero. |
 | Shadows | Decide whether the shadow is part of the asset. If not, explicitly forbid contact shadows. If yes, generate on a flat matte with enough margin. | Chroma for opaque shadow silhouettes; dual extraction for soft translucent shadows. |
 | Unknown or unusual material | Do not classify it first. Generate controlled source variants, run extraction candidates, and keep the one that passes verification with the cleanest edge. | Use `--report-dir` / `--keep-sources` while iterating, then deliver only the final PNG. |
+
+For chroma extraction, `--matte-color auto` samples the actual flat source background from the image edges. Prefer it when the source was AI-generated, because prompts like "pure #ff00ff" often produce near-matte colors rather than exact RGB values. Use explicit `--matte-color <name|#rrggbb>` only when the source background is known exactly.
+
+For extraction tuning, use `--material` only as a broad hint, not as a subject classifier: `standard`, `soft-3d`, `flat-icon`, `sticker`, or `glow`. Manual `--threshold`, `--softness`, and `--spill-suppression` override the selected preset.
+
+For style-locked transparent assets, `transparent generate` is prompt-only. Use a flat RGB reference image with `images edit --ref-image` to create a controlled matte source, then run `transparent extract`. Do not use a transparent PNG as the reference image unless you intentionally want the alpha/composited edge behavior to influence the edit.
+
+Do not ask the image model to render exact UI text, numbers, scores, labels, or logos as part of the bitmap unless distorted text is acceptable. Generate the visual asset without text, then render exact text in the host app or design tool.
 
 Examples:
 
@@ -176,8 +187,8 @@ node scripts/gpt_image_2_skill.cjs --json --json-events \
   --out /tmp/necklace-magenta.png --format png --size 2K
 node scripts/gpt_image_2_skill.cjs --json \
   transparent extract --method chroma \
-  --input /tmp/necklace-magenta.png --matte-color magenta \
-  --out /tmp/necklace.png --spill-suppression 0.85 --strict
+  --input /tmp/necklace-magenta.png --matte-color auto \
+  --out /tmp/necklace.png --material sticker --strict
 
 # Semi-transparent material flow
 node scripts/gpt_image_2_skill.cjs --json \
@@ -187,7 +198,7 @@ node scripts/gpt_image_2_skill.cjs --json \
   --out /tmp/glow.png --strict
 ```
 
-Always inspect the JSON verification fields before delivery: `passed`, `alpha_min`, `alpha_max`, `transparent_ratio`, `partial_pixels`, and `warnings`. Also inspect quality fields: `checkerboard_detected`, `touches_edge`, `edge_margin_px`, `stray_pixel_count`, `largest_component_ratio`, `matte_residue_checked`, `matte_residue_score`, `halo_score`, `transparent_rgb_scrubbed`, `quality_score`, and `failure_reasons`. If `passed` is false, do not deliver the file as a transparent PNG. If `matte_residue_checked` is false for a chroma-derived PNG, run `transparent verify` again with the source matte via `--expected-matte-color`.
+Always inspect the JSON verification fields before delivery: `passed`, `alpha_min`, `alpha_max`, `transparent_ratio`, `partial_pixels`, and `warnings`. Also inspect quality fields: `checkerboard_detected`, `touches_edge`, `edge_margin_px`, `stray_pixel_count`, `largest_component_ratio`, `matte_residue_checked`, `matte_residue_score`, `halo_score`, `transparent_rgb_scrubbed`, `alpha_health_score`, `residue_score`, `quality_score`, and `failure_reasons`. If `passed` is false, do not deliver the file as a transparent PNG. If `matte_residue_checked` is false for a chroma-derived PNG, run `transparent verify` again with the source matte via `--expected-matte-color`.
 
 ## Notes
 

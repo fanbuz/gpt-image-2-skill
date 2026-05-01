@@ -58,3 +58,5 @@ Codex requests effectively ignore `--background`, `--n`, `--moderation`, `--mask
 - data URLs (`data:image/png;base64,...`)
 
 OpenAI edit requests are sent as `multipart/form-data`. Codex edits embed the reference inside the `image_generation` tool input.
+
+For style-lock references, prefer a flat RGB image. Transparent PNG references can carry premultiplied edges, invisible RGB, or alpha artifacts into the edit. Flatten the reference first unless the alpha itself is the intended visual signal.
