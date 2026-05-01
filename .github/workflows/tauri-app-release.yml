@@ -229,20 +229,41 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          UPDATER_ARCH: ${{ matrix.updater_arch }}
         shell: bash
         run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          installer_dir="$RUNNER_TEMP/tauri-installer-upload"
+          mkdir -p "$installer_dir"
+
+          copy_first() {
+            local pattern="$1"
+            local dest="$2"
+            local artifact=""
+
+            while IFS= read -r artifact; do
+              cp "$artifact" "$dest"
+              return 0
+            done < <(find target -type f -path "$pattern" | sort)
+          }
+
+          rpm_arch="$UPDATER_ARCH"
+          if [ "$rpm_arch" = "amd64" ]; then
+            rpm_arch="x86_64"
+          fi
+
+          copy_first '*/release/bundle/dmg/*.dmg' "$installer_dir/GPT.Image.2_${version}_${UPDATER_ARCH}.dmg"
+          copy_first '*/release/bundle/nsis/*.exe' "$installer_dir/GPT.Image.2_${version}_${UPDATER_ARCH}-setup.exe"
+          copy_first '*/release/bundle/deb/*.deb' "$installer_dir/GPT.Image.2_${version}_${UPDATER_ARCH}.deb"
+          copy_first '*/release/bundle/rpm/*.rpm' "$installer_dir/GPT.Image.2-${version}-1.${rpm_arch}.rpm"
+
           artifacts=()
           while IFS= read -r artifact; do
             artifacts+=("$artifact")
           done < <(
-            find target -type f \( \
-              -path '*/release/bundle/dmg/*.dmg' -o \
-              -path '*/release/bundle/nsis/*.exe' -o \
-              -path '*/release/bundle/appimage/*.AppImage' -o \
-              -path '*/release/bundle/deb/*.deb' -o \
-              -path '*/release/bundle/rpm/*.rpm' \
-            \)
-            find "$RUNNER_TEMP/tauri-updater-upload" -type f
+            find "$installer_dir" "$RUNNER_TEMP/tauri-updater-upload" -type f | sort
           )
 
           if [ "${#artifacts[@]}" -eq 0 ]; then
