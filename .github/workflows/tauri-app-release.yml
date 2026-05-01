@@ -76,7 +76,7 @@ jobs:
             rust_target: ""
             args: --bundles nsis
             updater_arch: x64
-            updater_suffix: nsis.zip
+            updater_suffix: setup.exe
 
     runs-on: ${{ matrix.platform }}
     env:
@@ -177,20 +177,31 @@ jobs:
           upload_dir="$RUNNER_TEMP/tauri-updater-upload"
           mkdir -p "$upload_dir"
 
+          case "$UPDATER_SUFFIX" in
+            app.tar.gz)
+              payload_name='*.app.tar.gz'
+              ;;
+            AppImage)
+              payload_name='*.AppImage'
+              ;;
+            setup.exe)
+              payload_name='*-setup.exe'
+              ;;
+            *)
+              payload_name="*.${UPDATER_SUFFIX}"
+              ;;
+          esac
+
           payload=""
           while IFS= read -r artifact; do
             payload="$artifact"
             break
-          done < <(
-            find target -type f \( \
-              -path '*/release/bundle/macos/*.app.tar.gz' -o \
-              -path '*/release/bundle/appimage/*.AppImage' -o \
-              -path '*/release/bundle/nsis/*.zip' \
-            \) ! -name '*.sig'
-          )
+          done < <(find target -type f -name "$payload_name" ! -name '*.sig' | sort)
 
           if [ -z "$payload" ]; then
             echo "No updater payload found."
+            echo "Available bundle artifacts:"
+            find target -type f -path '*/release/bundle/*' | sort
             exit 1
           fi
 
@@ -200,7 +211,11 @@ jobs:
             exit 1
           fi
 
-          dest="$upload_dir/GPT.Image.2_${version}_${UPDATER_ARCH}.${UPDATER_SUFFIX}"
+          if [ "$UPDATER_SUFFIX" = "setup.exe" ]; then
+            dest="$upload_dir/GPT.Image.2_${version}_${UPDATER_ARCH}-setup.exe"
+          else
+            dest="$upload_dir/GPT.Image.2_${version}_${UPDATER_ARCH}.${UPDATER_SUFFIX}"
+          fi
           cp "$payload" "$dest"
           cp "$sig" "$dest.sig"
 
@@ -255,7 +270,9 @@ jobs:
           fi
 
           copy_first '*/release/bundle/dmg/*.dmg' "$installer_dir/GPT.Image.2_${version}_${UPDATER_ARCH}.dmg"
-          copy_first '*/release/bundle/nsis/*.exe' "$installer_dir/GPT.Image.2_${version}_${UPDATER_ARCH}-setup.exe"
+          if [ ! -f "$RUNNER_TEMP/tauri-updater-upload/GPT.Image.2_${version}_${UPDATER_ARCH}-setup.exe" ]; then
+            copy_first '*/release/bundle/nsis/*.exe' "$installer_dir/GPT.Image.2_${version}_${UPDATER_ARCH}-setup.exe"
+          fi
           copy_first '*/release/bundle/deb/*.deb' "$installer_dir/GPT.Image.2_${version}_${UPDATER_ARCH}.deb"
           copy_first '*/release/bundle/rpm/*.rpm' "$installer_dir/GPT.Image.2-${version}-1.${rpm_arch}.rpm"
 
