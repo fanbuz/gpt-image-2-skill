@@ -27,7 +27,7 @@ const baseUrl = `https://github.com/${repo}/releases/download/${tag}`;
 const assets = {
   "darwin-aarch64": `GPT.Image.2_${version}_aarch64.app.tar.gz`,
   "darwin-x86_64": `GPT.Image.2_${version}_x64.app.tar.gz`,
-  "linux-x86_64": `GPT.Image.2_${version}_amd64.AppImage.tar.gz`,
+  "linux-x86_64": `GPT.Image.2_${version}_amd64.AppImage`,
   "windows-x86_64": `GPT.Image.2_${version}_x64.nsis.zip`,
 };
 

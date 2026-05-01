@@ -71,7 +71,7 @@ jobs:
             rust_target: ""
             args: --bundles appimage,deb,rpm
             updater_arch: amd64
-            updater_suffix: AppImage.tar.gz
+            updater_suffix: AppImage
           - platform: windows-latest
             rust_target: ""
             args: --bundles nsis
@@ -184,7 +184,7 @@ jobs:
           done < <(
             find target -type f \( \
               -path '*/release/bundle/macos/*.app.tar.gz' -o \
-              -path '*/release/bundle/appimage/*.AppImage.tar.gz' -o \
+              -path '*/release/bundle/appimage/*.AppImage' -o \
               -path '*/release/bundle/nsis/*.zip' \
             \) ! -name '*.sig'
           )
@@ -263,7 +263,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
-          ref: ${{ inputs.release_tag }}
 
       - name: Generate latest.json for Tauri updater
         shell: bash
