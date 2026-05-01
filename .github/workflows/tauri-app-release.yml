@@ -60,15 +60,23 @@ jobs:
           - platform: macos-latest
             rust_target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin --bundles app,dmg
+            updater_arch: aarch64
+            updater_suffix: app.tar.gz
           - platform: macos-latest
             rust_target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin --bundles app,dmg
+            updater_arch: x64
+            updater_suffix: app.tar.gz
           - platform: ubuntu-22.04
             rust_target: ""
             args: --bundles appimage,deb,rpm
+            updater_arch: amd64
+            updater_suffix: AppImage.tar.gz
           - platform: windows-latest
             rust_target: ""
             args: --bundles nsis
+            updater_arch: x64
+            updater_suffix: nsis.zip
 
     runs-on: ${{ matrix.platform }}
     env:
@@ -152,7 +160,49 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm --prefix apps/gpt-image-2-app run tauri -- build ${{ matrix.args }} --ci
+
+      - name: Normalize updater artifacts
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          UPDATER_ARCH: ${{ matrix.updater_arch }}
+          UPDATER_SUFFIX: ${{ matrix.updater_suffix }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          upload_dir="$RUNNER_TEMP/tauri-updater-upload"
+          mkdir -p "$upload_dir"
+
+          payload=""
+          while IFS= read -r artifact; do
+            payload="$artifact"
+            break
+          done < <(
+            find target -type f \( \
+              -path '*/release/bundle/macos/*.app.tar.gz' -o \
+              -path '*/release/bundle/appimage/*.AppImage.tar.gz' -o \
+              -path '*/release/bundle/nsis/*.zip' \
+            \) ! -name '*.sig'
+          )
+
+          if [ -z "$payload" ]; then
+            echo "No updater payload found."
+            exit 1
+          fi
+
+          sig="${payload}.sig"
+          if [ ! -f "$sig" ]; then
+            echo "Missing updater signature: $sig"
+            exit 1
+          fi
+
+          dest="$upload_dir/GPT.Image.2_${version}_${UPDATER_ARCH}.${UPDATER_SUFFIX}"
+          cp "$payload" "$dest"
+          cp "$sig" "$dest.sig"
 
       - name: Notarize DMG files
         if: startsWith(matrix.platform, 'macos')
@@ -192,6 +242,7 @@ jobs:
               -path '*/release/bundle/deb/*.deb' -o \
               -path '*/release/bundle/rpm/*.rpm' \
             \)
+            find "$RUNNER_TEMP/tauri-updater-upload" -type f
           )
 
           if [ "${#artifacts[@]}" -eq 0 ]; then
@@ -201,8 +252,51 @@ jobs:
 
           gh release upload "$RELEASE_TAG" "${artifacts[@]}" --repo "${{ github.repository }}" --clobber
 
-  publish-homebrew-cask:
+  publish-updater-manifest:
     needs: build-app
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      SOURCE_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.release_tag }}
+
+      - name: Generate latest.json for Tauri updater
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          sig_dir="$RUNNER_TEMP/tauri-updater-sigs"
+          mkdir -p "$sig_dir"
+
+          gh release download "$RELEASE_TAG" \
+            --repo "$SOURCE_REPO" \
+            --pattern "GPT.Image.2_${version}_*.sig" \
+            --dir "$sig_dir" \
+            --clobber
+
+          published_at="$(gh release view "$RELEASE_TAG" --repo "$SOURCE_REPO" --json publishedAt --jq '.publishedAt // empty')"
+          if [ -z "$published_at" ]; then
+            published_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          fi
+
+          node scripts/release/generate-tauri-updater-manifest.mjs \
+            --version "$version" \
+            --tag "$RELEASE_TAG" \
+            --repo "$SOURCE_REPO" \
+            --sig-dir "$sig_dir" \
+            --pub-date "$published_at" \
+            --out "$RUNNER_TEMP/latest.json"
+
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/latest.json" --repo "$SOURCE_REPO" --clobber
+
+  publish-homebrew-cask:
+    needs: [build-app, publish-updater-manifest]
     runs-on: macos-15
     if: ${{ !inputs.release_draft && !inputs.prerelease }}
     env:
@@ -270,6 +364,7 @@ jobs:
             desc "Desktop image generation and editing for GPT Image 2"
             homepage "https://github.com/Wangnov/gpt-image-2-skill"
 
+            auto_updates true
             depends_on macos: ">= :big_sur"
 
             app "GPT Image 2.app"

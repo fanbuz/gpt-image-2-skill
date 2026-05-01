@@ -31,6 +31,11 @@ import {
   useSetDefaultProvider,
   useTestProvider,
 } from "@/hooks/use-config";
+import {
+  checkForAppUpdate,
+  installAppUpdate,
+  type AppUpdateInfo,
+} from "@/lib/app-updater";
 import { api, type ConfigPaths } from "@/lib/api";
 import { copyText, openPath, revealPath } from "@/lib/user-actions";
 import { effectiveDefaultProvider } from "@/lib/providers";
@@ -103,8 +108,8 @@ const TAB_TITLES: Record<SettingsTab, { title: string; subtitle: string }> = {
     subtitle: "并发上限和任务结束提示",
   },
   about: {
-    title: "关于 / 数据位置",
-    subtitle: "本地存放配置、历史和生成结果的路径",
+    title: "关于 / 更新",
+    subtitle: "桌面端更新、本地配置和数据路径",
   },
 };
 
@@ -391,9 +396,7 @@ function CredCard({
             </div>
           )}
           {prov.model && (
-            <div className="text-[11px] text-faint font-mono">
-              {prov.model}
-            </div>
+            <div className="text-[11px] text-faint font-mono">{prov.model}</div>
           )}
         </div>
       </div>
@@ -474,7 +477,8 @@ function CredsPanel({ config }: { config?: ServerConfig }) {
         ...m,
         [name]: { status: r.ok ? "ok" : "err" },
       }));
-      if (r.ok) toast.success("连接正常", { description: `${name} 可以使用。` });
+      if (r.ok)
+        toast.success("连接正常", { description: `${name} 可以使用。` });
       else toast.error("连接失败", { description: r.message });
     } catch (e) {
       setTestMap((m) => ({ ...m, [name]: { status: "err" } }));
@@ -706,8 +710,8 @@ function AppearancePanel() {
                   主题预设
                 </div>
                 <div className="mt-0.5 text-[11.5px] text-muted">
-                  一键切换背景动效、配色、面板风格；字体和密度也会跟着调到主题推荐值。想禁用所有动效，切到「网格灰」或在 macOS
-                  辅助功能里开启「减弱动态效果」。
+                  一键切换背景动效、配色、面板风格；字体和密度也会跟着调到主题推荐值。想禁用所有动效，切到「网格灰」或在
+                  macOS 辅助功能里开启「减弱动态效果」。
                 </div>
               </div>
               <div
@@ -870,6 +874,12 @@ function RuntimePanel() {
 
 function AboutPanel() {
   const { setTweaks } = useTweaks();
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [availableUpdate, setAvailableUpdate] = useState<AppUpdateInfo | null>(
+    null,
+  );
+  const [updateProgress, setUpdateProgress] = useState<string | null>(null);
   const { data: paths } = useQuery<ConfigPaths>({
     queryKey: ["config-paths"],
     queryFn: api.configPaths,
@@ -903,6 +913,77 @@ function AboutPanel() {
     setTweaks({ themePreset: "letter-matrix" });
   };
 
+  const handleCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateProgress(null);
+    try {
+      const result = await checkForAppUpdate();
+      if (result.status === "unavailable") {
+        setAvailableUpdate(null);
+        toast.info("当前运行环境不支持 App 内更新", {
+          description: "静态 Page 和 Docker Web 仍按部署端更新。",
+        });
+        return;
+      }
+      if (result.status === "up-to-date") {
+        setAvailableUpdate(null);
+        toast.success("已经是最新版本", {
+          description: `当前版本 ${result.currentVersion}`,
+        });
+        return;
+      }
+      setAvailableUpdate(result.update);
+      toast.success(`发现新版本 ${result.update.version}`, {
+        description: "可以直接下载并安装。",
+      });
+    } catch (error) {
+      toast.error("检查更新失败", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    setInstallingUpdate(true);
+    setUpdateProgress("准备下载");
+    try {
+      const result = await installAppUpdate((progress) => {
+        if (progress.phase === "starting") {
+          setUpdateProgress("开始下载");
+          return;
+        }
+        if (progress.phase === "downloading") {
+          if (progress.contentLength) {
+            const pct = Math.min(
+              100,
+              Math.round(
+                (progress.downloadedBytes / progress.contentLength) * 100,
+              ),
+            );
+            setUpdateProgress(`下载中 ${pct}%`);
+          } else {
+            setUpdateProgress("下载中");
+          }
+          return;
+        }
+        setUpdateProgress("正在安装");
+      });
+      if (result.status === "up-to-date") {
+        setAvailableUpdate(null);
+        toast.success("已经是最新版本");
+      }
+    } catch (error) {
+      toast.error("安装更新失败", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setInstallingUpdate(false);
+      setUpdateProgress(null);
+    }
+  };
+
   return (
     <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-5 space-y-4">
       <header className="px-1 pt-0.5 space-y-1">
@@ -927,6 +1008,60 @@ function AboutPanel() {
           本地图像生成与编辑桌面客户端。
         </div>
       </header>
+
+      <Section
+        title="应用更新"
+        description="桌面 App 使用 Tauri 官方更新器；静态 Page 和 Docker Web 由部署端更新。"
+      >
+        <Row
+          title={
+            availableUpdate
+              ? `可更新到 ${availableUpdate.version}`
+              : "检查桌面端更新"
+          }
+          description={
+            availableUpdate?.body ||
+            "有新版本时会下载签名更新包，安装完成后自动重启 App。"
+          }
+          control={
+            availableUpdate ? (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={installingUpdate ? undefined : "download"}
+                disabled={installingUpdate}
+                onClick={() => void handleInstallUpdate()}
+              >
+                {installingUpdate ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    {updateProgress ?? "安装中"}
+                  </>
+                ) : (
+                  "下载并重启"
+                )}
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={checkingUpdate ? undefined : "reload"}
+                disabled={checkingUpdate}
+                onClick={() => void handleCheckUpdate()}
+              >
+                {checkingUpdate ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    检查中
+                  </>
+                ) : (
+                  "检查更新"
+                )}
+              </Button>
+            )
+          }
+        />
+      </Section>
 
       <Section
         title="数据位置"

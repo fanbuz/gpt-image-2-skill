@@ -46,7 +46,7 @@ brew install --cask wangnov/tap/gpt-image-2
 - Windows：`GPT.Image.2_*_x64-setup.exe`
 - Linux：`GPT.Image.2_*_amd64.AppImage`、`*.deb` 或 `*.rpm`
 
-macOS DMG 通过 Developer ID 签名并完成 Apple notarization。桌面 App 会把输出图片、任务元数据和历史记录保存到 `$CODEX_HOME/gpt-image-2-skill/`，默认是 `~/.codex/gpt-image-2-skill/`。
+macOS DMG 通过 Developer ID 签名并完成 Apple notarization。桌面 App 内置 Tauri 更新器；正式版发布后可在「设置 → 关于」里手动检查更新，启动时也会轻量提示新版本。桌面 App 会把输出图片、任务元数据和历史记录保存到 `$CODEX_HOME/gpt-image-2-skill/`，默认是 `~/.codex/gpt-image-2-skill/`。
 
 ### CLI
 
@@ -222,7 +222,7 @@ Skill 入口是 `node skills/gpt-image-2-skill/scripts/gpt_image_2_skill.cjs`。
 
 1. `Release`：cargo-dist 构建 CLI 资产、安装脚本、MSI，并发布 Homebrew formula。
 2. `Publish npm Packages`：下载同一个 GitHub Release 的 CLI 资产，发布 npm 根包与平台子包，并验证 cargo-binstall、npm 与 Homebrew formula。
-3. `Tauri App Release`：在同一个 tag 上构建并上传 macOS DMG、Windows NSIS、Linux AppImage/deb/rpm。macOS 构建会导入 Developer ID 证书并执行 notarization/staple 验证；正式版会同步更新 Homebrew cask。
+3. `Tauri App Release`：在同一个 tag 上构建并上传 macOS DMG、Windows NSIS、Linux AppImage/deb/rpm，同时生成签名 updater 资产和 `latest.json`。macOS 构建会导入 Developer ID 证书并执行 notarization/staple 验证；正式版会同步更新 Homebrew cask，并标记 `auto_updates true`，让 App 内更新成为桌面端主路径。
 4. `Post Release Verify`：默认验证 CLI 分发路径；桌面 App 发布完成后会以 `verify_desktop_cask=true` 补验 Homebrew cask 安装路径。
 
 npm 首发通过 GitHub Actions 中的 `NPM_TOKEN` 完成，并保留 `--provenance`。包首次上线后，可运行 `scripts/release/configure-npm-trust.sh` 绑定 trusted publisher；脚本会先读取现有配置，重复执行也安全。手动验收可通过 `npm-publish.yml` 的 `dry_run` 输入完成整条 npm 打包链路校验。
@@ -277,7 +277,7 @@ You can also download the right installer from [GitHub Releases](https://github.
 - Windows: `GPT.Image.2_*_x64-setup.exe`
 - Linux: `GPT.Image.2_*_amd64.AppImage`, `*.deb`, or `*.rpm`
 
-macOS DMGs are signed with Developer ID and notarized by Apple. The desktop app stores generated images, task metadata, and history under `$CODEX_HOME/gpt-image-2-skill/`, which defaults to `~/.codex/gpt-image-2-skill/`.
+macOS DMGs are signed with Developer ID and notarized by Apple. The desktop app includes the Tauri updater; stable releases can be checked manually from Settings → About, and the app performs a light startup check for new versions. The desktop app stores generated images, task metadata, and history under `$CODEX_HOME/gpt-image-2-skill/`, which defaults to `~/.codex/gpt-image-2-skill/`.
 
 ### CLI
 
@@ -408,7 +408,7 @@ The current release chain is:
 
 1. `Release`: cargo-dist builds CLI assets, installer scripts, MSI packages, and publishes the Homebrew formula.
 2. `Publish npm Packages`: downloads CLI assets from the same GitHub Release, publishes the npm root package plus platform packages, and verifies cargo-binstall, npm, and the Homebrew formula.
-3. `Tauri App Release`: builds and uploads macOS DMGs, Windows NSIS, and Linux AppImage/deb/rpm on the same tag. macOS jobs import the Developer ID certificate and run notarization plus stapling validation; stable releases also update the Homebrew cask.
+3. `Tauri App Release`: builds and uploads macOS DMGs, Windows NSIS, and Linux AppImage/deb/rpm on the same tag, plus signed updater artifacts and `latest.json`. macOS jobs import the Developer ID certificate and run notarization plus stapling validation; stable releases also update the Homebrew cask with `auto_updates true` so in-app updating is the primary desktop update path.
 4. `Post Release Verify`: verifies CLI distribution paths by default; after the desktop app release completes it reruns with `verify_desktop_cask=true` to verify the Homebrew cask install path.
 
 The first npm publish uses `NPM_TOKEN` in GitHub Actions and keeps `--provenance` enabled. Once the packages exist on npm, run `scripts/release/configure-npm-trust.sh` to bind trusted publishers; the script reads the current state first, so reruns are safe. Manual acceptance can use the `dry_run` input on `npm-publish.yml` to validate the full npm packaging path.

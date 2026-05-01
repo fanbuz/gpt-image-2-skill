@@ -3,10 +3,11 @@ import {
   type ErrorInfo,
   type ReactNode,
   useCallback,
+  useEffect,
   useState,
 } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ClassicShell } from "@/components/legacy/classic-shell";
 import { TopNav } from "@/components/shell/top-nav";
@@ -22,6 +23,11 @@ import { useJobs } from "@/hooks/use-jobs";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { useGlobalShortcuts } from "@/hooks/use-shortcuts";
 import { useTweaks } from "@/hooks/use-tweaks";
+import {
+  checkForAppUpdate,
+  installAppUpdate,
+  shouldAutoCheckForUpdates,
+} from "@/lib/app-updater";
 import { OPEN_JOB_EVENT } from "@/lib/job-navigation";
 
 class ScreenErrorBoundary extends Component<
@@ -119,6 +125,63 @@ export default function App() {
   });
   useJobNotifications(jobs, openJob);
 
+  useEffect(() => {
+    if (!shouldAutoCheckForUpdates()) return;
+    let cancelled = false;
+    void checkForAppUpdate()
+      .then((result) => {
+        if (cancelled || result.status !== "available") return;
+        toast(`发现新版本 ${result.update.version}`, {
+          description: "可以现在安装，更新完成后 App 会自动重启。",
+          duration: 12_000,
+          action: {
+            label: "更新",
+            onClick: () => {
+              const id = toast.loading("正在下载更新", {
+                description: "保持 App 打开，下载完成后会安装并重启。",
+              });
+              void installAppUpdate((progress) => {
+                if (
+                  progress.phase === "downloading" &&
+                  progress.contentLength
+                ) {
+                  const pct = Math.min(
+                    100,
+                    Math.round(
+                      (progress.downloadedBytes / progress.contentLength) * 100,
+                    ),
+                  );
+                  toast.loading("正在下载更新", {
+                    id,
+                    description: `${pct}%`,
+                  });
+                } else if (progress.phase === "installing") {
+                  toast.loading("正在安装更新", {
+                    id,
+                    description: "马上重启。",
+                  });
+                }
+              }).catch((error) => {
+                toast.error("更新失败", {
+                  id,
+                  description:
+                    error instanceof Error ? error.message : String(error),
+                });
+              });
+            },
+          },
+        });
+      })
+      .catch((error) => {
+        // Auto-check is intentionally quiet; the About panel exposes
+        // explicit errors when the user asks for an update check.
+        console.debug("[gpt-image-2-app] updater auto-check failed", error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const active = (job: { status: string }) =>
     job.status === "running" || job.status === "queued";
   const generateCount =
@@ -149,11 +212,7 @@ export default function App() {
             </ScreenErrorBoundary>
           ) : (
             <div className="relative flex h-full w-full flex-col">
-              <TopNav
-                screen={screen}
-                setScreen={setScreen}
-                running={running}
-              />
+              <TopNav screen={screen} setScreen={setScreen} running={running} />
 
               <main
                 id="main"
@@ -165,20 +224,12 @@ export default function App() {
                   <motion.div
                     key={screen}
                     className="absolute inset-0 h-full"
-                    initial={
-                      reducedMotion
-                        ? false
-                        : { opacity: 0, y: 6 }
-                    }
+                    initial={reducedMotion ? false : { opacity: 0, y: 6 }}
                     animate={
-                      reducedMotion
-                        ? { opacity: 1 }
-                        : { opacity: 1, y: 0 }
+                      reducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }
                     }
                     exit={
-                      reducedMotion
-                        ? { opacity: 0 }
-                        : { opacity: 0, y: -4 }
+                      reducedMotion ? { opacity: 0 } : { opacity: 0, y: -4 }
                     }
                     transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                   >

@@ -30,15 +30,13 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "$HOME/.codex/gpt-image-2-skill/**",
-          "$TEMP/**"
-        ]
+        "scope": ["$HOME/.codex/gpt-image-2-skill/**", "$TEMP/**"]
       }
     }
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["app", "dmg", "nsis", "appimage", "deb", "rpm"],
     "publisher": "Wangnov",
     "category": "GraphicsAndDesign",
@@ -70,6 +68,14 @@
           "height": 400
         }
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIyN0FEODE4QkFERDdCMTgKUldRWWU5MjZHTmg2c2h0UkdYQTU2MWRINTdGdVJhcEt6V1h1dllHZjNMcHRRT1orcEZ1clNwVzIK",
+      "endpoints": [
+        "https://github.com/Wangnov/gpt-image-2-skill/releases/latest/download/latest.json"
+      ]
     }
   }
 }
