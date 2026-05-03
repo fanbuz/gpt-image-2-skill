@@ -11,7 +11,6 @@ import { motion } from "motion/react";
 import GradientText from "@/components/reactbits/text/GradientText";
 import ShinyText from "@/components/reactbits/text/ShinyText";
 import ClickSpark from "@/components/reactbits/components/ClickSpark";
-import ElectricBorder from "@/components/reactbits/components/ElectricBorder";
 import Masonry, {
   type MasonryItem,
 } from "@/components/reactbits/components/Masonry";
@@ -162,44 +161,37 @@ function RecentWorkTile({
 function PendingWorkTile({
   seed,
   slotIndex,
-  accentHex,
 }: {
   seed: number;
   slotIndex: number;
-  accentHex: string;
 }) {
   return (
-    <div className="relative h-full w-full" aria-label="生成中">
-      <ElectricBorder
-        color={accentHex}
-        speed={1.1}
-        chaos={0.55}
-        borderRadius={6}
-        className="absolute inset-0"
-      >
-        <div className="relative h-full w-full overflow-hidden rounded-md bg-[color:var(--bg-sunken)]">
-          <PlaceholderImage
-            seed={seed}
-            variant={`pending-${slotIndex}`}
-            style={{ opacity: 0.58 }}
-          />
-          <div
-            className="absolute inset-0 animate-shimmer"
-            style={{
-              background: "var(--skeleton-gradient-soft)",
-              backgroundSize: "200% 100%",
-              mixBlendMode: "screen",
-            }}
-          />
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
-            <Loader2
-              size={18}
-              className="animate-spin text-[color:var(--accent)]"
-            />
-            <span className="text-[10px] text-faint">生成中…</span>
-          </div>
-        </div>
-      </ElectricBorder>
+    <div
+      className="relative h-full w-full overflow-hidden rounded-md border border-[color:var(--w-12)] bg-[color:var(--bg-sunken)] shadow-sm"
+      aria-label="生成中"
+    >
+      <PlaceholderImage
+        seed={seed}
+        variant={`pending-${slotIndex}`}
+        style={{ opacity: 0.72 }}
+      />
+      <div
+        className="absolute inset-0 animate-shimmer"
+        style={{
+          background: "var(--skeleton-gradient-soft)",
+          backgroundSize: "200% 100%",
+          opacity: 0.55,
+          mixBlendMode: "screen",
+        }}
+      />
+      <div className="absolute inset-0 bg-[color:var(--k-18)]" />
+      <div className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full border border-[color:var(--w-12)] bg-[color:var(--k-35)] px-2 py-1 text-[10px] font-medium text-[color:var(--image-overlay-text)] backdrop-blur-md">
+        <Loader2
+          size={11}
+          className="animate-spin text-[color:var(--accent)]"
+        />
+        生成中
+      </div>
     </div>
   );
 }
@@ -218,9 +210,8 @@ export function GenerateScreen({
   const reducedMotion = useReducedMotion();
   const providerNames = useMemo(() => readProviderNames(config), [config]);
   const defaultProvider = effectiveDefaultProvider(config);
-  // Read the active theme's accent hex so ElectricBorder + ClickSpark
-  // (both of which need a real CSS color value, not a var() reference)
-  // tint to whatever preset is active.
+  // ClickSpark needs a real CSS color value, not a var() reference,
+  // so tint it to whatever preset is active.
   const { tweaks } = useTweaks();
   const accentHex = THEME_PRESETS[tweaks.themePreset].accentSolid;
   const [prompt, setPrompt] = useState("");
@@ -837,7 +828,6 @@ export function GenerateScreen({
                   <PendingWorkTile
                     seed={data.seed}
                     slotIndex={data.slotIndex}
-                    accentHex={accentHex}
                   />
                 ) : (
                   <RecentWorkTile
