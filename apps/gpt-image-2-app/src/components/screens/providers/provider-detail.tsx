@@ -7,6 +7,7 @@ import { Empty } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 import { SourceChip } from "@/components/ui/source-chip";
 import { Icon } from "@/components/icon";
+import { ProviderLogo } from "@/components/provider-logo";
 import { api } from "@/lib/api";
 import { providerKindLabel } from "@/lib/format";
 import { copyText } from "@/lib/user-actions";
@@ -108,12 +109,7 @@ export function ProviderDetail({
   return (
     <div className="p-5 h-full overflow-auto">
       <div className="flex items-start gap-3.5 mb-5">
-        <div
-          className="w-12 h-12 rounded-[10px] bg-sunken border border-border flex items-center justify-center"
-          style={{ color: "var(--accent)" }}
-        >
-          <Icon name="cpu" size={22} />
-        </div>
+        <ProviderLogo kind={prov.type} size="lg" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <div className="t-title">{name}</div>

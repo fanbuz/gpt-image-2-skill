@@ -6,8 +6,6 @@ import {
   Sparkles,
   ListChecks,
   Info,
-  Bot,
-  FileCog,
   Plus,
   Pencil,
   Play,
@@ -43,6 +41,7 @@ import { copyText, openPath, revealPath } from "@/lib/user-actions";
 import { effectiveDefaultProvider } from "@/lib/providers";
 import { AddProviderDialog } from "@/components/screens/providers/add-provider-dialog";
 import { PromptTemplatesPanel } from "@/components/screens/settings/prompt-templates-panel";
+import { ProviderLogo } from "@/components/provider-logo";
 import type { ProviderConfig, ServerConfig } from "@/lib/types";
 import {
   HIDDEN_PRESETS,
@@ -289,43 +288,7 @@ function PanelHeader({ tab }: { tab: SettingsTab }) {
 
 /* ── CredIcon: visual marker per provider type ─────────────── */
 function CredIcon({ kind }: { kind: ProviderConfig["type"] }) {
-  if (kind === "openai") {
-    return (
-      <div className="h-10 w-10 shrink-0 rounded-xl bg-[color:var(--w-06)] border border-[color:var(--w-10)] flex items-center justify-center">
-        <svg
-          viewBox="0 0 24 24"
-          width="20"
-          height="20"
-          fill="none"
-          className="text-foreground opacity-90"
-        >
-          <path
-            d="M22.28 9.82a5.85 5.85 0 0 0-.5-4.81 5.93 5.93 0 0 0-6.4-2.84A5.93 5.93 0 0 0 4.7 4.74 5.85 5.85 0 0 0 .8 7.58a5.92 5.92 0 0 0 .73 6.93 5.85 5.85 0 0 0 .5 4.82 5.93 5.93 0 0 0 6.39 2.84 5.85 5.85 0 0 0 4.41 1.96 5.93 5.93 0 0 0 5.65-4.1 5.85 5.85 0 0 0 3.9-2.84 5.92 5.92 0 0 0-.74-6.93Z"
-            stroke="currentColor"
-            strokeWidth="1.4"
-          />
-        </svg>
-      </div>
-    );
-  }
-  if (kind === "codex") {
-    return (
-      <div
-        className="h-10 w-10 shrink-0 rounded-xl flex items-center justify-center"
-        style={{
-          background: "var(--accent-gradient-glow)",
-          border: "1px solid var(--accent-35)",
-        }}
-      >
-        <Bot size={18} className="text-foreground" />
-      </div>
-    );
-  }
-  return (
-    <div className="h-10 w-10 shrink-0 rounded-xl bg-[color:var(--w-06)] border border-[color:var(--w-10)] flex items-center justify-center">
-      <FileCog size={17} className="text-foreground opacity-85" />
-    </div>
-  );
+  return <ProviderLogo kind={kind} size="md" />;
 }
 
 type CredCardProps = {

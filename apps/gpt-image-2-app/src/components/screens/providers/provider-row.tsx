@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { cn } from "@/lib/cn";
-import { Icon } from "@/components/icon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { SourceChip } from "@/components/ui/source-chip";
 import { Tooltip } from "@/components/ui/tooltip";
+import { ProviderLogo } from "@/components/provider-logo";
 import { providerKindLabel } from "@/lib/format";
 import type { ProviderConfig } from "@/lib/types";
 
@@ -38,12 +38,7 @@ export function ProviderRow({
       )}
       style={{ gridTemplateColumns: "32px minmax(0, 1fr) auto" }}
     >
-      <div
-        className="w-[30px] h-[30px] rounded-md bg-sunken border border-border flex items-center justify-center"
-        style={{ color: isDefault ? "var(--accent)" : "var(--text-faint)" }}
-      >
-        <Icon name="cpu" size={15} />
-      </div>
+      <ProviderLogo kind={prov.type} size="sm" />
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-[13.5px] font-semibold">{name}</span>
