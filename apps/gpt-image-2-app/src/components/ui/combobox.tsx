@@ -1,4 +1,9 @@
-import { useRef, useState, type InputHTMLAttributes } from "react";
+import {
+  useRef,
+  useState,
+  type InputHTMLAttributes,
+  type PointerEvent,
+} from "react";
 import * as RadixPopover from "@radix-ui/react-popover";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -90,9 +95,20 @@ export function GlassCombobox(props: GlassComboboxProps) {
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
+  const openFromSurface = (event: PointerEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    const target = event.target as HTMLElement;
+    if (inputRef.current?.contains(target)) return;
+    if (target.closest("button")) return;
+    event.preventDefault();
+    inputRef.current?.focus({ preventScroll: true });
+    setOpen(true);
+  };
+
   return (
     <RadixPopover.Root open={open} onOpenChange={setOpen}>
       <div
+        onPointerDown={openFromSurface}
         className={cn(
           "group relative inline-flex items-center gap-2 rounded-md border bg-[color:var(--w-04)] transition-colors",
           "hover:bg-[color:var(--w-07)]",
@@ -118,6 +134,9 @@ export function GlassCombobox(props: GlassComboboxProps) {
           value={value}
           onChange={(e) => onValueChange(e.target.value)}
           onFocus={() => setOpen(true)}
+          onClick={() => {
+            if (!disabled) setOpen(true);
+          }}
           placeholder={placeholder}
           inputMode={inputMode}
           aria-label={ariaLabel ?? chipLabel}
