@@ -18,12 +18,14 @@ export function OutputTile({
   onDownload,
   onOpen,
   onSendToEdit,
+  downloadLabel = "保存图片",
 }: {
   output: OutputMeta;
   onSelect?: () => void;
   onDownload?: () => void;
   onOpen?: () => void;
   onSendToEdit?: () => void;
+  downloadLabel?: string;
 }) {
   const reducedMotion = useReducedMotion();
   const [hover, setHover] = useState(false);
@@ -178,8 +180,8 @@ export function OutputTile({
                   e.stopPropagation();
                   onDownload();
                 }}
-                title="保存图片"
-                aria-label="保存图片"
+                title={downloadLabel}
+                aria-label={downloadLabel}
                 className="touch-target image-overlay flex h-8 w-8 items-center justify-center rounded-[4px] border-none"
               >
                 <Icon name="download" size={13} />

@@ -9,7 +9,14 @@ import { PlaceholderImage } from "@/components/screens/shared/placeholder-image"
 import { formatDuration, formatTime, statusLabel } from "@/lib/format";
 import { promptLength, promptSummary, promptText } from "@/lib/prompt-display";
 import { api } from "@/lib/api";
-import { copyText, openPath, revealPath, saveImages } from "@/lib/user-actions";
+import {
+  copyText,
+  openPath,
+  revealPath,
+  saveImages,
+  saveJobImages,
+} from "@/lib/user-actions";
+import { resultLocationText, runtimeCopy } from "@/lib/runtime-copy";
 import type { Job } from "@/lib/types";
 
 function badgeTone(status: Job["status"]) {
@@ -102,6 +109,7 @@ export function JobMetadataDrawer({
   const selectedLabel = String.fromCharCode(65 + selectedOutput);
   const canSave = job.status === "completed" && Boolean(previewPath);
   const canCancel = job.status === "queued";
+  const copy = runtimeCopy();
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -260,9 +268,7 @@ export function JobMetadataDrawer({
               style={{ color: "var(--text-faint)" }}
             />
             <span className="text-[12px] flex-1 truncate">
-              {api.canRevealFiles
-                ? `候选 ${selectedLabel} 已保存在本次结果文件夹`
-                : `候选 ${selectedLabel} 已保存在浏览器本地`}
+              {resultLocationText(selectedLabel)}
             </span>
             {api.canRevealFiles && (
               <>
@@ -355,7 +361,9 @@ export function JobMetadataDrawer({
             onClick={() => saveImages([previewPath], "图片")}
             disabled={!canSave}
           >
-            {planned > 1 ? `保存候选 ${selectedLabel}` : "保存图片"}
+            {planned > 1
+              ? `${copy.actionVerb}候选 ${selectedLabel}`
+              : copy.saveImageLabel}
           </Button>
         )}
         <div className="flex gap-1.5">
@@ -365,9 +373,9 @@ export function JobMetadataDrawer({
               size="sm"
               icon="download"
               className="flex-1 justify-center"
-              onClick={() => saveImages(outputPaths, "图片")}
+              onClick={() => saveJobImages(job.id, "任务图片")}
             >
-              保存全部
+              {copy.saveJobLabel}
             </Button>
           )}
           <Button

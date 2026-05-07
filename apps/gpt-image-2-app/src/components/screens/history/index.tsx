@@ -17,7 +17,8 @@ import {
   useRetryJob,
 } from "@/hooks/use-jobs";
 import { OPEN_JOB_EVENT, sendImageToEdit } from "@/lib/job-navigation";
-import { revealPath, saveJobImages } from "@/lib/user-actions";
+import { revealPath, saveImages, saveJobImages } from "@/lib/user-actions";
+import { isDesktopRuntime, runtimeCopy } from "@/lib/runtime-copy";
 import { formatTime } from "@/lib/format";
 import {
   jobOutputCount,
@@ -208,8 +209,15 @@ function JobRowExpandable({
   const outputIndexes = jobOutputIndexes(job);
   const outputCount = outputIndexes.length;
   const extraCount = Math.max(0, outputCount - 1);
+  const copy = runtimeCopy();
 
-  const saveAll = () => void saveJobImages(job.id, "任务图片");
+  const saveResult = () => {
+    if (outputCount > 1) {
+      void saveJobImages(job.id, "任务图片");
+      return;
+    }
+    void saveImages([thumbPath], "图片");
+  };
 
   return (
     <div
@@ -469,12 +477,12 @@ function JobRowExpandable({
                         icon="download"
                         onClick={(e) => {
                           e.stopPropagation();
-                          saveAll();
+                          saveResult();
                         }}
                       >
-                        {outputCount > 1 ? "保存全部" : "保存"}
+                        {outputCount > 1 ? copy.saveJobLabel : copy.actionVerb}
                       </Button>
-                      {thumbPath && (
+                      {thumbPath && isDesktopRuntime() && (
                         <Button
                           variant="ghost"
                           size="sm"

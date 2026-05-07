@@ -7,6 +7,7 @@ import { RevealImage } from "@/components/ui/reveal-image";
 import TiltedCard from "@/components/reactbits/components/TiltedCard";
 import { copyText, openPath, revealPath, saveImages } from "@/lib/user-actions";
 import { useConfirm } from "@/hooks/use-confirm";
+import { isDesktopRuntime, runtimeCopy } from "@/lib/runtime-copy";
 import type { Job } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/format";
@@ -68,6 +69,8 @@ export function JobImageDetailDrawer({
   const [zoomOpen, setZoomOpen] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const [thumbFailed, setThumbFailed] = useState<Set<number>>(new Set());
+  const copy = runtimeCopy();
+  const canShowFileLocation = isDesktopRuntime();
 
   const handleRerun = () => {
     if (!job) return;
@@ -164,28 +167,32 @@ export function JobImageDetailDrawer({
         width={520}
         footer={
           <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon="copy"
-              disabled={!path}
-              onClick={() => {
-                if (path) void copyText(path, "图片路径");
-              }}
-            >
-              复制路径
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              icon="folder"
-              disabled={!path}
-              onClick={() => {
-                if (path) void revealPath(path);
-              }}
-            >
-              打开位置
-            </Button>
+            {canShowFileLocation && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="copy"
+                  disabled={!path}
+                  onClick={() => {
+                    if (path) void copyText(path, "图片路径");
+                  }}
+                >
+                  复制路径
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon="folder"
+                  disabled={!path}
+                  onClick={() => {
+                    if (path) void revealPath(path);
+                  }}
+                >
+                  打开位置
+                </Button>
+              </>
+            )}
             {onRerun && job && (
               <Button
                 variant="ghost"
@@ -266,7 +273,7 @@ export function JobImageDetailDrawer({
                 if (path) void saveImages([path], "图片");
               }}
             >
-              保存到下载
+              {copy.saveImageLabel}
             </Button>
           </div>
         }
@@ -408,26 +415,36 @@ export function JobImageDetailDrawer({
 
             <div className="flex min-w-0 items-center justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <div className="t-caps">文件路径</div>
-                <div
-                  className="font-mono text-[11px] text-muted mt-0.5 truncate"
-                  title={path ?? undefined}
-                >
-                  {path ?? "—"}
+                <div className="t-caps">
+                  {canShowFileLocation ? "文件路径" : "存储位置"}
                 </div>
+                {canShowFileLocation ? (
+                  <div
+                    className="font-mono text-[11px] text-muted mt-0.5 truncate"
+                    title={path ?? undefined}
+                  >
+                    {path ?? "—"}
+                  </div>
+                ) : (
+                  <div className="text-[12px] text-muted mt-0.5">
+                    {copy.resultStorage}
+                  </div>
+                )}
               </div>
-              <Button
-                variant="ghost"
-                size="iconSm"
-                icon="external"
-                className="shrink-0"
-                disabled={!path}
-                onClick={() => {
-                  if (path) void openPath(path);
-                }}
-                title="用默认应用打开"
-                aria-label="用默认应用打开"
-              />
+              {canShowFileLocation && (
+                <Button
+                  variant="ghost"
+                  size="iconSm"
+                  icon="external"
+                  className="shrink-0"
+                  disabled={!path}
+                  onClick={() => {
+                    if (path) void openPath(path);
+                  }}
+                  title="用默认应用打开"
+                  aria-label="用默认应用打开"
+                />
+              )}
             </div>
           </section>
         </div>

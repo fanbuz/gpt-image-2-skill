@@ -89,6 +89,7 @@ import {
   saveImages,
   saveJobImages,
 } from "@/lib/user-actions";
+import { runtimeCopy } from "@/lib/runtime-copy";
 import {
   SEND_TO_EDIT_EVENT,
   sendImageToEdit,
@@ -910,6 +911,7 @@ export function EditScreen({
   const selectedPath = jobId
     ? (api.outputPath(jobId, selectedOutput) ?? outputPaths[0])
     : undefined;
+  const copy = runtimeCopy();
   const saveSelected = () => saveImages([selectedPath], "图片");
   const saveAll = () =>
     jobId ? saveJobImages(jobId, "任务图片") : saveImages(outputPaths, "图片");
@@ -1498,7 +1500,7 @@ export function EditScreen({
                         icon="download"
                         onClick={saveSelected}
                       >
-                        保存选中
+                        {copy.saveSelectedLabel}
                       </Button>
                       {outputs.length > 1 && (
                         <Button
@@ -1507,7 +1509,7 @@ export function EditScreen({
                           icon="download"
                           onClick={saveAll}
                         >
-                          全部
+                          {copy.saveJobLabel}
                         </Button>
                       )}
                       {api.canRevealFiles && (
@@ -1564,6 +1566,7 @@ export function EditScreen({
                         >
                           <OutputTile
                             output={output}
+                            downloadLabel={copy.saveImageLabel}
                             onSelect={() => setSelectedOutput(output.index)}
                             onDownload={() =>
                               saveImages(
