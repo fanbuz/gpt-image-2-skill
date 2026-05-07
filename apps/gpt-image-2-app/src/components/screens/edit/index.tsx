@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/popover";
 import { Icon } from "@/components/icon";
 import { OutputTile } from "@/components/screens/shared/output-tile";
+import { PromptTemplatePicker } from "@/components/screens/shared/prompt-template-picker";
 import {
   MaskCanvas,
   type MaskExport,
@@ -94,6 +95,7 @@ import {
   sendImageToEdit,
   type SendToEditPayload,
 } from "@/lib/job-navigation";
+import { insertPromptAtCursor } from "@/lib/prompt-templates";
 import {
   isTauriRuntime,
   useGlobalImagePaste,
@@ -232,6 +234,7 @@ export function EditScreen({
   const providerNames = useMemo(() => readProviderNames(config), [config]);
   const defaultProvider = effectiveDefaultProvider(config);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const canvasViewportRef = useRef<HTMLDivElement>(null);
   const maskToolbarHostRef = useRef<HTMLDivElement>(null);
   const maskToolbarRef = useRef<HTMLDivElement>(null);
@@ -281,6 +284,23 @@ export function EditScreen({
   const maskMode: MaskMode = maskTool === "erase" ? "erase" : "paint";
   const triggerMaskUndo = useCallback(() => setUndoKey((key) => key + 1), []);
   const triggerMaskRedo = useCallback(() => setRedoKey((key) => key + 1), []);
+  const insertPromptTemplate = useCallback(
+    (text: string) => {
+      const textarea = promptTextareaRef.current;
+      const result = insertPromptAtCursor(
+        prompt,
+        text,
+        textarea?.selectionStart,
+        textarea?.selectionEnd,
+      );
+      setPrompt(result.value);
+      window.requestAnimationFrame(() => {
+        textarea?.focus();
+        textarea?.setSelectionRange(result.cursor, result.cursor);
+      });
+    },
+    [prompt],
+  );
   const updateMaskToolbarScale = useCallback(() => {
     const host = maskToolbarHostRef.current;
     const toolbar = maskToolbarRef.current;
@@ -1620,11 +1640,16 @@ export function EditScreen({
               {usesRegion ? "目标图选区里要变成什么" : "提示词"}
             </FieldLabel>
             <div className="flex-1" />
+            <PromptTemplatePicker
+              scope={usesRegion ? "region" : "edit"}
+              onInsert={insertPromptTemplate}
+            />
             <span className="text-[10.5px] font-mono text-faint">
               {prompt.length} / 4000
             </span>
           </div>
           <Textarea
+            ref={promptTextareaRef}
             id={promptId}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}

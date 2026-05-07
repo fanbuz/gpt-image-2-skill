@@ -16,6 +16,7 @@ import {
   Loader2,
   X,
   Eye,
+  FileText,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Segmented } from "@/components/ui/segmented";
@@ -41,6 +42,7 @@ import { clearCreativeDrafts } from "@/lib/drafts";
 import { copyText, openPath, revealPath } from "@/lib/user-actions";
 import { effectiveDefaultProvider } from "@/lib/providers";
 import { AddProviderDialog } from "@/components/screens/providers/add-provider-dialog";
+import { PromptTemplatesPanel } from "@/components/screens/settings/prompt-templates-panel";
 import type { ProviderConfig, ServerConfig } from "@/lib/types";
 import {
   HIDDEN_PRESETS,
@@ -81,12 +83,13 @@ const DENSITY_LABEL: Record<ThemePreset["suggestedDensity"], string> = {
  *  without prop-drilling or context. */
 const UNLOCK_EVENT = "gpt2:unlocks";
 
-type SettingsTab = "creds" | "appearance" | "runtime" | "about";
+type SettingsTab = "creds" | "appearance" | "runtime" | "prompts" | "about";
 
 const NAV: { id: SettingsTab; label: string; icon: LucideIcon }[] = [
   { id: "creds", label: "凭证", icon: KeyRound },
   { id: "appearance", label: "外观", icon: Sparkles },
   { id: "runtime", label: "任务", icon: ListChecks },
+  { id: "prompts", label: "模板", icon: FileText },
   { id: "about", label: "关于", icon: Info },
 ];
 
@@ -107,6 +110,10 @@ const TAB_TITLES: Record<SettingsTab, { title: string; subtitle: string }> = {
   runtime: {
     title: "任务",
     subtitle: "并发上限和任务结束提示",
+  },
+  prompts: {
+    title: "提示词模板",
+    subtitle: "管理可复用的生成和编辑提示词",
   },
   about: {
     title: "关于 / 更新",
@@ -1125,6 +1132,7 @@ export function SettingsScreen({ config }: { config?: ServerConfig } = {}) {
         {tab === "creds" && <CredsPanel config={config} />}
         {tab === "appearance" && <AppearancePanel />}
         {tab === "runtime" && <RuntimePanel />}
+        {tab === "prompts" && <PromptTemplatesPanel />}
         {tab === "about" && <AboutPanel />}
       </div>
     </div>

@@ -1,4 +1,11 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import {
   Sparkles,
@@ -16,8 +23,10 @@ import Masonry, {
 } from "@/components/reactbits/components/Masonry";
 import { Icon } from "@/components/icon";
 import { PlaceholderImage } from "@/components/screens/shared/placeholder-image";
+import { PromptTemplatePicker } from "@/components/screens/shared/prompt-template-picker";
 import logoUrl from "@/assets/logo.png";
 import { useTweaks } from "@/hooks/use-tweaks";
+import { usePromptTemplates } from "@/hooks/use-prompt-templates";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { THEME_PRESETS } from "@/lib/theme-presets";
 import { loadGenerateDraft, saveGenerateDraft } from "@/lib/drafts";
@@ -33,6 +42,10 @@ import {
   jobOutputUrl,
 } from "@/lib/job-outputs";
 import { sendImageToEdit } from "@/lib/job-navigation";
+import {
+  insertPromptAtCursor,
+  visiblePromptTemplatesForScope,
+} from "@/lib/prompt-templates";
 import {
   errorMessage,
   outputCountMismatchMessage,
@@ -73,20 +86,6 @@ const COUNT_OPTIONS = OUTPUT_COUNT_OPTIONS.map((n) => ({
   value: String(n),
   label: String(n),
 }));
-
-const PROMPT_TEMPLATES: { label: string; prompt: string }[] = [
-  {
-    label: "产品摄影",
-    prompt: "产品摄影：亚光陶瓷杯，纯白背景，柔光，居中构图",
-  },
-  { label: "Logo", prompt: "极简几何 logo，渐变填充，矢量风格，纯白背景" },
-  { label: "水墨", prompt: "水墨写意山水，留白，竖幅，淡墨远山" },
-  {
-    label: "Cosplay",
-    prompt: "电影级 Cosplay 海报，动态姿态，日式美感，大景深",
-  },
-  { label: "赛博朋克", prompt: "赛博朋克城市夜景，霓虹灯反射在湿地上，雨后" },
-];
 
 function jobPlaceholderSeed(job: Job) {
   return (
@@ -258,6 +257,8 @@ export function GenerateScreen({
   const reducedMotion = useReducedMotion();
   const providerNames = useMemo(() => readProviderNames(config), [config]);
   const defaultProvider = effectiveDefaultProvider(config);
+  const { state: promptTemplateState, touchTemplate: touchPromptTemplate } =
+    usePromptTemplates();
   // ClickSpark needs a real CSS color value, not a var() reference,
   // so tint it to whatever preset is active.
   const { tweaks } = useTweaks();
@@ -275,6 +276,7 @@ export function GenerateScreen({
   const [runError, setRunError] = useState<string | null>(null);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const pendingRerunAppliedRef = useRef(false);
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   // Increments on every successful click of the generate CTA. Used as a
   // remount key for the brand-accent ripple span inside the button so the
   // ripple animation replays on each press.
@@ -303,6 +305,31 @@ export function GenerateScreen({
     }
     return result;
   }, [jobs]);
+  const quickPromptTemplates = useMemo(
+    () =>
+      visiblePromptTemplatesForScope(promptTemplateState, "generate").slice(
+        0,
+        5,
+      ),
+    [promptTemplateState],
+  );
+  const insertPromptTemplate = useCallback(
+    (text: string) => {
+      const textarea = promptTextareaRef.current;
+      const result = insertPromptAtCursor(
+        prompt,
+        text,
+        textarea?.selectionStart,
+        textarea?.selectionEnd,
+      );
+      setPrompt(result.value);
+      window.requestAnimationFrame(() => {
+        textarea?.focus();
+        textarea?.setSelectionRange(result.cursor, result.cursor);
+      });
+    },
+    [prompt],
+  );
 
   useEffect(() => {
     if (!tweaks.persistCreativeDrafts) {
@@ -741,31 +768,45 @@ export function GenerateScreen({
                   <span className="mx-2 h-3.5 w-px bg-border-faint shrink-0" />
                 </>
               )}
-              <span className="t-caps shrink-0 mr-1">模板</span>
-              {PROMPT_TEMPLATES.map((t) => (
-                <button
-                  key={t.label}
-                  type="button"
-                  onClick={() => setPrompt(t.prompt)}
-                  className="shrink-0 inline-flex items-center gap-1 h-7 px-3 rounded-full text-[12px] text-muted hover:text-foreground bg-[color:var(--accent-08)] hover:bg-[color:var(--accent-14)] border border-[color:var(--accent-30)] transition-colors"
-                  title={t.prompt}
-                >
-                  <Sparkles
-                    size={11}
-                    className="opacity-60 text-[color:var(--accent)]"
-                  />
-                  {t.label}
-                </button>
-              ))}
+              {quickPromptTemplates.length > 0 && (
+                <>
+                  <span className="t-caps shrink-0 mr-1">模板</span>
+                  {quickPromptTemplates.map((template) => (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => {
+                        insertPromptTemplate(template.prompt);
+                        touchPromptTemplate(template.id);
+                      }}
+                      className="shrink-0 inline-flex items-center gap-1 h-7 px-3 rounded-full text-[12px] text-muted hover:text-foreground bg-[color:var(--accent-08)] hover:bg-[color:var(--accent-14)] border border-[color:var(--accent-30)] transition-colors"
+                      title={template.prompt}
+                    >
+                      <Sparkles
+                        size={11}
+                        className="opacity-60 text-[color:var(--accent)]"
+                      />
+                      {template.title}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           )}
 
           {/* textarea */}
+          <div className="mb-2 flex justify-end">
+            <PromptTemplatePicker
+              scope="generate"
+              onInsert={insertPromptTemplate}
+            />
+          </div>
           <div className="relative">
             <label htmlFor={promptId} className="sr-only">
               生成提示词
             </label>
             <textarea
+              ref={promptTextareaRef}
               id={promptId}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
