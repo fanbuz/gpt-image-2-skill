@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { FileText, Search, Sparkles } from "lucide-react";
+import { FileText, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -7,6 +7,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { usePromptTemplates } from "@/hooks/use-prompt-templates";
+import { PromptTemplateMark } from "@/components/screens/shared/prompt-template-mark";
 import {
   PROMPT_SCOPE_LABEL,
   visiblePromptTemplatesForScope,
@@ -102,9 +103,10 @@ export function PromptTemplatePicker({
                     )}
                   >
                     <div className="flex items-center gap-2">
-                      <Sparkles
-                        size={12}
-                        className="shrink-0 text-[color:var(--accent)] opacity-70"
+                      <PromptTemplateMark
+                        icon={template.icon}
+                        color={template.color}
+                        size="sm"
                       />
                       <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-foreground">
                         {template.title}

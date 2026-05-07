@@ -4,16 +4,32 @@ import { Download, FileText, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Empty } from "@/components/ui/empty";
 import { Segmented } from "@/components/ui/segmented";
+import { GlassSelect } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  PromptTemplateMark,
+  promptTemplateColorStyle,
+} from "@/components/screens/shared/prompt-template-mark";
 import { useConfirm } from "@/hooks/use-confirm";
 import { usePromptTemplates } from "@/hooks/use-prompt-templates";
 import {
+  DEFAULT_PROMPT_TEMPLATE_COLOR,
+  DEFAULT_PROMPT_TEMPLATE_ICON,
   exportPromptTemplates,
   importPromptTemplates,
   newPromptTemplate,
   newPromptTemplateGroup,
+  PROMPT_TEMPLATE_COLORS,
+  PROMPT_TEMPLATE_ICONS,
   PROMPT_SCOPE_LABEL,
   type PromptTemplate,
+  type PromptTemplateColor,
+  type PromptTemplateIcon,
   type PromptTemplateScope,
 } from "@/lib/prompt-templates";
 import { cn } from "@/lib/cn";
@@ -79,6 +95,88 @@ function downloadJson(filename: string, content: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+function TemplateIconPicker({
+  icon,
+  color,
+  onIconChange,
+  onColorChange,
+}: {
+  icon: PromptTemplateIcon;
+  color: PromptTemplateColor;
+  onIconChange: (icon: PromptTemplateIcon) => void;
+  onColorChange: (color: PromptTemplateColor) => void;
+}) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[color:var(--w-06)]"
+          title="选择模板图标和颜色"
+          aria-label="选择模板图标和颜色"
+        >
+          <PromptTemplateMark icon={icon} color={color} size="sm" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[286px] p-2">
+        <div className="grid grid-cols-5 gap-1.5">
+          {PROMPT_TEMPLATE_ICONS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onIconChange(item.value)}
+              title={item.label}
+              aria-label={`选择图标：${item.label}`}
+              aria-pressed={icon === item.value}
+              className={cn(
+                "flex h-10 items-center justify-center rounded-lg border transition-colors",
+                icon === item.value
+                  ? "border-[color:var(--accent-45)] bg-[color:var(--accent-14)]"
+                  : "border-transparent hover:border-border-faint hover:bg-[color:var(--w-06)]",
+              )}
+            >
+              <PromptTemplateMark
+                icon={item.value}
+                color={color}
+                size="md"
+                className="border-transparent"
+              />
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 border-t border-border-faint pt-2">
+          <div className="flex items-center justify-between gap-2">
+            {PROMPT_TEMPLATE_COLORS.map((item) => {
+              const style = promptTemplateColorStyle(item.value);
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => onColorChange(item.value)}
+                  title={item.label}
+                  aria-label={`选择颜色：${item.label}`}
+                  aria-pressed={color === item.value}
+                  className={cn(
+                    "inline-flex h-7 w-7 items-center justify-center rounded-full border transition-transform",
+                    color === item.value
+                      ? "border-[color:var(--accent-65)] bg-[color:var(--w-06)]"
+                      : "border-transparent hover:scale-105 hover:border-border-faint",
+                  )}
+                >
+                  <span
+                    className="h-4 w-4 rounded-full border"
+                    style={{ background: style.fg, borderColor: style.border }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function PromptTemplatesPanel() {
   const confirm = useConfirm();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -99,6 +197,12 @@ export function PromptTemplatesPanel() {
   const [templatePrompt, setTemplatePrompt] = useState("");
   const [templateScope, setTemplateScope] =
     useState<PromptTemplateScope>("common");
+  const [templateIcon, setTemplateIcon] = useState<PromptTemplateIcon>(
+    DEFAULT_PROMPT_TEMPLATE_ICON,
+  );
+  const [templateColor, setTemplateColor] = useState<PromptTemplateColor>(
+    DEFAULT_PROMPT_TEMPLATE_COLOR,
+  );
   const [templateGroupId, setTemplateGroupId] = useState<string>("");
 
   const selectedGroup = state.groups.find(
@@ -134,6 +238,8 @@ export function PromptTemplatesPanel() {
     setTemplateTitle("");
     setTemplatePrompt("");
     setTemplateScope("common");
+    setTemplateIcon(DEFAULT_PROMPT_TEMPLATE_ICON);
+    setTemplateColor(DEFAULT_PROMPT_TEMPLATE_COLOR);
     setTemplateGroupId(selectedGroupId ?? state.groups[0]?.id ?? "");
   };
 
@@ -182,6 +288,8 @@ export function PromptTemplatesPanel() {
     setTemplateTitle(template.title);
     setTemplatePrompt(template.prompt);
     setTemplateScope(template.scope);
+    setTemplateIcon(template.icon);
+    setTemplateColor(template.color);
     setTemplateGroupId(template.groupId);
   };
 
@@ -191,6 +299,8 @@ export function PromptTemplatesPanel() {
       ...copy,
       title: `${template.title} 副本`,
       prompt: template.prompt,
+      icon: template.icon,
+      color: template.color,
     });
     toast.success("模板已复制");
   };
@@ -233,6 +343,8 @@ export function PromptTemplatesPanel() {
       title,
       prompt,
       scope: templateScope,
+      icon: templateIcon,
+      color: templateColor,
       updatedAt: Date.now(),
     });
     toast.success(existing ? "模板已更新" : "模板已添加");
@@ -326,40 +438,51 @@ export function PromptTemplatesPanel() {
               暂无分组，添加一个分组后即可创建模板。
             </div>
           ) : (
-            state.groups.map((group) => (
-              <div
-                key={group.id}
-                className={cn(
-                  "flex items-center gap-2 rounded-lg border px-2.5 py-2",
-                  group.id === selectedGroupId
-                    ? "border-[color:var(--accent-30)] bg-[color:var(--accent-06)]"
-                    : "border-border-faint bg-[color:var(--w-03)]",
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => setSelectedGroupId(group.id)}
-                  className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-muted hover:bg-[color:var(--w-06)] hover:text-foreground"
+            state.groups.map((group) => {
+              const isSelected = group.id === selectedGroupId;
+              return (
+                <div
+                  key={group.id}
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg border px-2.5 py-2",
+                    isSelected
+                      ? "border-[color:var(--accent-30)] bg-[color:var(--accent-06)]"
+                      : "border-border-faint bg-[color:var(--w-03)]",
+                  )}
                 >
-                  <FileText size={12} />
-                  选择
-                </button>
-                <TextInput
-                  value={group.name}
-                  onChange={(name) => renameGroup(group.id, name)}
-                  ariaLabel="分组名称"
-                />
-                <button
-                  type="button"
-                  onClick={() => void removeGroup(group.id)}
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-[color:var(--status-err-10)] hover:text-[color:var(--status-err)]"
-                  title="删除分组"
-                  aria-label="删除分组"
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            ))
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isSelected) setSelectedGroupId(group.id);
+                    }}
+                    aria-current={isSelected ? "true" : undefined}
+                    className={cn(
+                      "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] transition-colors",
+                      isSelected
+                        ? "bg-[color:var(--accent-14)] text-foreground"
+                        : "text-muted hover:bg-[color:var(--w-06)] hover:text-foreground",
+                    )}
+                  >
+                    <FileText size={12} />
+                    {isSelected ? "当前" : "切换"}
+                  </button>
+                  <TextInput
+                    value={group.name}
+                    onChange={(name) => renameGroup(group.id, name)}
+                    ariaLabel="分组名称"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void removeGroup(group.id)}
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-[color:var(--status-err-10)] hover:text-[color:var(--status-err)]"
+                    title="删除分组"
+                    aria-label="删除分组"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              );
+            })
           )}
         </div>
       </TemplateSection>
@@ -369,22 +492,31 @@ export function PromptTemplatesPanel() {
         description="作用域控制模板出现在哪些创作页面；通用模板会出现在所有页面。"
       >
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
-          <TextInput
-            value={templateTitle}
-            onChange={setTemplateTitle}
-            placeholder="模板名称"
-          />
-          <select
+          <div className="flex h-9 w-full items-center gap-1.5 rounded-md border border-border bg-[color:var(--w-04)] px-1.5 transition-colors focus-within:border-[color:var(--accent-55)] focus-within:bg-[color:var(--accent-06)]">
+            <TemplateIconPicker
+              icon={templateIcon}
+              color={templateColor}
+              onIconChange={setTemplateIcon}
+              onColorChange={setTemplateColor}
+            />
+            <input
+              value={templateTitle}
+              onChange={(event) => setTemplateTitle(event.target.value)}
+              placeholder="模板名称"
+              aria-label="模板名称"
+              className="min-w-0 flex-1 border-none bg-transparent px-1 text-[13px] text-foreground outline-none placeholder:text-faint"
+            />
+          </div>
+          <GlassSelect
             value={templateGroupId}
-            onChange={(event) => setTemplateGroupId(event.target.value)}
-            className="h-9 rounded-md border border-border bg-[color:var(--w-04)] px-3 text-[13px] text-foreground outline-none focus:border-[color:var(--accent-55)]"
-          >
-            {state.groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
+            onValueChange={setTemplateGroupId}
+            options={state.groups.map((group) => ({
+              value: group.id,
+              label: group.name,
+            }))}
+            disabled={state.groups.length === 0}
+            placeholder="选择分组"
+          />
         </div>
         <div className="mt-3">
           <Segmented
@@ -422,7 +554,7 @@ export function PromptTemplatesPanel() {
 
       <TemplateSection
         title={selectedGroup ? `模板 · ${selectedGroup.name}` : "模板"}
-        description="示例模板和示例分组与普通数据一样，可编辑、复制或删除。"
+        description="默认模板和默认分组与普通数据一样，可编辑、复制或删除。"
       >
         {selectedGroup ? (
           groupTemplates.length === 0 ? (
@@ -439,6 +571,10 @@ export function PromptTemplatesPanel() {
                   className="rounded-lg border border-border-faint bg-[color:var(--w-03)] p-3"
                 >
                   <div className="flex flex-wrap items-center gap-2">
+                    <PromptTemplateMark
+                      icon={template.icon}
+                      color={template.color}
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[13px] font-semibold text-foreground">
                         {template.title}

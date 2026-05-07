@@ -35,8 +35,30 @@ describe("prompt templates", () => {
 
     const state = loadPromptTemplates();
 
-    expect(state.groups[0]?.name).toBe("示例");
+    expect(state.groups[0]?.name).toBe("默认");
     expect(state.templates.length).toBeGreaterThan(0);
+    expect(state.templates[0]).toMatchObject({
+      icon: "image",
+      color: "cyan",
+    });
+  });
+
+  it("renames the old seeded sample group to default", () => {
+    installStorage();
+
+    savePromptTemplates({
+      ...defaultPromptTemplateState(),
+      groups: [
+        {
+          id: "sample-group",
+          name: "示例",
+          createdAt: 1_700_000_000_000,
+          updatedAt: 1_700_000_000_000,
+        },
+      ],
+    });
+
+    expect(loadPromptTemplates().groups[0]?.name).toBe("默认");
   });
 
   it("persists empty user state after deleting samples", () => {
@@ -91,6 +113,8 @@ describe("prompt templates", () => {
       id: "t",
       groupId: "g",
       scope: "common",
+      icon: "sparkle",
+      color: "accent",
     });
   });
 });
