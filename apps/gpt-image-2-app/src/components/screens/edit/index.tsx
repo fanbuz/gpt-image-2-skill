@@ -1031,7 +1031,7 @@ export function EditScreen({
                 const isTarget = usesRegion && ref.id === targetRef?.id;
                 const hasMask = Boolean(maskSnapshots[ref.id]);
                 return (
-                  <div key={ref.id} className="relative shrink-0">
+                  <div key={ref.id} className="group relative shrink-0">
                     <button
                       type="button"
                       onClick={() => setSelectedRef(ref.id)}
@@ -1087,10 +1087,10 @@ export function EditScreen({
                           setTargetRefId(ref.id);
                           setSelectedRef(ref.id);
                         }}
-                        className="absolute -bottom-1 left-1/2 h-5 -translate-x-1/2 rounded-full border border-[color:var(--w-12)] bg-[color:var(--k-62)] px-2 text-[9px] font-semibold text-foreground backdrop-blur hover:bg-[color:var(--k-78)]"
+                        className="pointer-events-none absolute inset-x-1 bottom-1 inline-flex h-5 translate-y-1 items-center justify-center rounded border border-[color:var(--w-14)] bg-[color:var(--k-72)] px-1 text-[8.5px] font-semibold leading-none text-foreground opacity-0 shadow-sm backdrop-blur transition-[opacity,transform,background-color] hover:bg-[color:var(--k-82)] focus-visible:pointer-events-auto focus-visible:translate-y-0 focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100"
                         aria-label={`把第 ${index + 1} 张设为目标图`}
                       >
-                        设目标
+                        设为目标
                       </button>
                     )}
                   </div>
