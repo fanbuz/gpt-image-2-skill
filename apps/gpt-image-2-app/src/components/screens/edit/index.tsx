@@ -1012,13 +1012,11 @@ export function EditScreen({
       {refs.length > 0 && (
         <section className="shrink-0 px-4 pb-2" aria-label="参考图缩略图">
           <div className="surface-panel flex min-w-0 items-center gap-2 px-2.5 py-2">
-            <div className="flex shrink-0 items-baseline gap-1.5 px-1">
-              <span className="t-caps">
-                {usesRegion ? "目标 / 参考" : "参考"}
-              </span>
+            <div className="flex w-12 shrink-0 flex-col items-start justify-center gap-0.5 px-1 leading-none">
+              <span className="t-caps">参考图</span>
               <span
                 className={cn(
-                  "font-mono text-[10.5px]",
+                  "font-mono text-[10.5px] leading-none",
                   referenceCountError
                     ? "text-[color:var(--status-err)]"
                     : "text-faint",
