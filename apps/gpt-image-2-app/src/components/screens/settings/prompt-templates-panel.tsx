@@ -118,8 +118,8 @@ function TemplateIconPicker({
           <PromptTemplateMark icon={icon} color={color} size="sm" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[286px] p-2">
-        <div className="grid grid-cols-5 gap-1.5">
+      <PopoverContent align="start" className="w-[326px] p-2">
+        <div className="grid grid-cols-6 gap-1">
           {PROMPT_TEMPLATE_ICONS.map((item) => (
             <button
               key={item.value}
@@ -129,10 +129,10 @@ function TemplateIconPicker({
               aria-label={`选择图标：${item.label}`}
               aria-pressed={icon === item.value}
               className={cn(
-                "flex h-10 items-center justify-center rounded-lg border transition-colors",
+                "flex h-10 items-center justify-center rounded-lg border transition-[background-color,border-color,transform]",
                 icon === item.value
-                  ? "border-[color:var(--accent-45)] bg-[color:var(--accent-14)]"
-                  : "border-transparent hover:border-border-faint hover:bg-[color:var(--w-06)]",
+                  ? "scale-[1.03] border-[color:var(--accent-45)] bg-[color:var(--accent-14)]"
+                  : "border-transparent hover:border-border-faint hover:bg-[color:var(--w-06)] hover:scale-[1.02]",
               )}
             >
               <PromptTemplateMark

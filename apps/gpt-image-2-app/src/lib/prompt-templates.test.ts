@@ -117,4 +117,18 @@ describe("prompt templates", () => {
       color: "accent",
     });
   });
+
+  it("migrates legacy template icon keys", () => {
+    const state = importPromptTemplates(
+      JSON.stringify({
+        version: 1,
+        groups: [{ id: "g", name: "Mine" }],
+        templates: [
+          { id: "t", groupId: "g", title: "A", prompt: "B", icon: "folder" },
+        ],
+      }),
+    );
+
+    expect(state.templates[0]?.icon).toBe("organize");
+  });
 });

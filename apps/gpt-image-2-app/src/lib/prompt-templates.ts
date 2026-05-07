@@ -2,14 +2,30 @@ export type PromptTemplateScope = "common" | "generate" | "edit" | "region";
 
 export const PROMPT_TEMPLATE_ICONS = [
   { value: "sparkle", label: "灵感" },
-  { value: "wand", label: "魔棒" },
+  { value: "wand", label: "魔法" },
   { value: "image", label: "图像" },
-  { value: "brush", label: "画笔" },
-  { value: "edit", label: "编辑" },
+  { value: "camera", label: "摄影" },
+  { value: "portrait", label: "人像" },
+  { value: "landscape", label: "风景" },
+  { value: "palette", label: "配色" },
+  { value: "brush", label: "绘制" },
+  { value: "edit", label: "精修" },
   { value: "mask", label: "选区" },
+  { value: "frame", label: "构图" },
+  { value: "cutout", label: "抠图" },
+  { value: "product", label: "产品" },
+  { value: "text", label: "文字" },
+  { value: "light", label: "光线" },
+  { value: "cinematic", label: "电影" },
+  { value: "sticker", label: "贴纸" },
+  { value: "layout", label: "版式" },
+  { value: "cube", label: "立体" },
+  { value: "pen", label: "文案" },
+  { value: "style", label: "风格" },
+  { value: "gallery", label: "图库" },
+  { value: "organize", label: "整理" },
   { value: "generate", label: "生成" },
-  { value: "sun", label: "光线" },
-  { value: "folder", label: "整理" },
+  { value: "sun", label: "日光" },
   { value: "circle", label: "通用" },
 ] as const;
 
@@ -186,6 +202,12 @@ export function isPromptTemplateIcon(
   );
 }
 
+function normalizePromptTemplateIcon(value: unknown): PromptTemplateIcon {
+  if (isPromptTemplateIcon(value)) return value;
+  if (value === "folder") return "organize";
+  return DEFAULT_PROMPT_TEMPLATE_ICON;
+}
+
 export function isPromptTemplateColor(
   value: unknown,
 ): value is PromptTemplateColor {
@@ -247,9 +269,7 @@ export function normalizePromptTemplateState(
           if (!template || typeof template !== "object") return null;
           const raw = template as Partial<PromptTemplate>;
           const scope = isPromptTemplateScope(raw.scope) ? raw.scope : "common";
-          const icon = isPromptTemplateIcon(raw.icon)
-            ? raw.icon
-            : DEFAULT_PROMPT_TEMPLATE_ICON;
+          const icon = normalizePromptTemplateIcon(raw.icon);
           const color = isPromptTemplateColor(raw.color)
             ? raw.color
             : DEFAULT_PROMPT_TEMPLATE_COLOR;

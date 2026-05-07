@@ -1,4 +1,31 @@
-import { Icon, type IconName } from "@/components/icon";
+import { Aperture } from "@phosphor-icons/react/Aperture";
+import { BoundingBox } from "@phosphor-icons/react/BoundingBox";
+import { Camera } from "@phosphor-icons/react/Camera";
+import { Circle } from "@phosphor-icons/react/Circle";
+import { CubeFocus } from "@phosphor-icons/react/CubeFocus";
+import { FilmSlate } from "@phosphor-icons/react/FilmSlate";
+import { FlowerLotus } from "@phosphor-icons/react/FlowerLotus";
+import { FolderSimpleStar } from "@phosphor-icons/react/FolderSimpleStar";
+import { FrameCorners } from "@phosphor-icons/react/FrameCorners";
+import { ImageSquare } from "@phosphor-icons/react/ImageSquare";
+import { ImagesSquare } from "@phosphor-icons/react/ImagesSquare";
+import { LightbulbFilament } from "@phosphor-icons/react/LightbulbFilament";
+import { MagicWand } from "@phosphor-icons/react/MagicWand";
+import { Mountains } from "@phosphor-icons/react/Mountains";
+import { PaintBrushBroad } from "@phosphor-icons/react/PaintBrushBroad";
+import { Palette } from "@phosphor-icons/react/Palette";
+import { PenNibStraight } from "@phosphor-icons/react/PenNibStraight";
+import { PencilSimple } from "@phosphor-icons/react/PencilSimple";
+import { Scissors } from "@phosphor-icons/react/Scissors";
+import { Shapes } from "@phosphor-icons/react/Shapes";
+import { Sparkle } from "@phosphor-icons/react/Sparkle";
+import { StackSimple } from "@phosphor-icons/react/StackSimple";
+import { Sticker } from "@phosphor-icons/react/Sticker";
+import { SunHorizon } from "@phosphor-icons/react/SunHorizon";
+import { TextAa } from "@phosphor-icons/react/TextAa";
+import { UserFocus } from "@phosphor-icons/react/UserFocus";
+import type { IconProps } from "@phosphor-icons/react/lib";
+import type { ComponentType } from "react";
 import type {
   PromptTemplateColor,
   PromptTemplateIcon,
@@ -49,6 +76,38 @@ const COLOR_STYLES: Record<PromptTemplateColor, ColorStyle> = {
   },
 };
 
+const TEMPLATE_ICON_COMPONENTS: Record<
+  PromptTemplateIcon,
+  ComponentType<IconProps>
+> = {
+  sparkle: Sparkle,
+  wand: MagicWand,
+  image: ImageSquare,
+  camera: Camera,
+  portrait: UserFocus,
+  landscape: Mountains,
+  palette: Palette,
+  brush: PaintBrushBroad,
+  edit: PencilSimple,
+  mask: BoundingBox,
+  frame: FrameCorners,
+  cutout: Scissors,
+  product: CubeFocus,
+  text: TextAa,
+  light: LightbulbFilament,
+  cinematic: FilmSlate,
+  sticker: Sticker,
+  layout: StackSimple,
+  cube: Shapes,
+  pen: PenNibStraight,
+  style: FlowerLotus,
+  gallery: ImagesSquare,
+  organize: FolderSimpleStar,
+  generate: Aperture,
+  sun: SunHorizon,
+  circle: Circle,
+};
+
 export function promptTemplateColorStyle(color: PromptTemplateColor) {
   return COLOR_STYLES[color] ?? COLOR_STYLES.accent;
 }
@@ -72,6 +131,7 @@ export function PromptTemplateMark({
         ? "h-6 w-6 rounded-md"
         : "h-8 w-8 rounded-lg";
   const iconSize = size === "lg" ? 16 : size === "sm" ? 11 : 14;
+  const TemplateIcon = TEMPLATE_ICON_COMPONENTS[icon] ?? Sparkle;
   return (
     <span
       className={cn(
@@ -85,7 +145,7 @@ export function PromptTemplateMark({
         borderColor: style.border,
       }}
     >
-      <Icon name={icon as IconName} size={iconSize} strokeWidth={1.65} />
+      <TemplateIcon size={iconSize} weight="duotone" aria-hidden="true" />
     </span>
   );
 }
