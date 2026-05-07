@@ -580,38 +580,42 @@ export function EditScreen({
         url: URL.createObjectURL(file),
         file,
       }));
-      setRefs((prev) => {
-        const available = Math.max(0, maxReferenceImages - prev.length);
-        if (available === 0) {
-          additions.forEach((ref) => URL.revokeObjectURL(ref.url));
-          toast.error("参考图已达上限", {
-            description: `最多上传 ${maxReferenceImages} 张。`,
-          });
-          return prev;
-        }
-        const accepted = additions.slice(0, available);
-        additions
-          .slice(available)
-          .forEach((ref) => URL.revokeObjectURL(ref.url));
-        if (accepted.length < additions.length) {
-          toast.warning("已按上限添加参考图", {
-            description: `最多上传 ${maxReferenceImages} 张。`,
-          });
-        }
-        if (source === "drop") {
-          toast.success(`已添加 ${accepted.length} 张参考图`, {
-            description: "来自拖拽上传。",
-          });
-        }
-        if (source === "paste") {
-          toast.success(`已添加 ${accepted.length} 张参考图`, {
-            description: "来自剪贴板。",
-          });
-        }
-        setSelectedRef((current) => current ?? accepted[0].id);
-        setTargetRefId((current) => current ?? accepted[0].id);
-        return [...prev, ...accepted];
-      });
+      const currentRefs = refsRef.current;
+      const available = Math.max(0, maxReferenceImages - currentRefs.length);
+      if (available === 0) {
+        additions.forEach((ref) => URL.revokeObjectURL(ref.url));
+        toast.error("参考图已达上限", {
+          description: `最多上传 ${maxReferenceImages} 张。`,
+        });
+        return;
+      }
+
+      const accepted = additions.slice(0, available);
+      additions.slice(available).forEach((ref) => URL.revokeObjectURL(ref.url));
+      const nextRefs = [...currentRefs, ...accepted];
+      refsRef.current = nextRefs;
+      setRefs(nextRefs);
+
+      const firstAcceptedId = accepted[0]?.id;
+      if (firstAcceptedId) {
+        setSelectedRef((current) => current ?? firstAcceptedId);
+        setTargetRefId((current) => current ?? firstAcceptedId);
+      }
+      if (accepted.length < additions.length) {
+        toast.warning("已按上限添加参考图", {
+          description: `最多上传 ${maxReferenceImages} 张。`,
+        });
+      }
+      if (source === "drop") {
+        toast.success(`已添加 ${accepted.length} 张参考图`, {
+          description: "来自拖拽上传。",
+        });
+      }
+      if (source === "paste") {
+        toast.success(`已添加 ${accepted.length} 张参考图`, {
+          description: "来自剪贴板。",
+        });
+      }
     },
     [maxReferenceImages],
   );
