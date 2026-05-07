@@ -9,12 +9,22 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
+  Brush,
+  Circle,
+  Eraser,
   Image as ImageIcon,
   Loader2,
+  Maximize2,
+  Move,
   Plus,
+  Redo2,
   Settings as SettingsIcon,
   Sparkles,
+  Square,
   Trash2,
+  Undo2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
@@ -31,7 +41,13 @@ import {
 } from "@/components/ui/popover";
 import { Icon } from "@/components/icon";
 import { OutputTile } from "@/components/screens/shared/output-tile";
-import { MaskCanvas, type MaskExport, type MaskMode } from "./mask-canvas";
+import {
+  MaskCanvas,
+  type MaskExport,
+  type MaskHistoryState,
+  type MaskMode,
+  type MaskTool,
+} from "./mask-canvas";
 import { ReferenceImageCard, type RefImage } from "./reference-card";
 import { LocalEditOnboarding } from "./local-edit-onboarding";
 import ElasticSlider from "@/components/reactbits/components/ElasticSlider";
@@ -39,7 +55,9 @@ import { providerKindLabel } from "@/lib/format";
 import { useCreateEdit } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
+import { useTweaks } from "@/hooks/use-tweaks";
 import { api } from "@/lib/api";
+import { loadEditDraft, saveEditDraft } from "@/lib/drafts";
 import {
   errorMessage,
   outputCountDescription,
@@ -64,7 +82,17 @@ import {
   effectiveDefaultProvider,
   providerNames as readProviderNames,
 } from "@/lib/providers";
-import { openPath, revealPath, saveImages } from "@/lib/user-actions";
+import {
+  openPath,
+  revealPath,
+  saveImages,
+  saveJobImages,
+} from "@/lib/user-actions";
+import {
+  SEND_TO_EDIT_EVENT,
+  sendImageToEdit,
+  type SendToEditPayload,
+} from "@/lib/job-navigation";
 import {
   isTauriRuntime,
   useGlobalImagePaste,
@@ -83,9 +111,84 @@ type EditMode = "reference" | "region";
 type RefWithFile = RefImage & { file: File };
 type EditRegionMode = NonNullable<ProviderConfig["edit_region_mode"]>;
 const MAX_INPUT_IMAGES = 16;
+const IMAGE_EXTENSION_BY_TYPE: Record<string, string> = {
+  "image/avif": "avif",
+  "image/bmp": "bmp",
+  "image/gif": "gif",
+  "image/heic": "heic",
+  "image/heif": "heif",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/tiff": "tiff",
+  "image/webp": "webp",
+};
+const TRANSFER_IMAGE_EXTENSION_RE =
+  /\.(avif|bmp|gif|heic|heif|jpe?g|png|tiff?|webp)$/i;
 
 function blobFile(blob: Blob, name: string) {
   return new File([blob], name, { type: "image/png" });
+}
+
+function basename(value?: string | null) {
+  if (!value) return "";
+  const clean = value.split(/[?#]/)[0] ?? "";
+  return clean.split(/[\\/]/).pop()?.trim() ?? "";
+}
+
+function imageExtensionForBlob(blob: Blob, fallbackName: string) {
+  const fromType = blob.type ? IMAGE_EXTENSION_BY_TYPE[blob.type] : undefined;
+  if (fromType) return fromType;
+  const fromName = TRANSFER_IMAGE_EXTENSION_RE.exec(fallbackName)?.[1];
+  if (!fromName) return "png";
+  const normalized = fromName.toLowerCase();
+  return normalized === "jpeg" ? "jpg" : normalized;
+}
+
+function imageMimeFromExtension(extension: string) {
+  if (extension === "jpg") return "image/jpeg";
+  if (extension === "tif") return "image/tiff";
+  return `image/${extension}`;
+}
+
+function transferFileName(payload: SendToEditPayload, blob: Blob) {
+  const raw =
+    basename(payload.name) || basename(payload.path) || basename(payload.url);
+  if (raw && TRANSFER_IMAGE_EXTENSION_RE.test(raw)) return raw;
+  const base =
+    raw ||
+    [
+      "sent-to-edit",
+      payload.jobId,
+      payload.outputIndex == null ? undefined : payload.outputIndex + 1,
+    ]
+      .filter(Boolean)
+      .join("-");
+  return `${base}.${imageExtensionForBlob(blob, raw)}`;
+}
+
+function transferSourceUrl(payload: SendToEditPayload) {
+  const pathUrl = payload.path ? api.fileUrl(payload.path) : "";
+  return pathUrl || payload.url || "";
+}
+
+async function transferredImageFile(payload: SendToEditPayload) {
+  const url = transferSourceUrl(payload);
+  if (!url) throw new Error("这张图没有可读取的文件路径或预览地址。");
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`读取图片失败：${response.status} ${response.statusText}`);
+  }
+  const blob = await response.blob();
+  if (blob.size <= 0) throw new Error("读取到的图片为空。");
+  if (blob.type && !blob.type.startsWith("image/")) {
+    throw new Error("读取到的文件不是图片。");
+  }
+  const name = transferFileName(payload, blob);
+  const extension = imageExtensionForBlob(blob, name);
+  return new File([blob], name, {
+    type: blob.type || imageMimeFromExtension(extension),
+    lastModified: Date.now(),
+  });
 }
 
 function regionModeLabel(mode: EditRegionMode) {
@@ -112,11 +215,23 @@ const COUNT_OPTIONS = OUTPUT_COUNT_OPTIONS.map((n) => ({
   label: String(n),
 }));
 
-export function EditScreen({ config }: { config?: ServerConfig }) {
+function clampZoom(value: number) {
+  return Math.min(4, Math.max(0.08, value));
+}
+
+export function EditScreen({
+  config,
+  active = true,
+}: {
+  config?: ServerConfig;
+  active?: boolean;
+}) {
   const reducedMotion = useReducedMotion();
+  const { tweaks } = useTweaks();
   const providerNames = useMemo(() => readProviderNames(config), [config]);
   const defaultProvider = effectiveDefaultProvider(config);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const canvasViewportRef = useRef<HTMLDivElement>(null);
   const refsRef = useRef<RefWithFile[]>([]);
   const dragDepthRef = useRef(0);
   const [editMode, setEditMode] = useState<EditMode>("reference");
@@ -132,9 +247,15 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const [maskSnapshots, setMaskSnapshots] = useState<Record<string, string>>(
     {},
   );
-  const [brushSize, setBrushSize] = useState(28);
-  const [maskMode, setMaskMode] = useState<MaskMode>("paint");
+  const [brushSize, setBrushSize] = useState(12);
+  const [maskTool, setMaskTool] = useState<MaskTool>("brush");
   const [clearKey, setClearKey] = useState(0);
+  const [undoKey, setUndoKey] = useState(0);
+  const [redoKey, setRedoKey] = useState(0);
+  const [maskHistory, setMaskHistory] = useState<MaskHistoryState>({
+    canUndo: false,
+    canRedo: false,
+  });
   const [exportKey, setExportKey] = useState<number | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [outputCount, setOutputCount] = useState(0);
@@ -145,8 +266,17 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const [runError, setRunError] = useState<string | null>(null);
   const [runNotice, setRunNotice] = useState<string | null>(null);
   const [isDraggingImages, setIsDraggingImages] = useState(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const [imageSize, setImageSize] = useState({ width: 1024, height: 1024 });
+  const [zoom, setZoom] = useState(1);
+  const [panPinned, setPanPinned] = useState(false);
+  const [spacePanning, setSpacePanning] = useState(false);
   const promptId = useId();
   const brushSliderId = useId();
+  const panMode = panPinned || spacePanning;
+  const maskMode: MaskMode = maskTool === "erase" ? "erase" : "paint";
+  const triggerMaskUndo = useCallback(() => setUndoKey((key) => key + 1), []);
+  const triggerMaskRedo = useCallback(() => setRedoKey((key) => key + 1), []);
 
   useEffect(() => {
     if (
@@ -204,11 +334,158 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
   const selectedRefObj = refs.find((ref) => ref.id === selectedRef);
   const targetRef = refs.find((ref) => ref.id === targetRefId) ?? refs[0];
 
+  const fitCanvasToViewport = useCallback(() => {
+    const viewport = canvasViewportRef.current;
+    if (!viewport) return;
+    const padding = 32;
+    const fit = Math.min(
+      (viewport.clientWidth - padding) / imageSize.width,
+      (viewport.clientHeight - padding) / imageSize.height,
+    );
+    setZoom(clampZoom(Number.isFinite(fit) && fit > 0 ? fit : 1));
+    window.requestAnimationFrame(() => {
+      viewport.scrollLeft = Math.max(
+        0,
+        (viewport.scrollWidth - viewport.clientWidth) / 2,
+      );
+      viewport.scrollTop = Math.max(
+        0,
+        (viewport.scrollHeight - viewport.clientHeight) / 2,
+      );
+    });
+  }, [imageSize.height, imageSize.width]);
+  const handleMaskImageSize = useCallback(
+    (size: { width: number; height: number }) => setImageSize(size),
+    [],
+  );
+
   useEffect(() => {
     if (!supportsMultipleOutputs && n !== 1) {
       setN(1);
     }
   }, [n, supportsMultipleOutputs]);
+
+  useEffect(() => {
+    if (!active || !usesRegion) return;
+    const timer = window.setTimeout(fitCanvasToViewport, 60);
+    return () => window.clearTimeout(timer);
+  }, [fitCanvasToViewport, targetRef?.id, usesRegion]);
+
+  useEffect(() => {
+    if (!usesRegion) return;
+    const isEditableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      return Boolean(
+        target.closest("input, textarea, select, [contenteditable='true']"),
+      );
+    };
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+      const isModifierShortcut = event.metaKey || event.ctrlKey;
+      const isUndo = isModifierShortcut && key === "z" && !event.shiftKey;
+      const isRedo =
+        isModifierShortcut && ((key === "z" && event.shiftKey) || key === "y");
+      if (isUndo || isRedo) {
+        event.preventDefault();
+        if (isRedo) triggerMaskRedo();
+        else triggerMaskUndo();
+        return;
+      }
+      if (event.key !== " " || event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+      event.preventDefault();
+      setSpacePanning(true);
+    };
+    const onKeyUp = (event: globalThis.KeyboardEvent) => {
+      if (event.key === " ") setSpacePanning(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      setSpacePanning(false);
+    };
+  }, [active, triggerMaskRedo, triggerMaskUndo, usesRegion]);
+
+  useEffect(() => {
+    if (!tweaks.persistCreativeDrafts) {
+      setDraftLoaded(true);
+      return;
+    }
+    let cancelled = false;
+    void loadEditDraft()
+      .then((draft) => {
+        if (cancelled || !draft) return;
+        setEditMode(draft.editMode);
+        setPrompt(draft.prompt);
+        setProvider(draft.provider);
+        setSize(draft.size);
+        setFormat(draft.format);
+        setQuality(draft.quality);
+        setN(draft.n);
+        setRefs((prev) => {
+          prev.forEach((ref) => URL.revokeObjectURL(ref.url));
+          return draft.refs;
+        });
+        setSelectedRef(draft.selectedRef);
+        setTargetRefId(draft.targetRefId);
+        setBrushSize(draft.brushSize === 28 ? 12 : draft.brushSize);
+        setMaskTool(
+          draft.maskTool ?? (draft.maskMode === "erase" ? "erase" : "brush"),
+        );
+        setMaskSnapshots(draft.maskSnapshots);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setDraftLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tweaks.persistCreativeDrafts]);
+
+  useEffect(() => {
+    if (!draftLoaded || !tweaks.persistCreativeDrafts) return;
+    const handle = window.setTimeout(() => {
+      void saveEditDraft({
+        editMode,
+        prompt,
+        provider,
+        size,
+        quality,
+        format,
+        n,
+        refs,
+        selectedRef,
+        targetRefId,
+        brushSize,
+        maskTool,
+        maskMode,
+        maskSnapshots,
+      }).catch(() => undefined);
+    }, 500);
+    return () => window.clearTimeout(handle);
+  }, [
+    brushSize,
+    draftLoaded,
+    editMode,
+    format,
+    maskMode,
+    maskTool,
+    maskSnapshots,
+    n,
+    prompt,
+    provider,
+    quality,
+    refs,
+    selectedRef,
+    size,
+    targetRefId,
+    tweaks.persistCreativeDrafts,
+  ]);
 
   const addRefFiles = useCallback(
     (imageFiles: File[], source: ImageFileSource, ignored = 0) => {
@@ -275,6 +552,49 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
     const result = normalizeImageFiles(files, { source });
     addRefFiles(result.files, source, result.ignored);
   };
+
+  const handleSendToEdit = useCallback(
+    async (payload: SendToEditPayload) => {
+      if (refsRef.current.length >= maxReferenceImages) {
+        toast.error("参考图已达上限", {
+          description: `最多上传 ${maxReferenceImages} 张。`,
+        });
+        return;
+      }
+      const toastId = toast.loading("正在发送到编辑");
+      try {
+        const file = await transferredImageFile(payload);
+        if (refsRef.current.length >= maxReferenceImages) {
+          toast.error("参考图已达上限", {
+            id: toastId,
+            description: `最多上传 ${maxReferenceImages} 张。`,
+          });
+          return;
+        }
+        addRefFiles([file], "picker");
+        toast.success("已发送到编辑", {
+          id: toastId,
+          description: "已作为新的参考图添加。",
+        });
+      } catch (error) {
+        toast.error("发送到编辑失败", {
+          id: toastId,
+          description: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [addRefFiles, maxReferenceImages],
+  );
+
+  useEffect(() => {
+    const onSendToEdit = (event: Event) => {
+      const detail = (event as CustomEvent<SendToEditPayload>).detail;
+      if (!detail) return;
+      void handleSendToEdit(detail);
+    };
+    window.addEventListener(SEND_TO_EDIT_EVENT, onSendToEdit);
+    return () => window.removeEventListener(SEND_TO_EDIT_EVENT, onSendToEdit);
+  }, [handleSendToEdit]);
 
   useGlobalImagePaste(addRefFiles);
   useTauriImageDrop(addRefFiles, setIsDraggingImages);
@@ -516,7 +836,8 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
     ? (api.outputPath(jobId, selectedOutput) ?? outputPaths[0])
     : undefined;
   const saveSelected = () => saveImages([selectedPath], "图片");
-  const saveAll = () => saveImages(outputPaths, "图片");
+  const saveAll = () =>
+    jobId ? saveJobImages(jobId, "任务图片") : saveImages(outputPaths, "图片");
   const hasOutputs =
     outputs.some((output) => output.url) || outputPaths.length > 0;
 
@@ -617,17 +938,6 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
                 <Plus size={16} />
                 <span className="text-[10.5px]">添加</span>
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*"
-                className="hidden"
-                onChange={(event) => {
-                  addRef(event.target.files);
-                  if (fileInputRef.current) fileInputRef.current.value = "";
-                }}
-              />
             </div>
             {usesRegion && (
               <div className="mt-3 rounded-md border border-border-faint bg-[color:var(--w-04)] px-2.5 py-1.5 text-[11px] leading-relaxed text-muted">
@@ -737,28 +1047,21 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
                 <div className="pt-2 mt-1 border-t border-[color:var(--w-06)]" />
                 <div className="t-caps">遮罩工具</div>
                 <div className="space-y-2">
-                  <Segmented
-                    value={maskMode}
-                    onChange={setMaskMode}
-                    size="sm"
-                    ariaLabel="涂抹模式"
-                    options={[
-                      { value: "paint", label: "绘制", icon: "brush" },
-                      { value: "erase", label: "擦除", icon: "eraser" },
-                    ]}
-                  />
+                  <div className="rounded-md border border-border-faint bg-[color:var(--w-04)] px-2.5 py-1.5 text-[11px] text-muted">
+                    工具切换在画布左上角，粗细会同时作用于画笔、橡皮和形状描边。
+                  </div>
                   <div className="flex items-center gap-2.5">
                     <label
                       id={`${brushSliderId}-label`}
                       className="text-[11px] text-muted shrink-0"
                     >
-                      笔刷
+                      粗细
                     </label>
                     <ElasticSlider
                       id={brushSliderId}
                       value={brushSize}
-                      min={8}
-                      max={80}
+                      min={2}
+                      max={72}
                       step={1}
                       onChange={setBrushSize}
                       ariaLabelledBy={`${brushSliderId}-label`}
@@ -802,10 +1105,126 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
         </button>
       </header>
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => {
+          addRef(event.target.files);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        }}
+      />
+
+      {refs.length > 0 && (
+        <section className="shrink-0 px-4 pb-2" aria-label="参考图缩略图">
+          <div className="surface-panel flex min-w-0 items-center gap-2 px-2.5 py-2">
+            <div className="flex shrink-0 items-baseline gap-1.5 px-1">
+              <span className="t-caps">
+                {usesRegion ? "目标 / 参考" : "参考"}
+              </span>
+              <span
+                className={cn(
+                  "font-mono text-[10.5px]",
+                  referenceCountError
+                    ? "text-[color:var(--status-err)]"
+                    : "text-faint",
+                )}
+              >
+                {refs.length}/{maxReferenceImages}
+              </span>
+            </div>
+            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto scrollbar-none pb-0.5">
+              {refs.map((ref, index) => {
+                const isSelected = ref.id === selectedRef;
+                const isTarget = usesRegion && ref.id === targetRef?.id;
+                const hasMask = Boolean(maskSnapshots[ref.id]);
+                return (
+                  <div key={ref.id} className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRef(ref.id)}
+                      className={cn(
+                        "relative h-14 w-14 overflow-hidden rounded-md border transition-[border-color,box-shadow,transform,opacity]",
+                        isSelected
+                          ? "border-[color:var(--accent)] shadow-[0_0_0_2px_var(--accent-faint)]"
+                          : "border-border opacity-75 hover:opacity-100",
+                      )}
+                      title={ref.name}
+                      aria-label={`查看参考图 ${index + 1}: ${ref.name}`}
+                    >
+                      <img
+                        src={ref.url}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        draggable={false}
+                        className="h-full w-full object-cover"
+                      />
+                      <span
+                        className="absolute bottom-0 left-0 right-0 flex h-4 items-center justify-center text-[8.5px] font-mono text-foreground"
+                        style={{
+                          background:
+                            "linear-gradient(to top, var(--k-72), transparent)",
+                        }}
+                      >
+                        {index + 1}
+                      </span>
+                    </button>
+                    <div className="pointer-events-none absolute left-1 top-1 flex gap-0.5">
+                      {isTarget && (
+                        <span
+                          className="rounded px-1 py-px text-[8.5px] font-semibold leading-none"
+                          style={{
+                            background: "var(--accent)",
+                            color: "var(--accent-on)",
+                          }}
+                        >
+                          目标
+                        </span>
+                      )}
+                      {hasMask && (
+                        <span className="rounded bg-[color:var(--k-65)] px-1 py-px text-[8.5px] font-semibold leading-none text-foreground">
+                          遮罩
+                        </span>
+                      )}
+                    </div>
+                    {usesRegion && !isTarget && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTargetRefId(ref.id);
+                          setSelectedRef(ref.id);
+                        }}
+                        className="absolute -bottom-1 left-1/2 h-5 -translate-x-1/2 rounded-full border border-[color:var(--w-12)] bg-[color:var(--k-62)] px-2 text-[9px] font-semibold text-foreground backdrop-blur hover:bg-[color:var(--k-78)]"
+                        aria-label={`把第 ${index + 1} 张设为目标图`}
+                      >
+                        设目标
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={refs.length >= maxReferenceImages}
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-border-strong bg-[color:var(--w-03)] text-muted transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+                aria-label="添加参考图"
+                title="添加参考图"
+              >
+                <Plus size={15} />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* CANVAS — full bleed, responsive */}
       <main className="flex-1 min-h-0 px-4 py-2 flex items-center justify-center overflow-hidden">
         <div
-          className="surface-panel relative h-full w-full max-w-[min(70vh,820px)] overflow-hidden flex items-center justify-center p-4"
+          className="surface-panel relative flex h-full w-full items-center justify-center overflow-hidden p-0"
           onDragEnter={handleCanvasDragEnter}
           onDragOver={handleCanvasDragOver}
           onDragLeave={handleCanvasDragLeave}
@@ -851,31 +1270,224 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
           </motion.div>
           {usesRegion ? (
             targetRef ? (
-              <div
-                className="w-full max-h-full"
-                style={{ maxWidth: "min(100%, calc(70vh - 64px))" }}
-              >
-                <MaskCanvas
-                  imageUrl={targetRef.url}
-                  seed={0}
-                  brushSize={brushSize}
-                  mode={maskMode}
-                  clearKey={clearKey}
-                  snapshot={maskSnapshots[targetRef.id]}
-                  snapshotKey={targetRef.id}
-                  onSnapshotChange={(snapshot) => {
-                    setMaskSnapshots((current) => {
-                      if (snapshot)
-                        return { ...current, [targetRef.id]: snapshot };
-                      const { [targetRef.id]: _removed, ...rest } = current;
-                      return rest;
-                    });
+              <div className="h-full w-full">
+                <div
+                  className="absolute bottom-4 left-1/2 z-10 flex max-w-[calc(100%-32px)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-2xl border border-[color:var(--accent-25)] px-2 py-1.5 backdrop-blur-xl"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, rgba(var(--accent-rgb), 0.22), rgba(var(--accent-2-rgb), 0.14)), var(--bg-raised)",
+                    boxShadow:
+                      "var(--shadow-floating), inset 0 1px 0 var(--w-12)",
                   }}
-                  exportKey={exportKey ?? undefined}
-                  onExport={(payload) => {
-                    void submit(payload);
+                >
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setMaskTool("brush")}
+                      className={cn(
+                        "inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-[color:var(--w-08)] hover:text-foreground",
+                        maskTool === "brush" &&
+                          "bg-[color:var(--accent-18)] text-foreground",
+                      )}
+                      title="画笔"
+                      aria-label="画笔"
+                      aria-pressed={maskTool === "brush"}
+                    >
+                      <Brush size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMaskTool("erase")}
+                      className={cn(
+                        "inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-[color:var(--w-08)] hover:text-foreground",
+                        maskTool === "erase" &&
+                          "bg-[color:var(--accent-18)] text-foreground",
+                      )}
+                      title="橡皮"
+                      aria-label="橡皮"
+                      aria-pressed={maskTool === "erase"}
+                    >
+                      <Eraser size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMaskTool("rect")}
+                      className={cn(
+                        "inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-[color:var(--w-08)] hover:text-foreground",
+                        maskTool === "rect" &&
+                          "bg-[color:var(--accent-18)] text-foreground",
+                      )}
+                      title="方形选区"
+                      aria-label="方形选区"
+                      aria-pressed={maskTool === "rect"}
+                    >
+                      <Square size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMaskTool("ellipse")}
+                      className={cn(
+                        "inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-[color:var(--w-08)] hover:text-foreground",
+                        maskTool === "ellipse" &&
+                          "bg-[color:var(--accent-18)] text-foreground",
+                      )}
+                      title="圆形选区"
+                      aria-label="圆形选区"
+                      aria-pressed={maskTool === "ellipse"}
+                    >
+                      <Circle size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setClearKey((k) => k + 1)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-[color:var(--status-err-10)] hover:text-[color:var(--status-err)]"
+                      title="清空选区"
+                      aria-label="清空选区"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                  <div className="h-5 w-px bg-border-faint" aria-hidden />
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={triggerMaskUndo}
+                      disabled={!maskHistory.canUndo}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-[color:var(--w-08)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                      title="撤回"
+                      aria-label="撤回"
+                    >
+                      <Undo2 size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={triggerMaskRedo}
+                      disabled={!maskHistory.canRedo}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-[color:var(--w-08)] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35"
+                      title="重做"
+                      aria-label="重做"
+                    >
+                      <Redo2 size={15} />
+                    </button>
+                  </div>
+                  <div className="h-5 w-px bg-border-faint" aria-hidden />
+                  <div className="flex items-center gap-2 rounded-lg px-2 text-[11px] text-muted">
+                    <span className="shrink-0">粗细</span>
+                    <input
+                      type="range"
+                      min={2}
+                      max={72}
+                      step={1}
+                      value={brushSize}
+                      onChange={(event) =>
+                        setBrushSize(Number(event.target.value))
+                      }
+                      className="h-5 w-24 accent-[color:var(--accent)]"
+                      aria-label="选区工具粗细"
+                    />
+                    <span className="w-8 text-right font-mono text-faint">
+                      {brushSize}
+                    </span>
+                  </div>
+                  <div className="h-5 w-px bg-border-faint" aria-hidden />
+                  <button
+                    type="button"
+                    onClick={fitCanvasToViewport}
+                    className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] text-foreground hover:bg-[color:var(--w-08)]"
+                    title="适应窗口"
+                  >
+                    <Maximize2 size={12} />
+                    适应
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setZoom(1)}
+                    className="inline-flex h-8 items-center rounded-lg px-2 font-mono text-[11px] text-foreground hover:bg-[color:var(--w-08)]"
+                    title="100%"
+                  >
+                    100%
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setZoom((current) => clampZoom(current * 0.88))
+                    }
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-foreground hover:bg-[color:var(--w-08)]"
+                    title="缩小"
+                    aria-label="缩小"
+                  >
+                    <ZoomOut size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setZoom((current) => clampZoom(current * 1.14))
+                    }
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-foreground hover:bg-[color:var(--w-08)]"
+                    title="放大"
+                    aria-label="放大"
+                  >
+                    <ZoomIn size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPanPinned((current) => !current)}
+                    className={cn(
+                      "inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] text-foreground hover:bg-[color:var(--w-08)]",
+                      panPinned && "bg-[color:var(--accent-18)]",
+                    )}
+                    title="平移"
+                    aria-pressed={panPinned}
+                  >
+                    <Move size={12} />
+                    平移
+                  </button>
+                  <span className="px-1.5 font-mono text-[10.5px] text-faint">
+                    {Math.round(zoom * 100)}%
+                  </span>
+                </div>
+                <div
+                  ref={canvasViewportRef}
+                  className="h-full w-full overflow-auto p-4 scrollbar-thin"
+                  onWheel={(event) => {
+                    if (!event.metaKey && !event.ctrlKey) return;
+                    event.preventDefault();
+                    const next = event.deltaY < 0 ? 1.08 : 0.92;
+                    setZoom((current) => clampZoom(current * next));
                   }}
-                />
+                >
+                  <div className="flex min-h-full min-w-full items-center justify-center">
+                    <MaskCanvas
+                      imageUrl={targetRef.url}
+                      seed={0}
+                      brushSize={brushSize}
+                      mode={maskMode}
+                      tool={maskTool}
+                      clearKey={clearKey}
+                      undoKey={undoKey}
+                      redoKey={redoKey}
+                      snapshot={maskSnapshots[targetRef.id]}
+                      snapshotKey={targetRef.id}
+                      zoom={zoom}
+                      interactionMode={panMode ? "pan" : "paint"}
+                      scrollContainerRef={canvasViewportRef}
+                      onImageSizeChange={handleMaskImageSize}
+                      onHistoryChange={setMaskHistory}
+                      onSnapshotChange={(snapshot) => {
+                        setMaskSnapshots((current) => {
+                          if (snapshot)
+                            return { ...current, [targetRef.id]: snapshot };
+                          const { [targetRef.id]: _removed, ...rest } = current;
+                          return rest;
+                        });
+                      }}
+                      exportKey={exportKey ?? undefined}
+                      onExport={(payload) => {
+                        void submit(payload);
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
             ) : (
               <Empty
@@ -1035,6 +1647,14 @@ export function EditScreen({ config }: { config?: ServerConfig }) {
                       }
                       onOpen={() =>
                         openPath(api.outputPath(jobId!, output.index))
+                      }
+                      onSendToEdit={() =>
+                        sendImageToEdit({
+                          jobId: jobId!,
+                          outputIndex: output.index,
+                          path: api.outputPath(jobId!, output.index),
+                          url: output.url,
+                        })
                       }
                     />
                   </div>
