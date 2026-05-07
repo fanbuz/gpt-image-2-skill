@@ -1062,10 +1062,10 @@ export function EditScreen({
                         {index + 1}
                       </span>
                     </button>
-                    <div className="pointer-events-none absolute left-1 top-1 flex gap-0.5">
+                    <div className="pointer-events-none absolute left-1 top-1 flex max-w-[calc(100%-8px)] flex-col items-start gap-0.5">
                       {isTarget && (
                         <span
-                          className="rounded px-1 py-px text-[8.5px] font-semibold leading-none"
+                          className="max-w-full truncate rounded px-1 py-px text-[8px] font-semibold leading-none"
                           style={{
                             background: "var(--accent)",
                             color: "var(--accent-on)",
@@ -1075,7 +1075,7 @@ export function EditScreen({
                         </span>
                       )}
                       {hasMask && (
-                        <span className="rounded bg-[color:var(--k-65)] px-1 py-px text-[8.5px] font-semibold leading-none text-foreground">
+                        <span className="max-w-full truncate rounded bg-[color:var(--k-65)] px-1 py-px text-[8px] font-semibold leading-none text-foreground">
                           遮罩
                         </span>
                       )}
