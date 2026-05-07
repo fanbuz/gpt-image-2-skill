@@ -117,7 +117,7 @@ const TAB_TITLES: Record<SettingsTab, { title: string; subtitle: string }> = {
   },
   about: {
     title: "关于 / 更新",
-    subtitle: "桌面端更新、本地配置和数据路径",
+    subtitle: "版本、更新和数据位置",
   },
 };
 

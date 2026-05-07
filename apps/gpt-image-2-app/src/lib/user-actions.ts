@@ -87,6 +87,7 @@ export async function openPath(path?: string | null) {
 }
 
 export async function revealPath(path?: string | null) {
+  const copy = runtimeCopy();
   if (!path) {
     toast.error("没有可显示的位置");
     return false;
@@ -95,7 +96,9 @@ export async function revealPath(path?: string | null) {
     await api.revealPath(path);
     return true;
   } catch (error) {
-    toast.error("打开文件夹失败", { description: messageFromError(error) });
+    toast.error(copy.kind === "tauri" ? "打开文件夹失败" : "打开位置失败", {
+      description: messageFromError(error),
+    });
     return false;
   }
 }

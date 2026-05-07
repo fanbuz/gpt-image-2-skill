@@ -32,8 +32,8 @@ export function useJobEvents(jobId: string | null) {
           const message =
             typeof ev.data.message === "string"
               ? ev.data.message
-              : "浏览器本地存储空间接近上限。";
-          toast.warning("本地存储空间不足", { description: message });
+              : "当前浏览器数据空间接近上限。";
+          toast.warning("浏览器数据空间不足", { description: message });
         }
         if (
           ev.kind === "local" &&

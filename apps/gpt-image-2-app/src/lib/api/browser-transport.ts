@@ -379,7 +379,7 @@ function requireApiKey(name: string, provider: ProviderConfig) {
   const credential = provider.credentials.api_key;
   if (!credential) throw new Error(`凭证「${name}」缺少 API Key。`);
   if (credential.source !== "file") {
-    throw new Error("静态 Web 只支持保存在浏览器本地的 API Key。");
+    throw new Error("静态 Web 只支持保留在当前浏览器数据中的 API Key。");
   }
   if (typeof credential.value !== "string" || !credential.value.trim()) {
     throw new Error(`凭证「${name}」的 API Key 为空。`);
@@ -777,7 +777,7 @@ async function storagePressureWarning() {
   return {
     usage: estimate.usage,
     quota: estimate.quota,
-    message: "浏览器本地存储空间接近上限，请清理历史或导出图片。",
+    message: "当前浏览器数据空间接近上限，请清理历史或导出图片。",
   };
 }
 
@@ -1077,7 +1077,7 @@ async function blobForPath(path: string) {
 
 async function downloadJobZip(job: Job) {
   const paths = browserApi.jobOutputPaths(job);
-  if (paths.length === 0) throw new Error("没有可保存的图片。");
+  if (paths.length === 0) throw new Error("没有可下载的图片。");
   const baseName = jobExportBaseName(job);
   const entries = await Promise.all(
     paths.map(async (path, index) => ({
@@ -1139,7 +1139,7 @@ export const browserApi: ApiClient = {
     }
     const apiKey = cfg.credentials.api_key;
     if (!apiKey || apiKey.source !== "file") {
-      throw new Error("静态 Web 只支持直接填写并保存在浏览器本地的 API Key。");
+      throw new Error("静态 Web 只支持直接填写并保留在当前浏览器数据中的 API Key。");
     }
     const config = await readConfigRecord();
     const existing = config.providers[trimmed];
@@ -1280,7 +1280,7 @@ export const browserApi: ApiClient = {
     window.open(url, "_blank", "noopener,noreferrer");
   },
   async revealPath() {
-    throw new Error("浏览器不能打开本机文件夹，请使用桌面 App 或 Docker。");
+    throw new Error("Web 不能打开文件夹，请使用桌面 App 查看文件位置。");
   },
   async exportFilesToDownloads(paths: string[]) {
     await prepareBrowserRuntime();

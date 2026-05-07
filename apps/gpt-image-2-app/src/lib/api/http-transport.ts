@@ -148,17 +148,17 @@ function basename(path: string, fallback: string) {
 
 async function fetchOutputBlob(path: string) {
   const url = httpApi.fileUrl(path);
-  if (!url) throw new Error("没有可保存的图片。");
+  if (!url) throw new Error("没有可下载的图片。");
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`保存图片失败：${response.status} ${response.statusText}`);
+    throw new Error(`下载图片失败：${response.status} ${response.statusText}`);
   }
   return response.blob();
 }
 
 async function downloadJobZip(job: Job) {
   const paths = httpApi.jobOutputPaths(job);
-  if (paths.length === 0) throw new Error("没有可保存的图片。");
+  if (paths.length === 0) throw new Error("没有可下载的图片。");
   const baseName = jobExportBaseName(job);
   const entries = await Promise.all(
     paths.map(async (path, index) => ({
@@ -261,12 +261,12 @@ export const httpApi: ApiClient = {
     window.open(url, "_blank", "noopener,noreferrer");
   },
   async revealPath() {
-    throw new Error("Docker Web 不能打开服务器文件夹。");
+    throw new Error("Web 页面不能打开服务端文件夹，请在服务器环境中查看。");
   },
   async exportFilesToDownloads(paths: string[]) {
     for (const [index, path] of paths.entries()) {
       const url = httpApi.fileUrl(path);
-      if (!url) throw new Error("没有可保存的图片。");
+      if (!url) throw new Error("没有可下载的图片。");
       downloadUrl(url, basename(path, `gpt-image-2-${index + 1}.png`));
     }
     return paths;
