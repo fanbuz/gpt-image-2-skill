@@ -19,6 +19,7 @@ import {
   Plus,
   Redo2,
   Settings as SettingsIcon,
+  SlidersHorizontal,
   Sparkles,
   Square,
   Trash2,
@@ -1272,7 +1273,7 @@ export function EditScreen({
             targetRef ? (
               <div className="h-full w-full">
                 <div
-                  className="absolute bottom-4 left-1/2 z-10 flex max-w-[calc(100%-32px)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-2xl border border-[color:var(--accent-25)] px-2 py-1.5 backdrop-blur-xl"
+                  className="absolute bottom-4 left-1/2 z-10 flex max-w-[calc(100%-32px)] -translate-x-1/2 flex-nowrap items-center justify-start gap-1.5 overflow-x-auto rounded-2xl border border-[color:var(--accent-25)] px-2 py-1.5 backdrop-blur-xl scrollbar-none"
                   style={{
                     background:
                       "linear-gradient(135deg, rgba(var(--accent-rgb), 0.22), rgba(var(--accent-2-rgb), 0.14)), var(--bg-raised)",
@@ -1280,7 +1281,7 @@ export function EditScreen({
                       "var(--shadow-floating), inset 0 1px 0 var(--w-12)",
                   }}
                 >
-                  <div className="flex items-center gap-0.5">
+                  <div className="flex shrink-0 items-center gap-0.5">
                     <button
                       type="button"
                       onClick={() => setMaskTool("brush")}
@@ -1347,8 +1348,11 @@ export function EditScreen({
                       <Trash2 size={15} />
                     </button>
                   </div>
-                  <div className="h-5 w-px bg-border-faint" aria-hidden />
-                  <div className="flex items-center gap-0.5">
+                  <div
+                    className="h-5 w-px shrink-0 bg-border-faint"
+                    aria-hidden
+                  />
+                  <div className="flex shrink-0 items-center gap-0.5">
                     <button
                       type="button"
                       onClick={triggerMaskUndo}
@@ -1370,42 +1374,64 @@ export function EditScreen({
                       <Redo2 size={15} />
                     </button>
                   </div>
-                  <div className="h-5 w-px bg-border-faint" aria-hidden />
-                  <div className="flex items-center gap-2 rounded-lg px-2 text-[11px] text-muted">
-                    <span className="shrink-0">粗细</span>
-                    <input
-                      type="range"
-                      min={2}
-                      max={72}
-                      step={1}
-                      value={brushSize}
-                      onChange={(event) =>
-                        setBrushSize(Number(event.target.value))
-                      }
-                      className="h-5 w-24 accent-[color:var(--accent)]"
-                      aria-label="选区工具粗细"
-                    />
-                    <span className="w-8 text-right font-mono text-faint">
-                      {brushSize}
-                    </span>
-                  </div>
-                  <div className="h-5 w-px bg-border-faint" aria-hidden />
+                  <div
+                    className="h-5 w-px shrink-0 bg-border-faint"
+                    aria-hidden
+                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-[color:var(--w-08)]"
+                        title="调整粗细"
+                        aria-label="调整粗细"
+                      >
+                        <SlidersHorizontal size={14} />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      side="top"
+                      align="center"
+                      className="w-[210px]"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="t-caps">粗细</span>
+                        <span className="font-mono text-[11px] text-muted">
+                          {brushSize}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex items-center gap-3">
+                        <span
+                          aria-hidden
+                          className="shrink-0 rounded-full border border-[color:var(--accent-45)] bg-[color:var(--accent-18)]"
+                          style={{
+                            width: Math.max(6, Math.min(28, brushSize / 2)),
+                            height: Math.max(6, Math.min(28, brushSize / 2)),
+                          }}
+                        />
+                        <input
+                          type="range"
+                          min={2}
+                          max={72}
+                          step={1}
+                          value={brushSize}
+                          onChange={(event) =>
+                            setBrushSize(Number(event.target.value))
+                          }
+                          className="h-5 flex-1 accent-[color:var(--accent)]"
+                          aria-label="选区工具粗细"
+                        />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                   <button
                     type="button"
                     onClick={fitCanvasToViewport}
-                    className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] text-foreground hover:bg-[color:var(--w-08)]"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-foreground hover:bg-[color:var(--w-08)]"
                     title="适应窗口"
+                    aria-label="适应窗口"
                   >
-                    <Maximize2 size={12} />
-                    适应
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setZoom(1)}
-                    className="inline-flex h-8 items-center rounded-lg px-2 font-mono text-[11px] text-foreground hover:bg-[color:var(--w-08)]"
-                    title="100%"
-                  >
-                    100%
+                    <Maximize2 size={13} />
                   </button>
                   <button
                     type="button"
@@ -1433,16 +1459,16 @@ export function EditScreen({
                     type="button"
                     onClick={() => setPanPinned((current) => !current)}
                     className={cn(
-                      "inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] text-foreground hover:bg-[color:var(--w-08)]",
+                      "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-foreground hover:bg-[color:var(--w-08)]",
                       panPinned && "bg-[color:var(--accent-18)]",
                     )}
                     title="平移"
+                    aria-label="平移"
                     aria-pressed={panPinned}
                   >
-                    <Move size={12} />
-                    平移
+                    <Move size={13} />
                   </button>
-                  <span className="px-1.5 font-mono text-[10.5px] text-faint">
+                  <span className="shrink-0 px-1 font-mono text-[10.5px] text-faint">
                     {Math.round(zoom * 100)}%
                   </span>
                 </div>
