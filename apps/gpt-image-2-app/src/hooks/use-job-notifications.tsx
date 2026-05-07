@@ -57,12 +57,15 @@ function notifyTerminal(job: Job, onOpen: OpenJob) {
     toast.success(`${commandLabel(job)}完成`, {
       ...common,
       description: successDescription(job),
+      classNames: thumbUrl
+        ? { icon: "job-complete-toast__thumb-slot" }
+        : undefined,
       icon: thumbUrl ? (
         <img
           src={thumbUrl}
           alt=""
           decoding="async"
-          className="h-9 w-9 rounded-md object-cover ring-1 ring-[color:var(--w-10)] -ml-1 mr-0.5"
+          className="job-complete-toast__thumb"
         />
       ) : undefined,
     });

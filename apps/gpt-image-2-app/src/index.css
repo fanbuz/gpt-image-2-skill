@@ -919,6 +919,27 @@
   opacity: 0.92;
 }
 
+[data-sonner-toast] .job-complete-toast__thumb-slot {
+  width: 40px !important;
+  height: 40px !important;
+  margin-left: 0 !important;
+  margin-right: 8px !important;
+  align-self: center;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+[data-sonner-toast] .job-complete-toast__thumb {
+  display: block;
+  width: 40px;
+  height: 40px;
+  max-width: none;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--w-06);
+  box-shadow: 0 0 0 1px var(--w-10);
+}
+
 [data-sonner-toast] [data-button] {
   background: rgba(var(--accent-rgb), 0.18) !important;
   color: var(--text) !important;
