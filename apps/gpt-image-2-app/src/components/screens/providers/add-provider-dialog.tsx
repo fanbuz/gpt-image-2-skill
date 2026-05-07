@@ -4,9 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Segmented } from "@/components/ui/segmented";
+import {
+  Segmented,
+  type SegmentedOption,
+} from "@/components/ui/segmented";
 import { useUpsertProvider } from "@/hooks/use-config";
 import { api } from "@/lib/api";
+import { runtimeCopy } from "@/lib/runtime-copy";
 import type {
   CredentialSource,
   ProviderConfig,
@@ -53,7 +57,22 @@ export function AddProviderDialog({
 
   const upsert = useUpsertProvider();
   const editing = mode === "edit" && Boolean(providerName && provider);
+  const copy = runtimeCopy();
   const browserRuntime = !api.canUseSystemCredentials;
+  const keySourceOptions: readonly SegmentedOption<CredentialSource>[] =
+    copy.kind === "browser"
+      ? [{ value: "file", label: "当前浏览器", icon: "filedot" }]
+      : copy.kind === "http"
+        ? [
+            { value: "file", label: "服务端配置", icon: "filedot" },
+            { value: "env", label: "服务端环境变量", icon: "envkey" },
+            { value: "keychain", label: "服务端钥匙串", icon: "keychain" },
+          ]
+        : [
+            { value: "file", label: "配置文件", icon: "filedot" },
+            { value: "env", label: "环境变量", icon: "envkey" },
+            { value: "keychain", label: "钥匙串", icon: "keychain" },
+          ];
   const trimmedName = name.trim();
   const existingNamesForCheck = useMemo(
     () =>
@@ -354,7 +373,11 @@ export function AddProviderDialog({
             <Input
               value={codexAccountId}
               onChange={(e) => setCodexAccountId(e.target.value)}
-              placeholder="可留空，使用本机已登录账号"
+              placeholder={
+                copy.kind === "http"
+                  ? "可留空，使用后端服务已登录账号"
+                  : "可留空，使用桌面 App 已登录账号"
+              }
               monospace
             />
           </Field>
@@ -392,15 +415,7 @@ export function AddProviderDialog({
               onChange={(v) => setKeySource(v as CredentialSource)}
               ariaLabel="密钥保存方式"
               className="w-full overflow-x-auto scrollbar-none"
-              options={
-                browserRuntime
-                  ? [{ value: "file", label: "浏览器本地", icon: "filedot" }]
-                  : [
-                      { value: "file", label: "配置文件", icon: "filedot" },
-                      { value: "env", label: "环境变量", icon: "envkey" },
-                      { value: "keychain", label: "钥匙串", icon: "keychain" },
-                    ]
-              }
+              options={keySourceOptions}
             />
           </Field>
           {keySource === "file" && (

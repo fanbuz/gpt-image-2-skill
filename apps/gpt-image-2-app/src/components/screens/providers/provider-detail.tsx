@@ -11,6 +11,7 @@ import { ProviderLogo } from "@/components/provider-logo";
 import { api } from "@/lib/api";
 import { providerKindLabel } from "@/lib/format";
 import { copyText } from "@/lib/user-actions";
+import { runtimeCopy } from "@/lib/runtime-copy";
 import type { ProviderConfig } from "@/lib/types";
 
 type TestStatus = "idle" | "running" | "ok" | "err";
@@ -43,6 +44,7 @@ export function ProviderDetail({
   onTest?: () => void;
   onDelete?: () => void;
 }) {
+  const copy = runtimeCopy();
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [revealing, setRevealing] = useState<Record<string, boolean>>({});
   const [copying, setCopying] = useState<Record<string, boolean>>({});
@@ -203,7 +205,11 @@ export function ProviderDetail({
         </div>
         {Object.entries(prov.credentials).length === 0 ? (
           <div className="p-4 text-faint text-[12px]">
-            这个凭证使用本机已登录的账号信息。
+            {copy.kind === "http"
+              ? "这个凭证使用后端服务已登录的账号信息。"
+              : copy.kind === "tauri"
+                ? "这个凭证使用桌面 App 已登录的账号信息。"
+                : "这个凭证没有可查看的 API Key。"}
           </div>
         ) : (
           Object.entries(prov.credentials).map(([k, c], i) => (
