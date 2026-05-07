@@ -23,6 +23,7 @@ type CreationParamsBarProps = {
   countInvalid?: boolean;
   action: ReactNode;
   className?: string;
+  stackActionOnDesktop?: boolean;
 };
 
 function optionLabel(options: readonly SelectOption[], value: string) {
@@ -224,17 +225,36 @@ function MobileParamsSheet(props: Omit<CreationParamsBarProps, "action">) {
 export function CreationParamsBar({
   action,
   className,
+  stackActionOnDesktop = false,
   ...params
 }: CreationParamsBarProps) {
   return (
-    <div className={cn("mt-2 flex items-center gap-2", className)}>
+    <div
+      className={cn(
+        "mt-2 flex items-center gap-2",
+        stackActionOnDesktop && "lg:flex-col lg:items-stretch",
+        className,
+      )}
+    >
       <div className="min-w-0 flex-1 sm:hidden">
         <MobileParamsSheet {...params} />
       </div>
-      <div className="hidden min-w-0 flex-1 grid-cols-4 gap-2 sm:grid">
+      <div
+        className={cn(
+          "hidden min-w-0 flex-1 grid-cols-4 gap-2 sm:grid",
+          stackActionOnDesktop && "lg:w-full lg:flex-none",
+        )}
+      >
         <ParamsFields {...params} variant="chip" />
       </div>
-      <div className="w-[112px] shrink-0 sm:w-[168px]">{action}</div>
+      <div
+        className={cn(
+          "w-[112px] shrink-0 sm:w-[168px]",
+          stackActionOnDesktop && "lg:w-full lg:flex-none",
+        )}
+      >
+        {action}
+      </div>
     </div>
   );
 }

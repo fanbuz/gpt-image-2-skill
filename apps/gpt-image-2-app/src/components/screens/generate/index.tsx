@@ -740,6 +740,7 @@ export function GenerateScreen({
 
           <CreationParamsBar
             className="mt-3"
+            stackActionOnDesktop={hasSplit}
             size={size}
             onSizeChange={setSize}
             sizeOptions={POPULAR_SIZE_OPTIONS}
