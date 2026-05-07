@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { runtimeCopy } from "@/lib/runtime-copy";
 
 function messageFromError(error: unknown) {
   if (error instanceof Error && error.message) return error.message;
@@ -24,45 +25,46 @@ export async function copyText(text?: string | null, label = "内容") {
 
 export async function saveImages(paths: Array<string | undefined | null>, label = "图片") {
   const validPaths = paths.filter((path): path is string => Boolean(path));
+  const copy = runtimeCopy();
   if (validPaths.length === 0) {
-    toast.error("没有可保存的图片");
+    toast.error(`没有可${copy.actionVerb}的图片`);
     return [];
   }
 
-  const toastId = toast.loading(validPaths.length > 1 ? "正在保存图片" : "正在保存图片…");
+  const toastId = toast.loading(copy.savingImages(validPaths.length));
   try {
     const saved = await api.exportFilesToDownloads(validPaths);
-    toast.success(validPaths.length > 1 ? "已保存全部图片" : "图片已保存", {
+    toast.success(copy.savedImagesTitle(validPaths.length), {
       id: toastId,
-      description: api.canExportToDownloadsFolder
-        ? "已保存到「下载/GPT Image 2」。"
-        : "浏览器已开始下载图片。",
+      description: copy.savedImagesDescription,
     });
     return saved;
   } catch (error) {
-    toast.error(`${label}保存失败`, { id: toastId, description: messageFromError(error) });
+    toast.error(`${label}${copy.actionVerb}失败`, {
+      id: toastId,
+      description: messageFromError(error),
+    });
     return [];
   }
 }
 
 export async function saveJobImages(jobId: string, label = "任务图片") {
+  const copy = runtimeCopy();
   if (!jobId) {
-    toast.error("没有可保存的任务");
+    toast.error(`没有可${copy.actionVerb}的任务`);
     return [];
   }
 
-  const toastId = toast.loading("正在保存任务图片");
+  const toastId = toast.loading(copy.savingJob);
   try {
     const saved = await api.exportJobToDownloads(jobId);
-    toast.success("已保存全部图片", {
+    toast.success(copy.savedJobTitle, {
       id: toastId,
-      description: api.canExportToDownloadsFolder
-        ? "已保存到「下载/GPT Image 2」的任务目录。"
-        : "浏览器已开始下载任务 zip。",
+      description: copy.savedJobDescription,
     });
     return saved;
   } catch (error) {
-    toast.error(`${label}保存失败`, {
+    toast.error(`${label}${copy.actionVerb}失败`, {
       id: toastId,
       description: messageFromError(error),
     });
