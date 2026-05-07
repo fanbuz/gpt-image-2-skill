@@ -1545,6 +1545,8 @@ struct HistoryListQuery {
     limit: Option<usize>,
     cursor: Option<String>,
     status: Option<String>,
+    #[serde(alias = "query")]
+    q: Option<String>,
 }
 
 async fn history_list(Query(query): Query<HistoryListQuery>) -> ApiResult {
@@ -1552,6 +1554,7 @@ async fn history_list(Query(query): Query<HistoryListQuery>) -> ApiResult {
         limit: query.limit,
         cursor: query.cursor,
         status: query.status,
+        query: query.q,
     })
     .map_err(app_error)
     .map_err(ApiError::internal)?;

@@ -134,6 +134,7 @@ export const tauriApi: ApiClient = {
       cursor: options.cursor,
       status:
         options.filter && options.filter !== "all" ? options.filter : undefined,
+      query: options.query?.trim() || undefined,
     });
     return {
       jobs: (payload.jobs ?? []).map(normalizeJob),

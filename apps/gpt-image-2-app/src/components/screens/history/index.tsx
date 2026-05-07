@@ -7,6 +7,7 @@ import {
   Clock,
   Folder,
   Loader2,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -88,6 +89,22 @@ function jobPrompt(job: Job): string {
   const md = (job.metadata ?? {}) as Record<string, unknown>;
   const p = md.prompt as string | undefined;
   return p?.trim() || "（无提示词）";
+}
+
+function jobMatchesSearch(job: Job, query: string) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return [
+    job.id,
+    job.command,
+    job.provider,
+    job.output_path ?? "",
+    JSON.stringify(job.metadata ?? {}),
+    JSON.stringify(job.error ?? {}),
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(needle);
 }
 
 function totalBytes(job: Job): string {
@@ -570,10 +587,12 @@ export function HistoryScreen({
   const retryJob = useRetryJob();
   const confirm = useConfirm();
   const [filter, setFilter] = useState<FilterValue>("all");
+  const [searchText, setSearchText] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [detailJobId, setDetailJobId] = useState<string | null>(null);
   const [detailIndex, setDetailIndex] = useState(0);
-  const jobPages = useJobPages(filter);
+  const jobPages = useJobPages(filter, searchQuery);
   const { data: activeJobs = [], isLoading: activeLoading } = useActiveJobs();
   const { data: detailPayload } = useJob(detailJobId ?? undefined);
 
@@ -585,6 +604,13 @@ export function HistoryScreen({
       return next;
     });
   };
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setSearchQuery(searchText.trim());
+    }, 200);
+    return () => window.clearTimeout(handle);
+  }, [searchText]);
 
   useEffect(() => {
     const onOpenJob = (event: Event) => {
@@ -606,22 +632,26 @@ export function HistoryScreen({
     () => jobPages.data?.pages.flatMap((page) => page.jobs) ?? [],
     [jobPages.data],
   );
+  const matchingActiveJobs = useMemo(
+    () => activeJobs.filter((job) => jobMatchesSearch(job, searchQuery)),
+    [activeJobs, searchQuery],
+  );
   const jobs = useMemo(() => {
     const source =
       filter === "running"
-        ? activeJobs
+        ? matchingActiveJobs
         : filter === "all"
-          ? [...activeJobs, ...pageJobs]
+          ? [...matchingActiveJobs, ...pageJobs]
           : pageJobs;
     const byId = new Map<string, Job>();
     for (const job of source) byId.set(job.id, job);
     return Array.from(byId.values()).sort(
       (a, b) => jobTimestamp(b) - jobTimestamp(a),
     );
-  }, [activeJobs, filter, pageJobs]);
+  }, [filter, matchingActiveJobs, pageJobs]);
   const firstPage = jobPages.data?.pages[0];
   const total =
-    filter === "running" ? activeJobs.length : (firstPage?.total ?? 0);
+    filter === "running" ? matchingActiveJobs.length : (firstPage?.total ?? 0);
   const loadedCount = jobs.length;
   const isLoading =
     filter === "running"
@@ -714,23 +744,54 @@ export function HistoryScreen({
       </header>
 
       {/* filters */}
-      <div className="mb-4 flex items-center gap-1 overflow-x-auto scrollbar-none">
-        {FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            onClick={() => setFilter(f.value)}
-            className={cn(
-              "px-3.5 h-8 rounded-full text-[12.5px] font-medium transition-colors",
-              filter === f.value
-                ? "bg-[color:var(--accent-14)] text-foreground border border-[color:var(--accent-30)]"
-                : "border border-transparent text-muted hover:text-foreground hover:bg-[color:var(--w-04)]",
-            )}
-          >
-            {f.label}
-          </button>
-        ))}
-        <span className="ml-auto text-[11px] text-faint font-mono">
+      <div className="mb-4 grid grid-cols-1 items-center gap-3 lg:grid-cols-[1fr_minmax(320px,560px)_1fr]">
+        <div className="flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-none">
+          {FILTERS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setFilter(f.value)}
+              className={cn(
+                "px-3.5 h-8 rounded-full text-[12.5px] font-medium transition-colors",
+                filter === f.value
+                  ? "bg-[color:var(--accent-14)] text-foreground border border-[color:var(--accent-30)]"
+                  : "border border-transparent text-muted hover:text-foreground hover:bg-[color:var(--w-04)]",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <label className="relative block min-w-0">
+          <Search
+            size={15}
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-faint"
+            aria-hidden
+          />
+          <input
+            type="search"
+            value={searchText}
+            onChange={(event) => setSearchText(event.currentTarget.value)}
+            placeholder="搜索提示词 / Job ID / Provider"
+            aria-label="搜索任务"
+            className="h-9 w-full rounded-full border border-[color:var(--w-10)] bg-[color:var(--w-05)] pl-9 pr-9 text-[13px] text-foreground outline-none transition-colors placeholder:text-faint hover:bg-[color:var(--w-07)] focus:border-[color:var(--accent-45)] focus:bg-[color:var(--w-08)]"
+          />
+          {searchText.trim() && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchText("");
+                setSearchQuery("");
+              }}
+              className="absolute right-1.5 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-faint transition-colors hover:bg-[color:var(--w-08)] hover:text-foreground"
+              aria-label="清空搜索"
+              title="清空搜索"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </label>
+        <span className="justify-self-end text-[11px] text-faint font-mono">
           {loadedCount} / {total}
         </span>
       </div>
@@ -753,7 +814,9 @@ export function HistoryScreen({
                 title={total === 0 ? "还没有任务" : "无匹配结果"}
                 subtitle={
                   total === 0
-                    ? "在「生成」里写一句提示词，任务会出现在这里。"
+                    ? searchQuery
+                      ? "没有找到匹配的任务。"
+                      : "在「生成」里写一句提示词，任务会出现在这里。"
                     : "切换筛选标签或清除条件再试。"
                 }
               />

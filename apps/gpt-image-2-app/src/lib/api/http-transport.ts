@@ -119,6 +119,7 @@ function jobsQuery(options: JobListOptions = {}) {
   if (options.filter && options.filter !== "all") {
     params.set("status", options.filter);
   }
+  if (options.query?.trim()) params.set("q", options.query.trim());
   const query = params.toString();
   return query ? `/jobs?${query}` : "/jobs";
 }

@@ -199,6 +199,15 @@ describe("browserApi", () => {
     });
     expect(secondPage.jobs).toHaveLength(1);
     expect(secondPage.has_more).toBe(false);
+
+    const searched = await browserApi.listJobsPage({
+      limit: 10,
+      query: "second",
+    });
+    expect(searched.jobs.map((job) => job.metadata.prompt)).toEqual([
+      "second page",
+    ]);
+    expect(searched.total).toBe(1);
   });
 
   it("falls back to concurrent single-output requests when n is unsupported", async () => {

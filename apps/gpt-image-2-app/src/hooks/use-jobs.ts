@@ -34,19 +34,20 @@ export function useActiveJobs() {
   });
 }
 
-export function useJobPages(filter: JobListFilter = "all") {
+export function useJobPages(filter: JobListFilter = "all", query = "") {
   return useInfiniteQuery({
-    queryKey: ["jobs", "pages", filter],
+    queryKey: ["jobs", "pages", filter, query],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       api.listJobsPage({
         limit: 100,
         cursor: pageParam,
         filter,
+        query,
       }),
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: filter !== "running",
-    refetchInterval: filter === "all" || filter === "running" ? 4_000 : false,
+    refetchInterval: filter === "all" ? 4_000 : false,
   });
 }
 

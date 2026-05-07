@@ -203,21 +203,42 @@ function jobCursor(job: Job) {
   return `${job.created_at}|${job.id}`;
 }
 
-function filterJobs(jobs: Job[], filter: JobListOptions["filter"]) {
+function jobMatchesQuery(job: Job, query?: string) {
+  const needle = query?.trim().toLowerCase();
+  if (!needle) return true;
+  const haystack = [
+    job.id,
+    job.command,
+    job.provider,
+    job.output_path ?? "",
+    JSON.stringify(job.metadata ?? {}),
+    JSON.stringify(job.error ?? {}),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(needle);
+}
+
+function filterJobs(
+  jobs: Job[],
+  filter: JobListOptions["filter"],
+  query?: string,
+) {
+  let filtered = jobs;
   if (filter === "running") {
-    return jobs.filter(
+    filtered = filtered.filter(
       (job) => job.status === "queued" || job.status === "running",
     );
   }
   if (filter === "completed") {
-    return jobs.filter((job) => job.status === "completed");
+    filtered = filtered.filter((job) => job.status === "completed");
   }
   if (filter === "failed") {
-    return jobs.filter(
+    filtered = filtered.filter(
       (job) => job.status === "failed" || job.status === "cancelled",
     );
   }
-  return jobs;
+  return filtered.filter((job) => jobMatchesQuery(job, query));
 }
 
 async function readStoredJobs() {
@@ -231,7 +252,11 @@ async function readStoredJobs() {
 
 async function readStoredJobsPage(options: JobListOptions = {}) {
   const limit = Math.max(1, Math.min(200, Math.floor(options.limit ?? 100)));
-  const jobs = filterJobs(await readStoredJobs(), options.filter);
+  const jobs = filterJobs(
+    await readStoredJobs(),
+    options.filter,
+    options.query,
+  );
   const start = options.cursor
     ? jobs.findIndex((job) => jobCursor(job) === options.cursor) + 1
     : 0;

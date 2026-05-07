@@ -50,6 +50,7 @@ export type JobListOptions = {
   limit?: number;
   cursor?: string;
   filter?: JobListFilter;
+  query?: string;
 };
 
 export type JobListPage = {

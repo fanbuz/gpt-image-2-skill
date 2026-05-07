@@ -1350,11 +1350,13 @@ fn history_list(
     limit: Option<usize>,
     cursor: Option<String>,
     status: Option<String>,
+    query: Option<String>,
 ) -> Result<Value, String> {
     let page = list_history_jobs_page(HistoryListOptions {
         limit,
         cursor,
         status,
+        query,
     })
     .map_err(app_error)?;
     Ok(json!({

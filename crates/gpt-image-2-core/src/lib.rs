@@ -3810,6 +3810,7 @@ pub struct HistoryListOptions {
     pub limit: Option<usize>,
     pub cursor: Option<String>,
     pub status: Option<String>,
+    pub query: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -3892,6 +3893,41 @@ fn append_status_filter(
     );
 }
 
+fn normalize_history_query(query: Option<&str>) -> Option<String> {
+    let trimmed = query?.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.to_lowercase())
+}
+
+fn escape_like_pattern(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
+
+fn append_search_filter(
+    clauses: &mut Vec<String>,
+    params: &mut Vec<SqlValue>,
+    query: Option<&str>,
+) {
+    let Some(query) = normalize_history_query(query) else {
+        return;
+    };
+    let pattern = format!("%{}%", escape_like_pattern(&query));
+    clauses.push(
+        "(LOWER(id) LIKE ? ESCAPE '\\' OR LOWER(command) LIKE ? ESCAPE '\\' OR LOWER(provider) LIKE ? ESCAPE '\\' OR LOWER(metadata) LIKE ? ESCAPE '\\')"
+            .to_string(),
+    );
+    params.extend((0..4).map(|_| SqlValue::Text(pattern.clone())));
+}
+
 fn parse_history_cursor(cursor: Option<&str>) -> Option<(String, String)> {
     let cursor = cursor?.trim();
     if cursor.is_empty() {
@@ -3927,6 +3963,11 @@ pub fn list_history_jobs_page(options: HistoryListOptions) -> Result<HistoryList
     let mut count_clauses = Vec::new();
     let mut count_params = Vec::new();
     append_status_filter(&mut count_clauses, &mut count_params, &statuses);
+    append_search_filter(
+        &mut count_clauses,
+        &mut count_params,
+        options.query.as_deref(),
+    );
     let count_sql = format!(
         "SELECT COUNT(*) FROM jobs{}",
         history_where_sql(&count_clauses)
@@ -3943,6 +3984,7 @@ pub fn list_history_jobs_page(options: HistoryListOptions) -> Result<HistoryList
     let mut clauses = Vec::new();
     let mut query_params = Vec::new();
     append_status_filter(&mut clauses, &mut query_params, &statuses);
+    append_search_filter(&mut clauses, &mut query_params, options.query.as_deref());
     if let Some((created_at, id)) = cursor {
         clauses.push("(created_at < ? OR (created_at = ? AND id < ?))".to_string());
         query_params.push(SqlValue::Text(created_at.clone()));
