@@ -11,9 +11,11 @@ import {
   X,
 } from "lucide-react";
 import {
+  useActiveJobs,
   useCancelJob,
   useDeleteJob,
-  useJobs,
+  useJob,
+  useJobPages,
   useRetryJob,
 } from "@/hooks/use-jobs";
 import { OPEN_JOB_EVENT, sendImageToEdit } from "@/lib/job-navigation";
@@ -93,6 +95,14 @@ function totalBytes(job: Job): string {
   if (total === 0) return "";
   if (total > 1024 * 1024) return `${(total / 1024 / 1024).toFixed(1)} MB`;
   return `${(total / 1024).toFixed(1)} KB`;
+}
+
+function jobTimestamp(job: Job) {
+  const raw = job.created_at || job.updated_at || "";
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && raw.trim() !== "") return numeric * 1000;
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function StatusChip({ status }: { status: JobStatus }) {
@@ -555,7 +565,6 @@ export function HistoryScreen({
   onSwitchToGenerate?: () => void;
   onSwitchToEdit?: () => void;
 } = {}) {
-  const { data: jobs = [], isLoading } = useJobs();
   const deleteJob = useDeleteJob();
   const cancelJob = useCancelJob();
   const retryJob = useRetryJob();
@@ -564,6 +573,9 @@ export function HistoryScreen({
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [detailJobId, setDetailJobId] = useState<string | null>(null);
   const [detailIndex, setDetailIndex] = useState(0);
+  const jobPages = useJobPages(filter);
+  const { data: activeJobs = [], isLoading: activeLoading } = useActiveJobs();
+  const { data: detailPayload } = useJob(detailJobId ?? undefined);
 
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
@@ -590,23 +602,36 @@ export function HistoryScreen({
     return () => window.removeEventListener(OPEN_JOB_EVENT, onOpenJob);
   }, []);
 
-  const filtered = useMemo(() => {
-    return jobs.filter((j) => {
-      if (filter === "running")
-        return j.status === "running" || j.status === "queued";
-      if (filter === "completed") return j.status === "completed";
-      if (filter === "failed")
-        return j.status === "failed" || j.status === "cancelled";
-      return true;
-    });
-  }, [jobs, filter]);
+  const pageJobs = useMemo(
+    () => jobPages.data?.pages.flatMap((page) => page.jobs) ?? [],
+    [jobPages.data],
+  );
+  const jobs = useMemo(() => {
+    const source =
+      filter === "running"
+        ? activeJobs
+        : filter === "all"
+          ? [...activeJobs, ...pageJobs]
+          : pageJobs;
+    const byId = new Map<string, Job>();
+    for (const job of source) byId.set(job.id, job);
+    return Array.from(byId.values()).sort(
+      (a, b) => jobTimestamp(b) - jobTimestamp(a),
+    );
+  }, [activeJobs, filter, pageJobs]);
+  const firstPage = jobPages.data?.pages[0];
+  const total =
+    filter === "running" ? activeJobs.length : (firstPage?.total ?? 0);
+  const loadedCount = jobs.length;
+  const isLoading =
+    filter === "running"
+      ? activeLoading && activeJobs.length === 0
+      : jobPages.isLoading;
+  const hasMore = filter !== "running" && Boolean(jobPages.hasNextPage);
 
-  const total = jobs.length;
-  const filteredCount = filtered.length;
-
-  const clearable =
-    jobs.filter((j) => j.status === "completed" || j.status === "failed")
-      .length > 0;
+  const clearable = jobs.some(
+    (j) => j.status === "completed" || j.status === "failed",
+  );
 
   const handleClearFinished = async () => {
     if (!clearable) return;
@@ -621,7 +646,7 @@ export function HistoryScreen({
           <span className="text-foreground font-medium">
             {finished.length} 条
           </span>{" "}
-          已完成 / 已失败的任务。图片文件不会被删除,此操作不可撤销。
+          当前已加载的已完成 / 已失败任务。图片文件不会被删除，此操作不可撤销。
         </>
       ),
       confirmText: "清理",
@@ -653,7 +678,7 @@ export function HistoryScreen({
   };
 
   const detailJob = detailJobId
-    ? (jobs.find((j) => j.id === detailJobId) ?? null)
+    ? (jobs.find((j) => j.id === detailJobId) ?? detailPayload?.job ?? null)
     : null;
 
   return (
@@ -706,7 +731,7 @@ export function HistoryScreen({
           </button>
         ))}
         <span className="ml-auto text-[11px] text-faint font-mono">
-          {filteredCount} / {total}
+          {loadedCount} / {total}
         </span>
       </div>
 
@@ -721,7 +746,7 @@ export function HistoryScreen({
                 subtitle="正在获取任务列表"
               />
             </div>
-          ) : filtered.length === 0 ? (
+          ) : jobs.length === 0 ? (
             <div className="p-12 flex justify-center">
               <Empty
                 icon="search"
@@ -734,32 +759,47 @@ export function HistoryScreen({
               />
             </div>
           ) : (
-            filtered.map((j, i) => (
-              <JobRowExpandable
-                key={j.id}
-                index={i + 1}
-                job={j}
-                expanded={expandedIds.has(j.id)}
-                onToggleExpand={() => toggleExpand(j.id)}
-                onCancel={() => cancelJob.mutate(j.id)}
-                onDelete={() => {
-                  deleteJob.mutate(j.id);
-                  setExpandedIds((prev) => {
-                    const next = new Set(prev);
-                    next.delete(j.id);
-                    return next;
-                  });
-                  if (detailJobId === j.id) {
-                    setDetailJobId(null);
-                  }
-                }}
-                onOpenDetail={(outputIndex) => {
-                  setDetailJobId(j.id);
-                  setDetailIndex(outputIndex);
-                }}
-                onRetry={() => void handleRetry(j.id)}
-              />
-            ))
+            <>
+              {jobs.map((j, i) => (
+                <JobRowExpandable
+                  key={j.id}
+                  index={i + 1}
+                  job={j}
+                  expanded={expandedIds.has(j.id)}
+                  onToggleExpand={() => toggleExpand(j.id)}
+                  onCancel={() => cancelJob.mutate(j.id)}
+                  onDelete={() => {
+                    deleteJob.mutate(j.id);
+                    setExpandedIds((prev) => {
+                      const next = new Set(prev);
+                      next.delete(j.id);
+                      return next;
+                    });
+                    if (detailJobId === j.id) {
+                      setDetailJobId(null);
+                    }
+                  }}
+                  onOpenDetail={(outputIndex) => {
+                    setDetailJobId(j.id);
+                    setDetailIndex(outputIndex);
+                  }}
+                  onRetry={() => void handleRetry(j.id)}
+                />
+              ))}
+              {hasMore && (
+                <div className="flex justify-center px-4 py-4">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={jobPages.isFetchingNextPage ? "reload" : "plus"}
+                    disabled={jobPages.isFetchingNextPage}
+                    onClick={() => void jobPages.fetchNextPage()}
+                  >
+                    {jobPages.isFetchingNextPage ? "加载中" : "加载更多"}
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </div>
 

@@ -69,7 +69,8 @@ export const api: ApiClient = {
   get canExportToDownloadsFolder() {
     return activeClient.canExportToDownloadsFolder;
   },
-  getConfig: () => invokeClient("getConfig") as ReturnType<ApiClient["getConfig"]>,
+  getConfig: () =>
+    invokeClient("getConfig") as ReturnType<ApiClient["getConfig"]>,
   configPaths: () =>
     invokeClient("configPaths") as ReturnType<ApiClient["configPaths"]>,
   setDefault: (name) =>
@@ -89,6 +90,12 @@ export const api: ApiClient = {
   testProvider: (name) =>
     invokeClient("testProvider", name) as ReturnType<ApiClient["testProvider"]>,
   listJobs: () => invokeClient("listJobs") as ReturnType<ApiClient["listJobs"]>,
+  listJobsPage: (options) =>
+    invokeClient("listJobsPage", options) as ReturnType<
+      ApiClient["listJobsPage"]
+    >,
+  listActiveJobs: () =>
+    invokeClient("listActiveJobs") as ReturnType<ApiClient["listActiveJobs"]>,
   getJob: (id) => invokeClient("getJob", id) as ReturnType<ApiClient["getJob"]>,
   deleteJob: (id) =>
     invokeClient("deleteJob", id) as ReturnType<ApiClient["deleteJob"]>,

@@ -22,6 +22,8 @@ import {
 import type {
   ApiClient,
   ConfigPaths,
+  JobListOptions,
+  JobListPage,
   JobUpdateHandler,
   TauriJobResponse,
 } from "./types";
@@ -37,6 +39,22 @@ function rememberEventJob(event: JobEvent) {
   if (job && typeof job === "object") {
     rememberJobOutputs(normalizeJob(job as Record<string, unknown>));
   }
+}
+
+function jobTimestamp(job: Job) {
+  const raw = job.created_at || job.updated_at || "";
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && raw.trim() !== "") return numeric * 1000;
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function mergeJobsById(jobs: Job[]) {
+  const byId = new Map<string, Job>();
+  for (const job of jobs) byId.set(job.id, job);
+  return Array.from(byId.values()).sort(
+    (a, b) => jobTimestamp(b) - jobTimestamp(a),
+  );
 }
 
 function subscribeTauriJobUpdates(onEvent: JobUpdateHandler) {
@@ -99,8 +117,34 @@ export const tauriApi: ApiClient = {
     return invoke<TestProviderResult>("provider_test", { name });
   },
   async listJobs() {
+    const [page, active] = await Promise.all([
+      tauriApi.listJobsPage({ limit: 100 }),
+      tauriApi.listActiveJobs(),
+    ]);
+    return mergeJobsById([...active, ...page.jobs]);
+  },
+  async listJobsPage(options: JobListOptions = {}) {
+    const payload = await invoke<{
+      jobs: Record<string, unknown>[];
+      next_cursor?: string | null;
+      has_more?: boolean;
+      total?: number;
+    }>("history_list", {
+      limit: options.limit,
+      cursor: options.cursor,
+      status:
+        options.filter && options.filter !== "all" ? options.filter : undefined,
+    });
+    return {
+      jobs: (payload.jobs ?? []).map(normalizeJob),
+      next_cursor: payload.next_cursor ?? null,
+      has_more: Boolean(payload.has_more),
+      total: Number(payload.total ?? payload.jobs?.length ?? 0),
+    } satisfies JobListPage;
+  },
+  async listActiveJobs() {
     const payload = await invoke<{ jobs: Record<string, unknown>[] }>(
-      "history_list",
+      "history_active_list",
     );
     return (payload.jobs ?? []).map(normalizeJob);
   },

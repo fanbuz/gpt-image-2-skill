@@ -40,6 +40,31 @@ function failureDescription(job: Job) {
   );
 }
 
+function jobFromEvent(event: { data?: Record<string, unknown> }): Job | null {
+  const raw = event.data?.job;
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Partial<Job> & Record<string, unknown>;
+  if (!value.id || !value.status) return null;
+  const rawStatus = String(value.status);
+  const status = rawStatus === "canceled" ? "cancelled" : rawStatus;
+  return {
+    id: String(value.id),
+    command: (value.command as Job["command"]) ?? "images generate",
+    provider: String(value.provider ?? "auto"),
+    status: status as JobStatus,
+    created_at: String(value.created_at ?? ""),
+    updated_at: String(value.updated_at ?? value.created_at ?? ""),
+    metadata:
+      value.metadata && typeof value.metadata === "object"
+        ? (value.metadata as Record<string, unknown>)
+        : {},
+    outputs: Array.isArray(value.outputs) ? value.outputs : [],
+    output_path:
+      typeof value.output_path === "string" ? value.output_path : undefined,
+    error: (value.error as Job["error"]) ?? null,
+  };
+}
+
 function notifyTerminal(job: Job, onOpen: OpenJob) {
   const id = `job:${job.id}:${job.status}`;
   const open = () => onOpen(job.id);
@@ -91,10 +116,21 @@ export function useJobNotifications(jobs: Job[] | undefined, onOpen: OpenJob) {
   const notifyOnFailure = tweaks.notifyOnFailure;
 
   useEffect(() => {
-    return api.subscribeJobUpdates(() => {
+    return api.subscribeJobUpdates((_, event) => {
       void qc.invalidateQueries({ queryKey: ["jobs"] });
+      const job = jobFromEvent(event);
+      if (!job) return;
+      const previous = known.current.get(job.id);
+      if (previous !== job.status) {
+        if (previous && terminalStatuses.has(job.status)) {
+          const allowed =
+            job.status === "completed" ? notifyOnComplete : notifyOnFailure;
+          if (allowed) notifyTerminal(job, onOpen);
+        }
+        known.current.set(job.id, job.status);
+      }
     });
-  }, [qc]);
+  }, [notifyOnComplete, notifyOnFailure, onOpen, qc]);
 
   useEffect(() => {
     if (!jobs) return;

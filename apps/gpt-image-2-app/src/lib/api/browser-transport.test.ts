@@ -169,6 +169,38 @@ describe("browserApi", () => {
     expect(bodies[1]).toMatchObject({ prompt: "retry me", quality: "high" });
   });
 
+  it("paginates browser history without hydrating every stored job", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => okJson({ data: [{ b64_json: tinyPng }] })),
+    );
+    await addProvider({ supports_n: true });
+
+    const created = await Promise.all(
+      ["first page", "second page", "third page"].map((prompt) =>
+        browserApi.createGenerate({
+          prompt,
+          provider: "mock",
+          format: "png",
+          n: 1,
+        }),
+      ),
+    );
+    await Promise.all(created.map((job) => waitForJob(job.job_id)));
+
+    const firstPage = await browserApi.listJobsPage({ limit: 2 });
+    expect(firstPage.jobs).toHaveLength(2);
+    expect(firstPage.has_more).toBe(true);
+    expect(firstPage.total).toBe(3);
+
+    const secondPage = await browserApi.listJobsPage({
+      limit: 2,
+      cursor: firstPage.next_cursor ?? undefined,
+    });
+    expect(secondPage.jobs).toHaveLength(1);
+    expect(secondPage.has_more).toBe(false);
+  });
+
   it("falls back to concurrent single-output requests when n is unsupported", async () => {
     const requests: CapturedRequest[] = [];
     vi.stubGlobal(

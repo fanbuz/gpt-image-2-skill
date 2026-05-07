@@ -44,6 +44,20 @@ export type ConfigPaths = {
 
 export type EventHandler = (ev: JobEvent) => void;
 export type JobUpdateHandler = (jobId: string, ev: JobEvent) => void;
+export type JobListFilter = "all" | "running" | "completed" | "failed";
+
+export type JobListOptions = {
+  limit?: number;
+  cursor?: string;
+  filter?: JobListFilter;
+};
+
+export type JobListPage = {
+  jobs: Job[];
+  next_cursor?: string | null;
+  has_more: boolean;
+  total: number;
+};
 
 export type ApiClient = RuntimeCapabilities & {
   getConfig(): Promise<ServerConfig>;
@@ -57,6 +71,8 @@ export type ApiClient = RuntimeCapabilities & {
   deleteProvider(name: string): Promise<ServerConfig>;
   testProvider(name: string): Promise<TestProviderResult>;
   listJobs(): Promise<Job[]>;
+  listJobsPage(options?: JobListOptions): Promise<JobListPage>;
+  listActiveJobs(): Promise<Job[]>;
   getJob(id: string): Promise<{ job: Job; events: JobEvent[] }>;
   deleteJob(id: string): Promise<void>;
   cancelJob(id: string): Promise<TauriJobResponse>;

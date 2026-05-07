@@ -1,5 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type { JobListFilter } from "@/lib/api/types";
 import type { GenerateRequest, Job, QueueStatus } from "@/lib/types";
 
 export function useJobs() {
@@ -14,6 +20,33 @@ export function useJobs() {
         ? 1_500
         : 8_000;
     },
+  });
+}
+
+export function useActiveJobs() {
+  return useQuery<Job[]>({
+    queryKey: ["jobs", "active"],
+    queryFn: api.listActiveJobs,
+    refetchInterval: (query) => {
+      const jobs = query.state.data as Job[] | undefined;
+      return jobs?.length ? 1_500 : 8_000;
+    },
+  });
+}
+
+export function useJobPages(filter: JobListFilter = "all") {
+  return useInfiniteQuery({
+    queryKey: ["jobs", "pages", filter],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      api.listJobsPage({
+        limit: 100,
+        cursor: pageParam,
+        filter,
+      }),
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    enabled: filter !== "running",
+    refetchInterval: filter === "all" || filter === "running" ? 4_000 : false,
   });
 }
 

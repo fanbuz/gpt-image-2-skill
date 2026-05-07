@@ -21,6 +21,8 @@ import type {
   ApiClient,
   ConfigPaths,
   EventHandler,
+  JobListOptions,
+  JobListPage,
   JobUpdateHandler,
   TauriJobResponse,
 } from "./types";
@@ -92,6 +94,33 @@ async function requestJson<T>(
 
 function jsonBody(value: unknown) {
   return JSON.stringify(value);
+}
+
+function jobTimestamp(job: Job) {
+  const raw = job.created_at || job.updated_at || "";
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && raw.trim() !== "") return numeric * 1000;
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function mergeJobsById(jobs: Job[]) {
+  const byId = new Map<string, Job>();
+  for (const job of jobs) byId.set(job.id, job);
+  return Array.from(byId.values()).sort(
+    (a, b) => jobTimestamp(b) - jobTimestamp(a),
+  );
+}
+
+function jobsQuery(options: JobListOptions = {}) {
+  const params = new URLSearchParams();
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.cursor) params.set("cursor", options.cursor);
+  if (options.filter && options.filter !== "all") {
+    params.set("status", options.filter);
+  }
+  const query = params.toString();
+  return query ? `/jobs?${query}` : "/jobs";
 }
 
 function rememberEventJob(event: JobEvent) {
@@ -196,10 +225,13 @@ export const httpApi: ApiClient = {
   },
   async upsertProvider(name: string, cfg: ProviderConfig) {
     return normalizeConfig(
-      await requestJson<ServerConfig>(`/providers/${encodeURIComponent(name)}`, {
-        method: "PUT",
-        body: jsonBody(cfg),
-      }),
+      await requestJson<ServerConfig>(
+        `/providers/${encodeURIComponent(name)}`,
+        {
+          method: "PUT",
+          body: jsonBody(cfg),
+        },
+      ),
     );
   },
   async revealProviderCredential(name: string, credential: string) {
@@ -211,9 +243,12 @@ export const httpApi: ApiClient = {
   },
   async deleteProvider(name: string) {
     return normalizeConfig(
-      await requestJson<ServerConfig>(`/providers/${encodeURIComponent(name)}`, {
-        method: "DELETE",
-      }),
+      await requestJson<ServerConfig>(
+        `/providers/${encodeURIComponent(name)}`,
+        {
+          method: "DELETE",
+        },
+      ),
     );
   },
   async testProvider(name: string) {
@@ -223,8 +258,29 @@ export const httpApi: ApiClient = {
     );
   },
   async listJobs() {
+    const [page, active] = await Promise.all([
+      httpApi.listJobsPage({ limit: 100 }),
+      httpApi.listActiveJobs(),
+    ]);
+    return mergeJobsById([...active, ...page.jobs]);
+  },
+  async listJobsPage(options = {}) {
+    const payload = await requestJson<{
+      jobs: Record<string, unknown>[];
+      next_cursor?: string | null;
+      has_more?: boolean;
+      total?: number;
+    }>(jobsQuery(options));
+    return {
+      jobs: (payload.jobs ?? []).map(normalizeJob),
+      next_cursor: payload.next_cursor ?? null,
+      has_more: Boolean(payload.has_more),
+      total: Number(payload.total ?? payload.jobs?.length ?? 0),
+    } satisfies JobListPage;
+  },
+  async listActiveJobs() {
     const payload = await requestJson<{ jobs: Record<string, unknown>[] }>(
-      "/jobs",
+      "/jobs/active",
     );
     return (payload.jobs ?? []).map(normalizeJob);
   },
@@ -310,7 +366,11 @@ export const httpApi: ApiClient = {
   },
   jobOutputPath,
   jobOutputPaths,
-  subscribeJobEvents(jobId: string, onEvent: EventHandler, onDone?: () => void) {
+  subscribeJobEvents(
+    jobId: string,
+    onEvent: EventHandler,
+    onDone?: () => void,
+  ) {
     let closed = false;
     let seq = 0;
     const seen = new Set<number>();

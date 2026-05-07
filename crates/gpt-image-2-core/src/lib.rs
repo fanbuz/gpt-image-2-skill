@@ -12,7 +12,8 @@ use reqwest::StatusCode;
 use reqwest::blocking::multipart::{Form, Part};
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
-use rusqlite::{Connection, Row, params};
+use rusqlite::types::Value as SqlValue;
+use rusqlite::{Connection, Row, params, params_from_iter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use url::Url;
@@ -48,6 +49,8 @@ pub const CONFIG_FILE_NAME: &str = "config.json";
 pub const HISTORY_FILE_NAME: &str = "history.sqlite";
 pub const JOBS_DIR_NAME: &str = "jobs";
 pub const KEYCHAIN_SERVICE: &str = "gpt-image-2-skill";
+pub const DEFAULT_HISTORY_PAGE_LIMIT: usize = 100;
+pub const MAX_HISTORY_PAGE_LIMIT: usize = 200;
 
 #[derive(Debug, Clone)]
 pub struct AppError {
@@ -3710,6 +3713,28 @@ fn open_history_db() -> Result<Connection, AppError> {
         )
         .with_detail(json!({"error": error.to_string()}))
     })?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jobs_created_at_id ON jobs (created_at DESC, id DESC)",
+        [],
+    )
+    .map_err(|error| {
+        AppError::new(
+            "history_migration_failed",
+            "Unable to initialize history indexes.",
+        )
+        .with_detail(json!({"error": error.to_string()}))
+    })?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jobs_status_created_at_id ON jobs (status, created_at DESC, id DESC)",
+        [],
+    )
+    .map_err(|error| {
+        AppError::new(
+            "history_migration_failed",
+            "Unable to initialize history indexes.",
+        )
+        .with_detail(json!({"error": error.to_string()}))
+    })?;
     Ok(conn)
 }
 
@@ -3780,6 +3805,21 @@ pub fn delete_history_job(job_id: &str) -> Result<usize, AppError> {
         })
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct HistoryListOptions {
+    pub limit: Option<usize>,
+    pub cursor: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HistoryListPage {
+    pub jobs: Vec<Value>,
+    pub next_cursor: Option<String>,
+    pub has_more: bool,
+    pub total: usize,
+}
+
 fn history_row_to_value(row: &Row<'_>) -> rusqlite::Result<Value> {
     let output_path = row.get::<_, Option<String>>(4)?;
     let created_at = row.get::<_, String>(5)?;
@@ -3815,12 +3855,111 @@ fn history_row_to_value(row: &Row<'_>) -> rusqlite::Result<Value> {
     }))
 }
 
-pub fn list_history_jobs() -> Result<Vec<Value>, AppError> {
+fn normalize_history_limit(limit: Option<usize>) -> usize {
+    limit
+        .unwrap_or(DEFAULT_HISTORY_PAGE_LIMIT)
+        .clamp(1, MAX_HISTORY_PAGE_LIMIT)
+}
+
+fn history_status_values(status: Option<&str>) -> Vec<&'static str> {
+    match status.unwrap_or("all") {
+        "active" | "running" => vec!["queued", "running"],
+        "completed" => vec!["completed"],
+        "failed" => vec!["failed", "cancelled", "canceled"],
+        "queued" => vec!["queued"],
+        "all" | "" => Vec::new(),
+        _ => Vec::new(),
+    }
+}
+
+fn append_status_filter(
+    clauses: &mut Vec<String>,
+    params: &mut Vec<SqlValue>,
+    statuses: &[&'static str],
+) {
+    if statuses.is_empty() {
+        return;
+    }
+    let placeholders = (0..statuses.len())
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(", ");
+    clauses.push(format!("status IN ({placeholders})"));
+    params.extend(
+        statuses
+            .iter()
+            .map(|status| SqlValue::Text((*status).to_string())),
+    );
+}
+
+fn parse_history_cursor(cursor: Option<&str>) -> Option<(String, String)> {
+    let cursor = cursor?.trim();
+    if cursor.is_empty() {
+        return None;
+    }
+    let (created_at, id) = cursor.split_once('|')?;
+    if created_at.is_empty() || id.is_empty() {
+        return None;
+    }
+    Some((created_at.to_string(), id.to_string()))
+}
+
+fn history_cursor_for(job: &Value) -> Option<String> {
+    let created_at = job.get("created_at")?.as_str()?;
+    let id = job.get("id")?.as_str()?;
+    Some(format!("{created_at}|{id}"))
+}
+
+fn history_where_sql(clauses: &[String]) -> String {
+    if clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", clauses.join(" AND "))
+    }
+}
+
+pub fn list_history_jobs_page(options: HistoryListOptions) -> Result<HistoryListPage, AppError> {
     let conn = open_history_db()?;
-    let mut stmt = conn
-        .prepare("SELECT id, command, provider, status, output_path, created_at, metadata FROM jobs ORDER BY created_at DESC LIMIT 100")
-        .map_err(|error| AppError::new("history_query_failed", "Unable to query history.").with_detail(json!({"error": error.to_string()})))?;
-    stmt.query_map([], history_row_to_value)
+    let limit = normalize_history_limit(options.limit);
+    let statuses = history_status_values(options.status.as_deref());
+    let cursor = parse_history_cursor(options.cursor.as_deref());
+
+    let mut count_clauses = Vec::new();
+    let mut count_params = Vec::new();
+    append_status_filter(&mut count_clauses, &mut count_params, &statuses);
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM jobs{}",
+        history_where_sql(&count_clauses)
+    );
+    let total = conn
+        .query_row(&count_sql, params_from_iter(count_params), |row| {
+            row.get::<_, i64>(0)
+        })
+        .map_err(|error| {
+            AppError::new("history_query_failed", "Unable to count history.")
+                .with_detail(json!({"error": error.to_string()}))
+        })? as usize;
+
+    let mut clauses = Vec::new();
+    let mut query_params = Vec::new();
+    append_status_filter(&mut clauses, &mut query_params, &statuses);
+    if let Some((created_at, id)) = cursor {
+        clauses.push("(created_at < ? OR (created_at = ? AND id < ?))".to_string());
+        query_params.push(SqlValue::Text(created_at.clone()));
+        query_params.push(SqlValue::Text(created_at));
+        query_params.push(SqlValue::Text(id));
+    }
+    query_params.push(SqlValue::Integer((limit + 1) as i64));
+    let query_sql = format!(
+        "SELECT id, command, provider, status, output_path, created_at, metadata FROM jobs{} ORDER BY created_at DESC, id DESC LIMIT ?",
+        history_where_sql(&clauses)
+    );
+    let mut stmt = conn.prepare(&query_sql).map_err(|error| {
+        AppError::new("history_query_failed", "Unable to query history.")
+            .with_detail(json!({"error": error.to_string()}))
+    })?;
+    let mut jobs = stmt
+        .query_map(params_from_iter(query_params), history_row_to_value)
         .map_err(|error| {
             AppError::new("history_query_failed", "Unable to query history.")
                 .with_detail(json!({"error": error.to_string()}))
@@ -3829,6 +3968,45 @@ pub fn list_history_jobs() -> Result<Vec<Value>, AppError> {
         .map_err(|error| {
             AppError::new("history_query_failed", "Unable to read history rows.")
                 .with_detail(json!({"error": error.to_string()}))
+        })?;
+    let has_more = jobs.len() > limit;
+    if has_more {
+        jobs.truncate(limit);
+    }
+    let next_cursor = if has_more {
+        jobs.last().and_then(history_cursor_for)
+    } else {
+        None
+    };
+    Ok(HistoryListPage {
+        jobs,
+        next_cursor,
+        has_more,
+        total,
+    })
+}
+
+pub fn list_history_jobs() -> Result<Vec<Value>, AppError> {
+    Ok(list_history_jobs_page(HistoryListOptions::default())?.jobs)
+}
+
+pub fn list_active_history_jobs() -> Result<Vec<Value>, AppError> {
+    let conn = open_history_db()?;
+    let mut stmt = conn
+        .prepare("SELECT id, command, provider, status, output_path, created_at, metadata FROM jobs WHERE status IN ('queued', 'running') ORDER BY created_at DESC, id DESC")
+        .map_err(|error| AppError::new("history_query_failed", "Unable to query active history.").with_detail(json!({"error": error.to_string()})))?;
+    stmt.query_map([], history_row_to_value)
+        .map_err(|error| {
+            AppError::new("history_query_failed", "Unable to query active history.")
+                .with_detail(json!({"error": error.to_string()}))
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            AppError::new(
+                "history_query_failed",
+                "Unable to read active history rows.",
+            )
+            .with_detail(json!({"error": error.to_string()}))
         })
 }
 

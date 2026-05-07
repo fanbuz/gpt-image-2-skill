@@ -16,11 +16,11 @@ use axum::{
     routing::{get, post, put},
 };
 use gpt_image_2_core::{
-    AppConfig, CONFIG_DIR_NAME, CredentialRef, KEYCHAIN_SERVICE, ProviderConfig,
-    default_config_path, default_keychain_account, delete_history_job, history_db_path, jobs_dir,
-    list_history_jobs, load_app_config, read_keychain_secret, redact_app_config, run_json,
-    save_app_config, shared_config_dir, show_history_job, upsert_history_job,
-    write_keychain_secret,
+    AppConfig, CONFIG_DIR_NAME, CredentialRef, HistoryListOptions, KEYCHAIN_SERVICE,
+    ProviderConfig, default_config_path, default_keychain_account, delete_history_job,
+    history_db_path, jobs_dir, list_active_history_jobs, list_history_jobs_page, load_app_config,
+    read_keychain_secret, redact_app_config, run_json, save_app_config, shared_config_dir,
+    show_history_job, upsert_history_job, write_keychain_secret,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -1540,10 +1540,34 @@ async fn provider_test(Path(name): Path<String>) -> Json<Value> {
     }))
 }
 
-async fn history_list() -> ApiResult {
+#[derive(Deserialize)]
+struct HistoryListQuery {
+    limit: Option<usize>,
+    cursor: Option<String>,
+    status: Option<String>,
+}
+
+async fn history_list(Query(query): Query<HistoryListQuery>) -> ApiResult {
+    let page = list_history_jobs_page(HistoryListOptions {
+        limit: query.limit,
+        cursor: query.cursor,
+        status: query.status,
+    })
+    .map_err(app_error)
+    .map_err(ApiError::internal)?;
     Ok(Json(json!({
         "history_file": history_db_path().display().to_string(),
-        "jobs": list_history_jobs().map_err(app_error).map_err(ApiError::internal)?,
+        "jobs": page.jobs,
+        "next_cursor": page.next_cursor,
+        "has_more": page.has_more,
+        "total": page.total,
+    })))
+}
+
+async fn history_active_list() -> ApiResult {
+    Ok(Json(json!({
+        "history_file": history_db_path().display().to_string(),
+        "jobs": list_active_history_jobs().map_err(app_error).map_err(ApiError::internal)?,
     })))
 }
 
@@ -2003,6 +2027,7 @@ fn api_router(state: JobQueueState) -> Router {
         )
         .route("/providers/{name}/test", post(provider_test))
         .route("/jobs", get(history_list))
+        .route("/jobs/active", get(history_active_list))
         .route("/jobs/{job_id}", get(history_show).delete(history_delete))
         .route("/jobs/{job_id}/cancel", post(cancel_job))
         .route("/jobs/{job_id}/retry", post(retry_job))

@@ -22,6 +22,8 @@ import type {
   ApiClient,
   ConfigPaths,
   EventHandler,
+  JobListOptions,
+  JobListPage,
   JobUpdateHandler,
   TauriJobResponse,
 } from "./types";
@@ -178,18 +180,70 @@ async function readStoredJob(id: string) {
   return raw ? normalizeJob(raw) : undefined;
 }
 
+function jobTimestamp(job: Job) {
+  const raw = job.created_at || job.updated_at || "";
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && raw.trim() !== "") return numeric * 1000;
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function compareJobsDesc(a: Job, b: Job) {
+  const delta = jobTimestamp(b) - jobTimestamp(a);
+  return delta === 0 ? b.id.localeCompare(a.id) : delta;
+}
+
+function mergeJobsById(jobs: Job[]) {
+  const byId = new Map<string, Job>();
+  for (const job of jobs) byId.set(job.id, job);
+  return Array.from(byId.values()).sort(compareJobsDesc);
+}
+
+function jobCursor(job: Job) {
+  return `${job.created_at}|${job.id}`;
+}
+
+function filterJobs(jobs: Job[], filter: JobListOptions["filter"]) {
+  if (filter === "running") {
+    return jobs.filter(
+      (job) => job.status === "queued" || job.status === "running",
+    );
+  }
+  if (filter === "completed") {
+    return jobs.filter((job) => job.status === "completed");
+  }
+  if (filter === "failed") {
+    return jobs.filter(
+      (job) => job.status === "failed" || job.status === "cancelled",
+    );
+  }
+  return jobs;
+}
+
 async function readStoredJobs() {
   const db = await openDb();
   const tx = db.transaction("jobs", "readonly");
   const rows = await requestToPromise<Record<string, unknown>[]>(
     tx.objectStore("jobs").getAll(),
   );
-  return rows
-    .map(normalizeJob)
-    .sort(
-      (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    );
+  return rows.map(normalizeJob).sort(compareJobsDesc);
+}
+
+async function readStoredJobsPage(options: JobListOptions = {}) {
+  const limit = Math.max(1, Math.min(200, Math.floor(options.limit ?? 100)));
+  const jobs = filterJobs(await readStoredJobs(), options.filter);
+  const start = options.cursor
+    ? jobs.findIndex((job) => jobCursor(job) === options.cursor) + 1
+    : 0;
+  const offset = start > 0 ? start : 0;
+  const page = jobs.slice(offset, offset + limit);
+  const hasMore = offset + limit < jobs.length;
+  return {
+    jobs: page,
+    next_cursor: hasMore ? jobCursor(page[page.length - 1]) : null,
+    has_more: hasMore,
+    total: jobs.length,
+  } satisfies JobListPage;
 }
 
 async function writeJob(job: Job) {
@@ -1139,7 +1193,9 @@ export const browserApi: ApiClient = {
     }
     const apiKey = cfg.credentials.api_key;
     if (!apiKey || apiKey.source !== "file") {
-      throw new Error("静态 Web 只支持直接填写并保留在当前浏览器数据中的 API Key。");
+      throw new Error(
+        "静态 Web 只支持直接填写并保留在当前浏览器数据中的 API Key。",
+      );
     }
     const config = await readConfigRecord();
     const existing = config.providers[trimmed];
@@ -1224,7 +1280,23 @@ export const browserApi: ApiClient = {
   },
   async listJobs() {
     await prepareBrowserRuntime();
-    const jobs = await readStoredJobs();
+    const [page, active] = await Promise.all([
+      readStoredJobsPage({ limit: 100 }),
+      browserApi.listActiveJobs(),
+    ]);
+    const jobs = mergeJobsById([...active, ...page.jobs]);
+    await Promise.all(jobs.map(hydrateJobOutputs));
+    return jobs;
+  },
+  async listJobsPage(options = {}) {
+    await prepareBrowserRuntime();
+    const page = await readStoredJobsPage(options);
+    await Promise.all(page.jobs.map(hydrateJobOutputs));
+    return page;
+  },
+  async listActiveJobs() {
+    await prepareBrowserRuntime();
+    const jobs = filterJobs(await readStoredJobs(), "running");
     await Promise.all(jobs.map(hydrateJobOutputs));
     return jobs;
   },
@@ -1350,7 +1422,9 @@ export const browserApi: ApiClient = {
     const input = await readJobInput(jobId);
     if (job.command === "images generate") {
       const request =
-        input?.kind === "generate" ? input.request : generateRequestFromJob(job);
+        input?.kind === "generate"
+          ? input.request
+          : generateRequestFromJob(job);
       if (!request.prompt.trim()) {
         throw new Error("这个生成任务缺少 prompt，无法原样重试。");
       }
