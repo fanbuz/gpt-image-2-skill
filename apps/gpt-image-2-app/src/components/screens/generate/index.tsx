@@ -24,14 +24,12 @@ import Masonry, {
 import { Icon } from "@/components/icon";
 import { PlaceholderImage } from "@/components/screens/shared/placeholder-image";
 import { PromptTemplatePicker } from "@/components/screens/shared/prompt-template-picker";
+import { CreationParamsBar } from "@/components/screens/shared/creation-params-bar";
 import logoUrl from "@/assets/logo.png";
 import { useTweaks } from "@/hooks/use-tweaks";
-import { usePromptTemplates } from "@/hooks/use-prompt-templates";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { THEME_PRESETS } from "@/lib/theme-presets";
 import { loadGenerateDraft, saveGenerateDraft } from "@/lib/drafts";
-import { GlassSelect } from "@/components/ui/select";
-import { GlassCombobox } from "@/components/ui/combobox";
 import { useCreateGenerate, useJobs } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
 import { api } from "@/lib/api";
@@ -42,10 +40,7 @@ import {
   jobOutputUrl,
 } from "@/lib/job-outputs";
 import { sendImageToEdit } from "@/lib/job-navigation";
-import {
-  insertPromptAtCursor,
-  visiblePromptTemplatesForScope,
-} from "@/lib/prompt-templates";
+import { insertPromptAtCursor } from "@/lib/prompt-templates";
 import {
   errorMessage,
   outputCountMismatchMessage,
@@ -257,8 +252,6 @@ export function GenerateScreen({
   const reducedMotion = useReducedMotion();
   const providerNames = useMemo(() => readProviderNames(config), [config]);
   const defaultProvider = effectiveDefaultProvider(config);
-  const { state: promptTemplateState, touchTemplate: touchPromptTemplate } =
-    usePromptTemplates();
   // ClickSpark needs a real CSS color value, not a var() reference,
   // so tint it to whatever preset is active.
   const { tweaks } = useTweaks();
@@ -289,30 +282,6 @@ export function GenerateScreen({
   const queueCount = jobs.filter(
     (j) => j.status === "queued" || j.status === "running",
   ).length;
-  const recentPrompts = useMemo(() => {
-    const seen = new Set<string>();
-    const result: string[] = [];
-    for (const job of jobs) {
-      const p = (job.metadata as Record<string, unknown>)?.prompt as
-        | string
-        | undefined;
-      if (!p) continue;
-      const trimmed = p.trim();
-      if (trimmed.length < 4 || seen.has(trimmed)) continue;
-      seen.add(trimmed);
-      result.push(trimmed);
-      if (result.length >= 3) break;
-    }
-    return result;
-  }, [jobs]);
-  const quickPromptTemplates = useMemo(
-    () =>
-      visiblePromptTemplatesForScope(promptTemplateState, "generate").slice(
-        0,
-        5,
-      ),
-    [promptTemplateState],
-  );
   const insertPromptTemplate = useCallback(
     (text: string) => {
       const textarea = promptTextareaRef.current;
@@ -703,6 +672,11 @@ export function GenerateScreen({
                 编辑
               </button>
             )}
+            <div className="flex-1" />
+            <PromptTemplatePicker
+              scope="generate"
+              onInsert={insertPromptTemplate}
+            />
           </div>
 
           {/* error chip (in-form) */}
@@ -742,65 +716,7 @@ export function GenerateScreen({
             </div>
           )}
 
-          {/* Cold-start chips — only when textarea is empty.
-              Pulls 3 recent unique prompts from job history + a static
-              template list, so first-time users have a starting point and
-              repeat users can re-fire a previous prompt with one click. */}
-          {!prompt.trim() && (
-            <div className="mb-2.5 flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1 [mask-image:linear-gradient(to_right,black_calc(100%-32px),transparent)] [-webkit-mask-image:linear-gradient(to_right,black_calc(100%-32px),transparent)]">
-              {recentPrompts.length > 0 && (
-                <>
-                  <span className="t-caps shrink-0 mr-1">最近</span>
-                  {recentPrompts.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPrompt(p)}
-                      className="shrink-0 max-w-[200px] inline-flex items-center h-7 px-3 rounded-full text-[12px] text-muted hover:text-foreground bg-[color:var(--w-04)] hover:bg-[color:var(--w-06)] border border-border transition-colors"
-                      title={p}
-                    >
-                      {/* truncate must wrap a block child — applying it
-                          directly on inline-flex container drops the ellipsis
-                          (text gets hard-clipped instead). */}
-                      <span className="block truncate">{p}</span>
-                    </button>
-                  ))}
-                  <span className="mx-2 h-3.5 w-px bg-border-faint shrink-0" />
-                </>
-              )}
-              {quickPromptTemplates.length > 0 && (
-                <>
-                  <span className="t-caps shrink-0 mr-1">模板</span>
-                  {quickPromptTemplates.map((template) => (
-                    <button
-                      key={template.id}
-                      type="button"
-                      onClick={() => {
-                        insertPromptTemplate(template.prompt);
-                        touchPromptTemplate(template.id);
-                      }}
-                      className="shrink-0 inline-flex items-center gap-1 h-7 px-3 rounded-full text-[12px] text-muted hover:text-foreground bg-[color:var(--accent-08)] hover:bg-[color:var(--accent-14)] border border-[color:var(--accent-30)] transition-colors"
-                      title={template.prompt}
-                    >
-                      <Sparkles
-                        size={11}
-                        className="opacity-60 text-[color:var(--accent)]"
-                      />
-                      {template.title}
-                    </button>
-                  ))}
-                </>
-              )}
-            </div>
-          )}
-
           {/* textarea */}
-          <div className="mb-2 flex justify-end">
-            <PromptTemplatePicker
-              scope="generate"
-              onInsert={insertPromptTemplate}
-            />
-          </div>
           <div className="relative">
             <label htmlFor={promptId} className="sr-only">
               生成提示词
@@ -822,113 +738,84 @@ export function GenerateScreen({
             </div>
           </div>
 
-          {/* parameter chips + CTA */}
-          <div
-            className={cn(
-              "mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:items-center",
-              !hasSplit &&
-                "xl:grid-cols-[minmax(146px,1.35fr)_minmax(92px,.8fr)_minmax(92px,.8fr)_minmax(82px,.68fr)_minmax(104px,auto)]",
-            )}
-          >
-            <GlassCombobox
-              variant="chip"
-              label="尺寸"
-              value={size}
-              options={POPULAR_SIZE_OPTIONS}
-              onValueChange={setSize}
-              placeholder="WxH"
-              className="col-span-2 w-full min-w-0 sm:col-span-1"
-              invalid={!sizeValidation.ok}
-            />
-            <GlassSelect
-              variant="chip"
-              label="质量"
-              value={quality}
-              options={QUALITY_CHIP_OPTIONS}
-              onValueChange={setQuality}
-              className="w-full min-w-0 justify-between"
-            />
-            <GlassSelect
-              variant="chip"
-              label="格式"
-              value={format}
-              options={FORMAT_OPTIONS}
-              onValueChange={setFormat}
-              className="w-full min-w-0 justify-between"
-            />
-            <GlassCombobox
-              variant="chip"
-              label="数量"
-              value={String(n)}
-              options={COUNT_OPTIONS}
-              onValueChange={(v) => setN(Number(v) || 1)}
-              disabled={!supportsMultipleOutputs}
-              inputMode="numeric"
-              placeholder="1-10"
-              className="w-full min-w-0"
-            />
-            <ClickSpark
-              sparkColor={accentHex}
-              sparkCount={10}
-              sparkRadius={22}
-              sparkSize={8}
-              duration={500}
-              className={cn(
-                "col-span-2 w-full sm:col-span-4",
-                !hasSplit && "xl:col-span-1",
-              )}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  setPulseKey((n) => n + 1);
-                  handleRun();
-                }}
-                disabled={submitDisabled}
-                className="relative inline-flex h-11 w-full items-center justify-center gap-1.5 overflow-hidden rounded-full px-4 text-[14px] font-semibold text-foreground transition-[background,transform,opacity] hover:opacity-95 active:translate-y-[0.5px] disabled:cursor-not-allowed disabled:opacity-45"
-                style={{
-                  backgroundImage: "var(--accent-gradient-fill)",
-                  border: "1px solid var(--accent-50)",
-                  boxShadow: "var(--shadow-accent-glow)",
-                }}
+          <CreationParamsBar
+            className="mt-3"
+            size={size}
+            onSizeChange={setSize}
+            sizeOptions={POPULAR_SIZE_OPTIONS}
+            sizeInvalid={!sizeValidation.ok}
+            quality={quality}
+            onQualityChange={setQuality}
+            qualityOptions={QUALITY_CHIP_OPTIONS}
+            format={format}
+            onFormatChange={setFormat}
+            formatOptions={FORMAT_OPTIONS}
+            count={String(n)}
+            onCountChange={(value) => setN(Number(value) || 1)}
+            countOptions={COUNT_OPTIONS}
+            countDisabled={!supportsMultipleOutputs}
+            countInvalid={supportsMultipleOutputs && !outputCountValidation.ok}
+            action={
+              <ClickSpark
+                sparkColor={accentHex}
+                sparkCount={10}
+                sparkRadius={22}
+                sparkSize={8}
+                duration={500}
+                className="w-full"
               >
-                {/* Brand-accent ripple from center on each press. The
-                    remount-on-key trick replays the animation every click.
-                    pointer-events-none so the ripple never blocks the next
-                    click; aria-hidden because it's purely decorative. */}
-                {pulseKey > 0 && (
-                  <span
-                    key={pulseKey}
-                    aria-hidden
-                    className="pointer-events-none absolute inset-0 rounded-full animate-accent-pulse-out"
-                    style={{
-                      background:
-                        "radial-gradient(circle at center, var(--accent-55), transparent 70%)",
-                    }}
-                  />
-                )}
-                {isSubmitting ? (
-                  <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPulseKey((n) => n + 1);
+                    handleRun();
+                  }}
+                  disabled={submitDisabled}
+                  className="relative inline-flex h-11 w-full items-center justify-center gap-1.5 overflow-hidden rounded-full px-4 text-[14px] font-semibold text-foreground transition-[background,transform,opacity] hover:opacity-95 active:translate-y-[0.5px] disabled:cursor-not-allowed disabled:opacity-45"
+                  style={{
+                    backgroundImage: "var(--accent-gradient-fill)",
+                    border: "1px solid var(--accent-50)",
+                    boxShadow: "var(--shadow-accent-glow)",
+                  }}
+                >
+                  {/* Brand-accent ripple from center on each press. The
+                      remount-on-key trick replays the animation every click.
+                      pointer-events-none so the ripple never blocks the next
+                      click; aria-hidden because it's purely decorative. */}
+                  {pulseKey > 0 && (
                     <span
-                      className="inline-block h-3.5 w-3.5 rounded-full animate-spin"
+                      key={pulseKey}
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 rounded-full animate-accent-pulse-out"
                       style={{
-                        border: "2px solid var(--w-40)",
-                        borderTopColor: "var(--text)",
+                        background:
+                          "radial-gradient(circle at center, var(--accent-55), transparent 70%)",
                       }}
                     />
-                    提交中…
-                  </>
-                ) : isTracking && pendingOutputCount ? (
-                  <>生成中…</>
-                ) : (
-                  <>
-                    生成
-                    <Sparkles size={15} />
-                  </>
-                )}
-              </button>
-            </ClickSpark>
-          </div>
+                  )}
+                  {isSubmitting ? (
+                    <>
+                      <span
+                        className="inline-block h-3.5 w-3.5 rounded-full animate-spin"
+                        style={{
+                          border: "2px solid var(--w-40)",
+                          borderTopColor: "var(--text)",
+                        }}
+                      />
+                      提交中…
+                    </>
+                  ) : isTracking && pendingOutputCount ? (
+                    <>生成中…</>
+                  ) : (
+                    <>
+                      生成
+                      <Sparkles size={15} />
+                    </>
+                  )}
+                </button>
+              </ClickSpark>
+            }
+          />
         </motion.section>
 
         {/* Inline result gallery — closes the prompt → result loop on the

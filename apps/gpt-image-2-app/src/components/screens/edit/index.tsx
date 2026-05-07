@@ -18,7 +18,6 @@ import {
   Move,
   Plus,
   Redo2,
-  Settings as SettingsIcon,
   SlidersHorizontal,
   Sparkles,
   Square,
@@ -30,9 +29,7 @@ import {
 import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Empty } from "@/components/ui/empty";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { GlassSelect } from "@/components/ui/select";
-import { GlassCombobox } from "@/components/ui/combobox";
+import { FieldLabel } from "@/components/ui/field";
 import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -43,6 +40,7 @@ import {
 import { Icon } from "@/components/icon";
 import { OutputTile } from "@/components/screens/shared/output-tile";
 import { PromptTemplatePicker } from "@/components/screens/shared/prompt-template-picker";
+import { CreationParamsBar } from "@/components/screens/shared/creation-params-bar";
 import {
   MaskCanvas,
   type MaskExport,
@@ -52,8 +50,6 @@ import {
 } from "./mask-canvas";
 import { ReferenceImageCard, type RefImage } from "./reference-card";
 import { LocalEditOnboarding } from "./local-edit-onboarding";
-import ElasticSlider from "@/components/reactbits/components/ElasticSlider";
-import { providerKindLabel } from "@/lib/format";
 import { useCreateEdit } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
@@ -200,13 +196,6 @@ function regionModeLabel(mode: EditRegionMode) {
   return "不支持局部编辑";
 }
 
-function regionModeHint(mode: EditRegionMode) {
-  if (mode === "native-mask") return "遮罩会精确作用在目标图上";
-  if (mode === "reference-hint")
-    return "会额外发送一张选区标记图；用户上传图片顺序保持不变";
-  return "请使用多图参考，或换一个支持局部编辑的凭证";
-}
-
 const FORMAT_OPTIONS = [
   { value: "png", label: "PNG" },
   { value: "jpeg", label: "JPEG" },
@@ -279,7 +268,6 @@ export function EditScreen({
   const [panPinned, setPanPinned] = useState(false);
   const [spacePanning, setSpacePanning] = useState(false);
   const promptId = useId();
-  const brushSliderId = useId();
   const panMode = panPinned || spacePanning;
   const maskMode: MaskMode = maskTool === "erase" ? "erase" : "paint";
   const triggerMaskUndo = useCallback(() => setUndoKey((key) => key + 1), []);
@@ -342,7 +330,6 @@ export function EditScreen({
   const isSubmitting = exportKey != null || mutate.isPending;
   const isTracking = running;
   const isWorking = isSubmitting || isTracking;
-  const providerCfg = provider ? config?.providers[provider] : undefined;
   const supportsMultipleOutputs = providerSupportsMultipleOutputs(
     config,
     provider,
@@ -1008,161 +995,6 @@ export function EditScreen({
         </Popover>
 
         <div className="flex-1" />
-
-        {provider && (
-          <span
-            className="hidden md:inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] text-foreground"
-            style={{
-              background: "var(--w-05)",
-              border: "1px solid var(--w-10)",
-            }}
-            title={providerKindLabel(providerCfg?.type)}
-          >
-            <Icon name="cpu" size={12} style={{ color: "var(--accent)" }} />
-            <span className="truncate max-w-[120px]">{provider}</span>
-          </span>
-        )}
-
-        {/* Params popover */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] text-foreground transition-colors hover:bg-[color:var(--w-07)]"
-              style={{
-                background: "var(--w-05)",
-                border: "1px solid var(--w-10)",
-              }}
-            >
-              <SettingsIcon size={12} />
-              参数
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[340px] space-y-3">
-            <div className="t-caps">编辑参数</div>
-
-            <Field label="凭证">
-              <GlassSelect
-                value={provider}
-                onValueChange={setProvider}
-                options={providerNames.map((p) => ({ value: p, label: p }))}
-                disabled={providerNames.length === 0}
-                placeholder="（无可用凭证）"
-              />
-              <div className="mt-1 flex items-center gap-1.5 text-[11px] text-faint">
-                <span
-                  className="t-mono truncate max-w-[180px]"
-                  title={providerCfg?.model ?? ""}
-                >
-                  {providerCfg?.model ?? "—"}
-                </span>
-                <span aria-hidden>·</span>
-                <span className="truncate">
-                  {providerKindLabel(providerCfg?.type)}
-                </span>
-              </div>
-            </Field>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Field
-                label="尺寸"
-                hint={!sizeValidation.ok ? sizeValidation.message : undefined}
-              >
-                <GlassCombobox
-                  value={size}
-                  onValueChange={setSize}
-                  options={POPULAR_SIZE_OPTIONS}
-                  placeholder="auto / 1536x1024"
-                  invalid={!sizeValidation.ok}
-                />
-              </Field>
-              <Field label="质量">
-                <GlassSelect
-                  value={quality}
-                  onValueChange={setQuality}
-                  options={QUALITY_OPTIONS}
-                />
-              </Field>
-              <Field label="格式">
-                <GlassSelect
-                  value={format}
-                  onValueChange={setFormat}
-                  options={FORMAT_OPTIONS}
-                />
-              </Field>
-              <Field label="数量">
-                <GlassCombobox
-                  value={String(n)}
-                  onValueChange={(v) => setN(Number(v) || 1)}
-                  options={COUNT_OPTIONS}
-                  disabled={!supportsMultipleOutputs}
-                  inputMode="numeric"
-                  placeholder="1-10"
-                />
-              </Field>
-            </div>
-
-            {usesRegion && (
-              <>
-                <div className="pt-2 mt-1 border-t border-[color:var(--w-06)]" />
-                <div className="t-caps">遮罩工具</div>
-                <div className="space-y-2">
-                  <div className="rounded-md border border-border-faint bg-[color:var(--w-04)] px-2.5 py-1.5 text-[11px] text-muted">
-                    工具切换在画布左上角，粗细会同时作用于画笔、橡皮和形状描边。
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <label
-                      id={`${brushSliderId}-label`}
-                      className="text-[11px] text-muted shrink-0"
-                    >
-                      粗细
-                    </label>
-                    <ElasticSlider
-                      id={brushSliderId}
-                      value={brushSize}
-                      min={2}
-                      max={72}
-                      step={1}
-                      onChange={setBrushSize}
-                      ariaLabelledBy={`${brushSliderId}-label`}
-                      className="min-w-0 flex-1"
-                      valueWidthClassName="w-8"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setClearKey((k) => k + 1)}
-                    className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md text-[11.5px] text-muted hover:text-foreground hover:bg-[color:var(--w-05)] transition-colors"
-                  >
-                    <Trash2 size={11} /> 清除选区
-                  </button>
-                </div>
-                <div className="rounded-md border border-border-faint bg-[color:var(--w-04)] px-2.5 py-1.5 text-[11px] leading-relaxed text-muted">
-                  {regionModeHint(editRegionMode)}
-                </div>
-              </>
-            )}
-          </PopoverContent>
-        </Popover>
-
-        <button
-          type="button"
-          onClick={handleRun}
-          disabled={submitDisabled}
-          className="inline-flex items-center justify-center gap-1.5 h-8 px-4 rounded-full text-[12px] font-semibold text-foreground transition-[background,opacity] hover:opacity-95 active:translate-y-[0.5px] disabled:opacity-45 disabled:cursor-not-allowed"
-          style={{
-            backgroundImage: "var(--accent-gradient-fill)",
-            border: "1px solid var(--accent-50)",
-            boxShadow: "var(--shadow-accent-glow)",
-          }}
-        >
-          {isSubmitting ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <Sparkles size={12} />
-          )}
-          {isSubmitting ? "提交中…" : isTracking ? "再提交" : "应用"}
-        </button>
       </header>
 
       <input
@@ -1653,7 +1485,7 @@ export function EditScreen({
             id={promptId}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            minHeight={56}
+            minHeight={104}
             maxLength={4000}
             placeholder={
               usesRegion
@@ -1664,6 +1496,43 @@ export function EditScreen({
               if (event.key === "Enter" && (event.metaKey || event.ctrlKey))
                 handleRun();
             }}
+          />
+          <CreationParamsBar
+            size={size}
+            onSizeChange={setSize}
+            sizeOptions={POPULAR_SIZE_OPTIONS}
+            sizeInvalid={!sizeValidation.ok}
+            quality={quality}
+            onQualityChange={setQuality}
+            qualityOptions={QUALITY_OPTIONS}
+            format={format}
+            onFormatChange={setFormat}
+            formatOptions={FORMAT_OPTIONS}
+            count={String(n)}
+            onCountChange={(value) => setN(Number(value) || 1)}
+            countOptions={COUNT_OPTIONS}
+            countDisabled={!supportsMultipleOutputs}
+            countInvalid={supportsMultipleOutputs && !outputCountValidation.ok}
+            action={
+              <button
+                type="button"
+                onClick={handleRun}
+                disabled={submitDisabled}
+                className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-full px-5 text-[13px] font-semibold text-foreground transition-[background,opacity,transform] hover:opacity-95 active:translate-y-[0.5px] disabled:cursor-not-allowed disabled:opacity-45"
+                style={{
+                  backgroundImage: "var(--accent-gradient-fill)",
+                  border: "1px solid var(--accent-50)",
+                  boxShadow: "var(--shadow-accent-glow)",
+                }}
+              >
+                {isSubmitting ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Sparkles size={13} />
+                )}
+                {isSubmitting ? "提交中…" : isTracking ? "再提交" : "应用"}
+              </button>
+            }
           />
         </div>
 
