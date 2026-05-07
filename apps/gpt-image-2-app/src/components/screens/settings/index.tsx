@@ -38,6 +38,7 @@ import {
 import { api, type ConfigPaths } from "@/lib/api";
 import { clearCreativeDrafts } from "@/lib/drafts";
 import { copyText, openPath, revealPath } from "@/lib/user-actions";
+import { isDesktopRuntime, runtimeCopy } from "@/lib/runtime-copy";
 import { effectiveDefaultProvider } from "@/lib/providers";
 import { AddProviderDialog } from "@/components/screens/providers/add-provider-dialog";
 import { PromptTemplatesPanel } from "@/components/screens/settings/prompt-templates-panel";
@@ -275,7 +276,19 @@ function SettingsNav({
 /* ── Panel header (inside the right surface) ──────────── */
 
 function PanelHeader({ tab }: { tab: SettingsTab }) {
-  const meta = TAB_TITLES[tab];
+  const copy = runtimeCopy();
+  const meta =
+    tab === "about"
+      ? {
+          title: TAB_TITLES.about.title,
+          subtitle:
+            copy.kind === "tauri"
+              ? "桌面端更新、本地配置和数据路径"
+              : copy.kind === "http"
+                ? "Web 版本、部署更新和服务端数据"
+                : "静态 Web 版本和浏览器数据",
+        }
+      : TAB_TITLES[tab];
   return (
     <header className="border-b border-border-faint px-4 pb-3 pt-4 sm:px-6 sm:pb-4 sm:pt-5">
       <div className="t-h2">{meta.title}</div>
@@ -785,6 +798,7 @@ function AppearancePanel() {
 
 function RuntimePanel() {
   const { tweaks, setTweaks } = useTweaks();
+  const copy = runtimeCopy();
   const { data: queue } = useQueueStatus();
   const running = queue?.running ?? 0;
   const queued = queue?.queued ?? 0;
@@ -832,7 +846,11 @@ function RuntimePanel() {
       >
         <Row
           title="保留创作草稿"
-          description="开启后刷新页面或重启 App 仍会恢复现代页草稿；关闭会清理已保存草稿。"
+          description={
+            copy.kind === "tauri"
+              ? "开启后刷新页面或重启 App 仍会恢复现代页草稿；关闭会清理已保存草稿。"
+              : "开启后刷新页面或重新打开同一浏览器仍会恢复现代页草稿；关闭会清理已保存草稿。"
+          }
           control={
             <Toggle
               checked={tweaks.persistCreativeDrafts}
@@ -873,6 +891,8 @@ function RuntimePanel() {
 
 function AboutPanel() {
   const { setTweaks } = useTweaks();
+  const copy = runtimeCopy();
+  const desktopRuntime = isDesktopRuntime();
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [installingUpdate, setInstallingUpdate] = useState(false);
   const [availableUpdate, setAvailableUpdate] = useState<AppUpdateInfo | null>(
@@ -1004,77 +1024,139 @@ function AboutPanel() {
           </span>
         </div>
         <div className="text-[11.5px] text-muted">
-          本地图像生成与编辑桌面客户端。
+          {copy.kind === "tauri"
+            ? "本地图像生成与编辑桌面客户端。"
+            : copy.kind === "http"
+              ? "连接后端服务的 Web 创作工作台。"
+              : "浏览器直连的 Web 创作工作台。"}
         </div>
       </header>
 
-      <Section
-        title="应用更新"
-        description="桌面 App 使用 Tauri 官方更新器；静态 Page 和 Docker Web 由部署端更新。"
-      >
-        <Row
-          title={
-            availableUpdate
-              ? `可更新到 ${availableUpdate.version}`
-              : "检查桌面端更新"
-          }
-          description={
-            availableUpdate?.body ||
-            "有新版本时会下载签名更新包，安装完成后自动重启 App。"
-          }
-          control={
-            availableUpdate ? (
-              <Button
-                variant="primary"
-                size="sm"
-                icon={installingUpdate ? undefined : "download"}
-                disabled={installingUpdate}
-                onClick={() => void handleInstallUpdate()}
-              >
-                {installingUpdate ? (
-                  <>
-                    <Loader2 size={13} className="animate-spin" />
-                    {updateProgress ?? "安装中"}
-                  </>
+      {desktopRuntime ? (
+        <>
+          <Section
+            title="应用更新"
+            description="桌面 App 使用 Tauri 官方更新器。"
+          >
+            <Row
+              title={
+                availableUpdate
+                  ? `可更新到 ${availableUpdate.version}`
+                  : "检查桌面端更新"
+              }
+              description={
+                availableUpdate?.body ||
+                "有新版本时会下载签名更新包，安装完成后自动重启 App。"
+              }
+              control={
+                availableUpdate ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={installingUpdate ? undefined : "download"}
+                    disabled={installingUpdate}
+                    onClick={() => void handleInstallUpdate()}
+                  >
+                    {installingUpdate ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin" />
+                        {updateProgress ?? "安装中"}
+                      </>
+                    ) : (
+                      "下载并重启"
+                    )}
+                  </Button>
                 ) : (
-                  "下载并重启"
-                )}
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={checkingUpdate ? undefined : "reload"}
-                disabled={checkingUpdate}
-                onClick={() => void handleCheckUpdate()}
-              >
-                {checkingUpdate ? (
-                  <>
-                    <Loader2 size={13} className="animate-spin" />
-                    检查中
-                  </>
-                ) : (
-                  "检查更新"
-                )}
-              </Button>
-            )
-          }
-        />
-      </Section>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={checkingUpdate ? undefined : "reload"}
+                    disabled={checkingUpdate}
+                    onClick={() => void handleCheckUpdate()}
+                  >
+                    {checkingUpdate ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin" />
+                        检查中
+                      </>
+                    ) : (
+                      "检查更新"
+                    )}
+                  </Button>
+                )
+              }
+            />
+          </Section>
 
-      <Section
-        title="数据位置"
-        description="本地存放配置、历史和生成结果的路径。只读信息。"
-      >
-        <PathRow title="配置文件" path={paths?.config_file} />
-        <PathRow title="历史数据库" path={paths?.history_file} />
-        <PathRow title="任务输出目录" path={paths?.jobs_dir} isFolder />
-        <PathRow title="配置目录" path={paths?.config_dir} isFolder />
-      </Section>
+          <Section
+            title="数据位置"
+            description="本地存放配置、历史和生成结果的路径。只读信息。"
+          >
+            <PathRow title="配置文件" path={paths?.config_file} />
+            <PathRow title="历史数据库" path={paths?.history_file} />
+            <PathRow title="任务输出目录" path={paths?.jobs_dir} isFolder />
+            <PathRow title="配置目录" path={paths?.config_dir} isFolder />
+          </Section>
+        </>
+      ) : (
+        <>
+          <Section
+            title="版本"
+            description={
+              copy.kind === "http"
+                ? "Web 前端和后端服务由部署端更新，页面内不安装桌面更新包。"
+                : "静态 Web 由站点部署更新，页面内不安装桌面更新包。"
+            }
+          >
+            <Row
+              title={`当前前端版本 v${__APP_VERSION__}`}
+              description={
+                copy.kind === "http"
+                  ? "后端服务更新后，刷新页面即可使用新的 Web 前端。"
+                  : "站点发布后，刷新页面即可使用新的静态 Web 前端。"
+              }
+              control={
+                <span className="inline-flex h-8 items-center rounded-full border border-border-faint px-3 text-[11px] font-semibold text-muted">
+                  {copy.name}
+                </span>
+              }
+            />
+          </Section>
+
+          <Section
+            title={copy.kind === "http" ? "服务端数据" : "浏览器数据"}
+            description={
+              copy.kind === "http"
+                ? "任务历史和结果由后端服务维护，网页只提供预览和下载入口。"
+                : "历史、凭证、草稿和结果保留在当前浏览器数据中。"
+            }
+          >
+            <Row
+              title="结果获取"
+              description={
+                copy.kind === "http"
+                  ? "单图可直接下载，多图任务会打包为 ZIP 下载。"
+                  : "单图可直接下载，多图任务会从当前浏览器数据打包为 ZIP 下载。"
+              }
+              control={
+                <span className="inline-flex h-8 items-center rounded-full border border-border-faint px-3 text-[11px] font-semibold text-muted">
+                  {copy.saveJobLabel}
+                </span>
+              }
+            />
+          </Section>
+        </>
+      )}
 
       <div className="flex items-center gap-1.5 px-1 pt-1 text-[11px] text-faint">
         <Icon name="info" size={11} />
-        <span>偏好保存在本机存储里；并发上限会实时同步到后台队列。</span>
+        <span>
+          {desktopRuntime
+            ? "偏好保存在桌面 App 配置里；并发上限会实时同步到后台队列。"
+            : copy.kind === "http"
+              ? "网页不会显示服务器目录；需要结果文件时请使用下载按钮。"
+              : "网页不会显示内部存储路径；需要结果文件时请使用下载按钮。"}
+        </span>
       </div>
     </div>
   );
