@@ -108,12 +108,18 @@ export const api: ApiClient = {
     invokeClient("exportFilesToDownloads", paths) as ReturnType<
       ApiClient["exportFilesToDownloads"]
     >,
+  exportJobToDownloads: (jobId) =>
+    invokeClient("exportJobToDownloads", jobId) as ReturnType<
+      ApiClient["exportJobToDownloads"]
+    >,
   createGenerate: (body) =>
     invokeClient("createGenerate", body) as ReturnType<
       ApiClient["createGenerate"]
     >,
   createEdit: (form) =>
     invokeClient("createEdit", form) as ReturnType<ApiClient["createEdit"]>,
+  retryJob: (jobId) =>
+    invokeClient("retryJob", jobId) as ReturnType<ApiClient["retryJob"]>,
   outputUrl(jobId, index) {
     return activeClient.outputUrl(jobId, index);
   },

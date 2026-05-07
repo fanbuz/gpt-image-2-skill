@@ -138,6 +138,37 @@ describe("browserApi", () => {
     expect(bodies[0]).toMatchObject({ prompt: "native n", n: 2 });
   });
 
+  it("retries generate jobs from the stored request with a new job id", async () => {
+    const requests: CapturedRequest[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({ url: String(input), init });
+        return okJson({ data: [{ b64_json: tinyPng }] });
+      }),
+    );
+    await addProvider({ supports_n: true });
+
+    const first = await browserApi.createGenerate({
+      prompt: "retry me",
+      provider: "mock",
+      format: "png",
+      quality: "high",
+      n: 1,
+    });
+    await waitForJob(first.job_id);
+    const second = await browserApi.retryJob(first.job_id);
+    const retried = await waitForJob(second.job_id);
+
+    expect(second.job_id).not.toBe(first.job_id);
+    expect(retried.status).toBe("completed");
+    const bodies = requests.map((request) =>
+      JSON.parse(String(request.init?.body)),
+    );
+    expect(bodies).toHaveLength(2);
+    expect(bodies[1]).toMatchObject({ prompt: "retry me", quality: "high" });
+  });
+
   it("falls back to concurrent single-output requests when n is unsupported", async () => {
     const requests: CapturedRequest[] = [];
     vi.stubGlobal(
@@ -201,6 +232,47 @@ describe("browserApi", () => {
     expect(requests[0].url).toBe("https://mock.example/v1/images/edits");
     const body = requests[0].init?.body as FormData;
     expect(body.get("prompt")).toBe("edit this");
+    expect(body.getAll("image[]")).toHaveLength(2);
+    expect(body.get("mask")).toBeInstanceOf(File);
+  });
+
+  it("retries edit jobs with stored reference, hint, and mask files", async () => {
+    const requests: CapturedRequest[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({ url: String(input), init });
+        return okJson({ data: [{ b64_json: tinyPng }] });
+      }),
+    );
+    await addProvider({ supports_n: true, edit_region_mode: "native-mask" });
+    const form = new FormData();
+    form.append(
+      "meta",
+      JSON.stringify({
+        prompt: "retry edit",
+        provider: "mock",
+        format: "png",
+        n: 1,
+      }),
+    );
+    form.append("ref_00", new File(["ref"], "ref.png", { type: "image/png" }));
+    form.append(
+      "selection_hint",
+      new File(["hint"], "selection.png", { type: "image/png" }),
+    );
+    form.append("mask", new File(["mask"], "mask.png", { type: "image/png" }));
+
+    const first = await browserApi.createEdit(form);
+    await waitForJob(first.job_id);
+    const second = await browserApi.retryJob(first.job_id);
+    const retried = await waitForJob(second.job_id);
+
+    expect(second.job_id).not.toBe(first.job_id);
+    expect(retried.status).toBe("completed");
+    expect(requests).toHaveLength(2);
+    const body = requests[1].init?.body as FormData;
+    expect(body.get("prompt")).toBe("retry edit");
     expect(body.getAll("image[]")).toHaveLength(2);
     expect(body.get("mask")).toBeInstanceOf(File);
   });

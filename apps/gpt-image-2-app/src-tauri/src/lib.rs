@@ -1758,6 +1758,174 @@ fn enqueue_edit_image(
     )
 }
 
+fn metadata_object(job: &Value) -> Value {
+    job.get("metadata")
+        .cloned()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}))
+}
+
+fn string_field(metadata: &Value, key: &str) -> Option<String> {
+    metadata
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn u8_field(metadata: &Value, key: &str) -> Option<u8> {
+    metadata
+        .get(key)
+        .and_then(Value::as_u64)
+        .and_then(|value| u8::try_from(value).ok())
+}
+
+fn upload_file_from_path(path: &Path) -> Result<UploadFile, String> {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "image.png".to_string());
+    let bytes = fs::read(path).map_err(|error| format!("读取原始图片失败：{error}"))?;
+    Ok(UploadFile { name, bytes })
+}
+
+fn generate_request_from_job(job: &Value) -> Result<GenerateRequest, String> {
+    let mut request: GenerateRequest =
+        serde_json::from_value(metadata_object(job)).map_err(|error| error.to_string())?;
+    if request.provider.is_none() {
+        request.provider = job
+            .get("provider")
+            .and_then(Value::as_str)
+            .filter(|provider| !provider.is_empty())
+            .map(ToString::to_string);
+    }
+    if request.prompt.trim().is_empty() {
+        return Err("这个生成任务缺少 prompt，无法原样重试。".to_string());
+    }
+    Ok(request)
+}
+
+fn sorted_ref_inputs(dir: &Path) -> Result<Vec<UploadFile>, String> {
+    let mut paths = fs::read_dir(dir)
+        .map_err(|error| format!("读取原任务目录失败：{error}"))?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("ref-"))
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths
+        .iter()
+        .map(|path| upload_file_from_path(path))
+        .collect()
+}
+
+fn edit_request_from_job(job_id: &str, job: &Value) -> Result<EditRequest, String> {
+    let metadata = metadata_object(job);
+    let dir = jobs_dir().join(job_id);
+    let refs = sorted_ref_inputs(&dir)?;
+    if refs.is_empty() {
+        return Err("这个编辑任务缺少原始参考图，无法原样重试。".to_string());
+    }
+    let mask = {
+        let path = dir.join("mask.png");
+        if path.is_file() {
+            Some(upload_file_from_path(&path)?)
+        } else {
+            None
+        }
+    };
+    let selection_hint = {
+        let path = dir.join("selection-hint.png");
+        if path.is_file() {
+            Some(upload_file_from_path(&path)?)
+        } else {
+            None
+        }
+    };
+    Ok(EditRequest {
+        prompt: string_field(&metadata, "prompt").unwrap_or_default(),
+        provider: string_field(&metadata, "provider").or_else(|| {
+            job.get("provider")
+                .and_then(Value::as_str)
+                .filter(|provider| !provider.is_empty())
+                .map(ToString::to_string)
+        }),
+        size: string_field(&metadata, "size"),
+        format: string_field(&metadata, "format"),
+        quality: string_field(&metadata, "quality"),
+        background: string_field(&metadata, "background"),
+        n: u8_field(&metadata, "n"),
+        compression: u8_field(&metadata, "compression"),
+        input_fidelity: string_field(&metadata, "input_fidelity"),
+        moderation: string_field(&metadata, "moderation"),
+        refs,
+        mask,
+        selection_hint,
+    })
+}
+
+#[tauri::command]
+fn retry_job(
+    job_id: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, JobQueueState>,
+) -> Result<Value, String> {
+    let job = show_history_job(&job_id).map_err(app_error)?;
+    match job.get("command").and_then(Value::as_str) {
+        Some("images generate") => {
+            let request = generate_request_from_job(&job)?;
+            requested_n(request.n)?;
+            let (id, dir) = unique_job_dir()?;
+            let provider = selected_provider_name(request.provider.as_deref());
+            let metadata = serde_json::to_value(&request).unwrap_or_else(|_| json!({}));
+            enqueue_job(
+                app,
+                state.inner().clone(),
+                QueuedJob {
+                    id,
+                    command: "images generate".to_string(),
+                    provider,
+                    created_at: chrono_like_now(),
+                    dir,
+                    metadata,
+                    task: QueuedTask::Generate(request),
+                },
+            )
+        }
+        Some("images edit") => {
+            let request = edit_request_from_job(&job_id, &job)?;
+            if request.prompt.trim().is_empty() {
+                return Err("这个编辑任务缺少 prompt，无法原样重试。".to_string());
+            }
+            requested_n(request.n)?;
+            let (id, dir) = unique_job_dir()?;
+            let provider = selected_provider_name(request.provider.as_deref());
+            let metadata = edit_request_metadata(&request);
+            enqueue_job(
+                app,
+                state.inner().clone(),
+                QueuedJob {
+                    id,
+                    command: "images edit".to_string(),
+                    provider,
+                    created_at: chrono_like_now(),
+                    dir,
+                    metadata,
+                    task: QueuedTask::Edit(request),
+                },
+            )
+        }
+        _ => Err("这个任务类型暂不支持重试。".to_string()),
+    }
+}
+
 #[tauri::command]
 async fn generate_image(request: GenerateRequest) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1821,12 +1989,169 @@ fn export_files_to_downloads(paths: Vec<String>) -> Result<Vec<String>, String> 
     Ok(saved)
 }
 
+#[tauri::command]
+fn export_job_to_downloads(job_id: String) -> Result<Vec<String>, String> {
+    let job = show_history_job(&job_id).map_err(app_error)?;
+    let paths = output_paths_from_job(&job);
+    if paths.is_empty() {
+        return Err("这个任务没有可保存的图片。".to_string());
+    }
+    let root = downloads_export_dir()?;
+    fs::create_dir_all(&root).map_err(|error| format!("无法创建保存目录：{error}"))?;
+    let folder = unique_export_dir(&root, &job_export_folder_name(&job));
+    fs::create_dir_all(&folder).map_err(|error| format!("无法创建任务目录：{error}"))?;
+
+    let mut saved = Vec::new();
+    for path in paths {
+        let source = PathBuf::from(path);
+        if !source.is_file() {
+            return Err("图片文件不存在，可能已被移动或删除。".to_string());
+        }
+        let file_name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| "图片文件名无效。".to_string())?;
+        let destination = unique_destination(&folder, file_name);
+        fs::copy(&source, &destination).map_err(|error| format!("保存图片失败：{error}"))?;
+        saved.push(destination.display().to_string());
+    }
+    Ok(saved)
+}
+
 fn downloads_export_dir() -> Result<PathBuf, String> {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .ok_or_else(|| "找不到下载目录。".to_string())?;
     Ok(home.join("Downloads").join("GPT Image 2"))
+}
+
+fn output_paths_from_job(job: &Value) -> Vec<String> {
+    let mut paths = job
+        .get("outputs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|output| output.get("path").and_then(Value::as_str))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    if paths.is_empty() {
+        if let Some(files) = job
+            .get("metadata")
+            .and_then(|metadata| metadata.get("output"))
+            .and_then(|output| output.get("files"))
+            .and_then(Value::as_array)
+        {
+            paths.extend(
+                files
+                    .iter()
+                    .filter_map(|output| output.get("path").and_then(Value::as_str))
+                    .map(ToString::to_string),
+            );
+        }
+    }
+    if paths.is_empty() {
+        if let Some(path) = job.get("output_path").and_then(Value::as_str).or_else(|| {
+            job.get("metadata")
+                .and_then(|metadata| metadata.get("output"))
+                .and_then(|output| output.get("path"))
+                .and_then(Value::as_str)
+        }) {
+            paths.push(path.to_string());
+        }
+    }
+    paths
+}
+
+fn job_prompt(job: &Value) -> String {
+    job.get("metadata")
+        .and_then(|metadata| metadata.get("prompt"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string()
+}
+
+fn job_export_folder_name(job: &Value) -> String {
+    let created = job
+        .get("created_at")
+        .and_then(Value::as_str)
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or_else(current_unix_seconds);
+    let prompt = safe_filename_part(&job_prompt(job), "untitled");
+    let job_id = safe_filename_part(
+        job.get("id").and_then(Value::as_str).unwrap_or("job"),
+        "job",
+    );
+    format!("{}-{}-{}", timestamp_for_filename(created), prompt, job_id)
+}
+
+fn current_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn timestamp_for_filename(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let seconds_of_day = secs % 86_400;
+    let (year, month, day) = civil_from_days(days);
+    let hour = seconds_of_day / 3_600;
+    let minute = (seconds_of_day % 3_600) / 60;
+    let second = seconds_of_day % 60;
+    format!("{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}")
+}
+
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if month <= 2 { 1 } else { 0 };
+    (year, month as u32, day as u32)
+}
+
+fn safe_filename_part(value: &str, fallback: &str) -> String {
+    let mut result = String::new();
+    let mut last_dash = false;
+    for ch in value.trim().chars() {
+        let separator = ch.is_control()
+            || ch.is_whitespace()
+            || matches!(ch, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*');
+        if separator {
+            if !last_dash && !result.is_empty() {
+                result.push('-');
+                last_dash = true;
+            }
+        } else {
+            result.push(ch);
+            last_dash = false;
+        }
+        if result.chars().count() >= 48 {
+            break;
+        }
+    }
+    let trimmed = result.trim_matches(['-', '.']).to_string();
+    if trimmed.is_empty() {
+        fallback.to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn unique_export_dir(root: &Path, folder_name: &str) -> PathBuf {
+    let mut candidate = root.join(folder_name);
+    let mut index = 2;
+    while candidate.exists() {
+        candidate = root.join(format!("{folder_name}-{index}"));
+        index += 1;
+    }
+    candidate
 }
 
 fn unique_destination(dir: &Path, file_name: &str) -> PathBuf {
@@ -1981,6 +2306,7 @@ pub fn run() {
             queue_status,
             set_queue_concurrency,
             cancel_job,
+            retry_job,
             read_dropped_image_files,
             enqueue_generate_image,
             enqueue_edit_image,
@@ -1989,6 +2315,7 @@ pub fn run() {
             open_path,
             reveal_path,
             export_files_to_downloads,
+            export_job_to_downloads,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gpt-image-2-app");

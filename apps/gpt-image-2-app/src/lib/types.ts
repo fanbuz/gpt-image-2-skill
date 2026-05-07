@@ -143,4 +143,9 @@ export type Tweaks = {
    * always-on animated backgrounds/glass filters.
    */
   interfaceMode: InterfaceMode;
+  /**
+   * Persist modern generate/edit form drafts across browser refreshes and app
+   * restarts. Classic mode intentionally keeps its existing behavior.
+   */
+  persistCreativeDrafts: boolean;
 };

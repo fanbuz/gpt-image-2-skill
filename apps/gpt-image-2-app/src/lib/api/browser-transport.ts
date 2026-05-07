@@ -26,9 +26,11 @@ import type {
   TauriJobResponse,
 } from "./types";
 import { isTerminalJobStatus } from "./types";
+import { jobExportBaseName, outputFileName } from "@/lib/job-export";
+import { createStoredZip } from "@/lib/zip";
 
 const DB_NAME = "gpt-image-2-web";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const CONFIG_KEY = "config";
 const CORS_MESSAGE =
   "该服务商不允许浏览器直连，且本站中转暂时不可用。请稍后重试，或改用 Docker/App。";
@@ -46,6 +48,26 @@ type StoredOutput = {
   blob: Blob;
   bytes: number;
 };
+
+type StoredUpload = {
+  key: string;
+  name: string;
+  type: string;
+  blob: Blob;
+};
+
+type StoredJobInput =
+  | {
+      jobId: string;
+      kind: "generate";
+      request: GenerateRequest;
+    }
+  | {
+      jobId: string;
+      kind: "edit";
+      meta: Record<string, unknown>;
+      files: StoredUpload[];
+    };
 
 type BrowserQueuedTask = {
   job: Job;
@@ -118,6 +140,9 @@ function openDb() {
           const outputs = db.createObjectStore("outputs", { keyPath: "key" });
           outputs.createIndex("jobId", "jobId", { unique: false });
         }
+        if (!db.objectStoreNames.contains("jobInputs")) {
+          db.createObjectStore("jobInputs", { keyPath: "jobId" });
+        }
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -173,6 +198,28 @@ async function writeJob(job: Job) {
   tx.objectStore("jobs").put(job);
   await transactionDone(tx);
   rememberJobOutputs(job);
+}
+
+async function readJobInput(jobId: string) {
+  const db = await openDb();
+  const tx = db.transaction("jobInputs", "readonly");
+  return requestToPromise<StoredJobInput | undefined>(
+    tx.objectStore("jobInputs").get(jobId),
+  );
+}
+
+async function writeJobInput(input: StoredJobInput) {
+  const db = await openDb();
+  const tx = db.transaction("jobInputs", "readwrite");
+  tx.objectStore("jobInputs").put(input);
+  await transactionDone(tx);
+}
+
+async function deleteJobInput(jobId: string) {
+  const db = await openDb();
+  const tx = db.transaction("jobInputs", "readwrite");
+  tx.objectStore("jobInputs").delete(jobId);
+  await transactionDone(tx);
 }
 
 async function outputsForJob(jobId: string) {
@@ -408,6 +455,10 @@ function imageExtensionFromBlob(blob: Blob) {
   return "png";
 }
 
+function cloneGenerateRequest(request: GenerateRequest): GenerateRequest {
+  return JSON.parse(JSON.stringify(request)) as GenerateRequest;
+}
+
 function base64ToBlob(value: string, type: string) {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
@@ -616,6 +667,61 @@ function sortedFiles(form: FormData, prefix: string) {
   return Array.from(form.entries())
     .filter(([key, value]) => key.startsWith(prefix) && value instanceof File)
     .sort(([a], [b]) => a.localeCompare(b)) as [string, File][];
+}
+
+async function storedEditInputFromForm(jobId: string, form: FormData) {
+  const metaRaw = form.get("meta");
+  const meta =
+    typeof metaRaw === "string"
+      ? (JSON.parse(metaRaw) as Record<string, unknown>)
+      : {};
+  const files: StoredUpload[] = [];
+  for (const [key, value] of form.entries()) {
+    if (key === "meta" || !(value instanceof File)) continue;
+    files.push({
+      key,
+      name: value.name,
+      type: value.type || "application/octet-stream",
+      blob: value,
+    });
+  }
+  return { jobId, kind: "edit" as const, meta, files };
+}
+
+function formFromStoredEdit(input: Extract<StoredJobInput, { kind: "edit" }>) {
+  const form = new FormData();
+  form.append("meta", JSON.stringify(input.meta));
+  for (const file of input.files) {
+    form.append(
+      file.key,
+      new File([file.blob], file.name, {
+        type: file.blob.type || file.type || "application/octet-stream",
+      }),
+      file.name,
+    );
+  }
+  return form;
+}
+
+function generateRequestFromJob(job: Job): GenerateRequest {
+  const meta = job.metadata ?? {};
+  const readString = (key: string) =>
+    typeof meta[key] === "string" ? String(meta[key]) : undefined;
+  const readNumber = (key: string) =>
+    typeof meta[key] === "number" && Number.isFinite(meta[key])
+      ? Number(meta[key])
+      : undefined;
+  return {
+    prompt: readString("prompt") ?? "",
+    provider: readString("provider") ?? job.provider,
+    size: readString("size"),
+    format: readString("format"),
+    quality: readString("quality"),
+    background: readString("background"),
+    n: readNumber("n"),
+    compression: readNumber("compression"),
+    moderation: readString("moderation"),
+  };
 }
 
 function buildEditForm(
@@ -942,6 +1048,18 @@ export async function __resetBrowserApiForTests() {
 }
 
 async function downloadBlob(path: string, fileName: (blob: Blob) => string) {
+  const blob = await blobForPath(path);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName(blob);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 5_000);
+}
+
+async function blobForPath(path: string) {
   let blob = blobsByPath.get(path);
   if (!blob) {
     const [jobId, index] = path
@@ -954,14 +1072,29 @@ async function downloadBlob(path: string, fileName: (blob: Blob) => string) {
     if (output) rememberOutputBlob(output);
   }
   if (!blob) throw new Error("没有找到可下载的图片。");
-  const url = URL.createObjectURL(blob);
+  return blob;
+}
+
+async function downloadJobZip(job: Job) {
+  const paths = browserApi.jobOutputPaths(job);
+  if (paths.length === 0) throw new Error("没有可保存的图片。");
+  const baseName = jobExportBaseName(job);
+  const entries = await Promise.all(
+    paths.map(async (path, index) => ({
+      name: `${baseName}/${outputFileName(path, index)}`,
+      data: await blobForPath(path),
+    })),
+  );
+  const zip = await createStoredZip(entries);
+  const url = URL.createObjectURL(zip);
   const a = document.createElement("a");
   a.href = url;
-  a.download = fileName(blob);
+  a.download = `${baseName}.zip`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 5_000);
+  return [`${baseName}.zip`];
 }
 
 export const browserApi: ApiClient = {
@@ -1109,6 +1242,7 @@ export const browserApi: ApiClient = {
     tx.objectStore("jobs").delete(id);
     await transactionDone(tx);
     await deleteOutputsForJob(id);
+    await deleteJobInput(id);
     eventLog.delete(id);
     nextSeq.delete(id);
   },
@@ -1160,9 +1294,15 @@ export const browserApi: ApiClient = {
     }
     return saved;
   },
+  async exportJobToDownloads(jobId: string) {
+    await prepareBrowserRuntime();
+    const { job } = await browserApi.getJob(jobId);
+    return downloadJobZip(job);
+  },
   async createGenerate(body: GenerateRequest) {
     if (!body.prompt.trim()) throw new Error("Prompt is required.");
     const provider = selectedProviderName(body.provider);
+    const request = cloneGenerateRequest(body);
     const job: Job = {
       id: browserJobId(),
       command: "images generate",
@@ -1170,11 +1310,12 @@ export const browserApi: ApiClient = {
       status: "queued",
       created_at: nowIso(),
       updated_at: nowIso(),
-      metadata: { ...body },
+      metadata: { ...request },
       outputs: [],
       error: null,
     };
-    return enqueueBrowserTask(job, (task) => runGenerateTask(task, body));
+    await writeJobInput({ jobId: job.id, kind: "generate", request });
+    return enqueueBrowserTask(job, (task) => runGenerateTask(task, request));
   },
   async createEdit(form: FormData) {
     const metaRaw = form.get("meta");
@@ -1199,7 +1340,29 @@ export const browserApi: ApiClient = {
       outputs: [],
       error: null,
     };
+    await writeJobInput(await storedEditInputFromForm(job.id, form));
     return enqueueBrowserTask(job, (task) => runEditTask(task, form));
+  },
+  async retryJob(jobId: string) {
+    await prepareBrowserRuntime();
+    const job = await readStoredJob(jobId);
+    if (!job) throw new Error("History job was not found.");
+    const input = await readJobInput(jobId);
+    if (job.command === "images generate") {
+      const request =
+        input?.kind === "generate" ? input.request : generateRequestFromJob(job);
+      if (!request.prompt.trim()) {
+        throw new Error("这个生成任务缺少 prompt，无法原样重试。");
+      }
+      return browserApi.createGenerate(request);
+    }
+    if (job.command === "images edit") {
+      if (input?.kind !== "edit" || input.files.length === 0) {
+        throw new Error("这个编辑任务缺少原始参考图，无法原样重试。");
+      }
+      return browserApi.createEdit(formFromStoredEdit(input));
+    }
+    throw new Error("这个任务类型暂不支持重试。");
   },
   outputUrl(jobId: string, index = 0) {
     const path = outputPath(jobId, index);

@@ -57,6 +57,14 @@ export function useCancelJob() {
   });
 }
 
+export function useRetryJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.retryJob(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
+  });
+}
+
 export function useQueueStatus() {
   return useQuery<QueueStatus>({
     queryKey: ["queue-status"],

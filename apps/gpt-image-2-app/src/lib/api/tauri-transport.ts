@@ -134,6 +134,9 @@ export const tauriApi: ApiClient = {
   async exportFilesToDownloads(paths: string[]) {
     return invoke<string[]>("export_files_to_downloads", { paths });
   },
+  async exportJobToDownloads(jobId: string) {
+    return invoke<string[]>("export_job_to_downloads", { jobId });
+  },
   async createGenerate(body: GenerateRequest) {
     const result = await invoke<TauriJobResponse>("enqueue_generate_image", {
       request: body,
@@ -166,6 +169,10 @@ export const tauriApi: ApiClient = {
         selection_hint,
       },
     });
+    return normalizeJobResponse(result);
+  },
+  async retryJob(jobId: string) {
+    const result = await invoke<TauriJobResponse>("retry_job", { jobId });
     return normalizeJobResponse(result);
   },
   outputUrl(jobId: string, index = 0) {

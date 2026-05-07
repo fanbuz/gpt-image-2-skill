@@ -25,6 +25,8 @@ import type {
   TauriJobResponse,
 } from "./types";
 import { isTerminalJobStatus } from "./types";
+import { jobExportBaseName, outputFileName } from "@/lib/job-export";
+import { createStoredZip } from "@/lib/zip";
 
 type UploadPayload = Awaited<ReturnType<typeof fileToUpload>>;
 
@@ -144,6 +146,33 @@ function basename(path: string, fallback: string) {
   return value && value.trim() ? value : fallback;
 }
 
+async function fetchOutputBlob(path: string) {
+  const url = httpApi.fileUrl(path);
+  if (!url) throw new Error("没有可保存的图片。");
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`保存图片失败：${response.status} ${response.statusText}`);
+  }
+  return response.blob();
+}
+
+async function downloadJobZip(job: Job) {
+  const paths = httpApi.jobOutputPaths(job);
+  if (paths.length === 0) throw new Error("没有可保存的图片。");
+  const baseName = jobExportBaseName(job);
+  const entries = await Promise.all(
+    paths.map(async (path, index) => ({
+      name: `${baseName}/${outputFileName(path, index)}`,
+      data: await fetchOutputBlob(path),
+    })),
+  );
+  const zip = await createStoredZip(entries);
+  const url = URL.createObjectURL(zip);
+  downloadUrl(url, `${baseName}.zip`);
+  window.setTimeout(() => URL.revokeObjectURL(url), 5_000);
+  return [`${baseName}.zip`];
+}
+
 export const httpApi: ApiClient = {
   kind: "http",
   canUseLocalFiles: false,
@@ -242,6 +271,10 @@ export const httpApi: ApiClient = {
     }
     return paths;
   },
+  async exportJobToDownloads(jobId: string) {
+    const { job } = await httpApi.getJob(jobId);
+    return downloadJobZip(job);
+  },
   async createGenerate(body: GenerateRequest) {
     const result = await requestJson<TauriJobResponse>("/images/generate", {
       method: "POST",
@@ -254,6 +287,13 @@ export const httpApi: ApiClient = {
       method: "POST",
       body: jsonBody(await formUploadPayload(form)),
     });
+    return normalizeJobResponse(result);
+  },
+  async retryJob(jobId: string) {
+    const result = await requestJson<TauriJobResponse>(
+      `/jobs/${encodeURIComponent(jobId)}/retry`,
+      { method: "POST" },
+    );
     return normalizeJobResponse(result);
   },
   outputUrl(jobId: string, index = 0) {

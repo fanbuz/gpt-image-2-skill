@@ -45,6 +45,31 @@ export async function saveImages(paths: Array<string | undefined | null>, label 
   }
 }
 
+export async function saveJobImages(jobId: string, label = "任务图片") {
+  if (!jobId) {
+    toast.error("没有可保存的任务");
+    return [];
+  }
+
+  const toastId = toast.loading("正在保存任务图片");
+  try {
+    const saved = await api.exportJobToDownloads(jobId);
+    toast.success("已保存全部图片", {
+      id: toastId,
+      description: api.canExportToDownloadsFolder
+        ? "已保存到「下载/GPT Image 2」的任务目录。"
+        : "浏览器已开始下载任务 zip。",
+    });
+    return saved;
+  } catch (error) {
+    toast.error(`${label}保存失败`, {
+      id: toastId,
+      description: messageFromError(error),
+    });
+    return [];
+  }
+}
+
 export async function openPath(path?: string | null) {
   if (!path) {
     toast.error("没有可打开的文件");

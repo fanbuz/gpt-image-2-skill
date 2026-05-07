@@ -65,8 +65,10 @@ export type ApiClient = RuntimeCapabilities & {
   openPath(path: string): Promise<void>;
   revealPath(path: string): Promise<void>;
   exportFilesToDownloads(paths: string[]): Promise<string[]>;
+  exportJobToDownloads(jobId: string): Promise<string[]>;
   createGenerate(body: GenerateRequest): Promise<TauriJobResponse>;
   createEdit(form: FormData): Promise<TauriJobResponse>;
+  retryJob(jobId: string): Promise<TauriJobResponse>;
   outputUrl(jobId: string, index?: number): string;
   outputPath(jobId: string, index?: number): string | undefined;
   fileUrl(path?: string | null): string;
