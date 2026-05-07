@@ -29,6 +29,7 @@ const DEFAULT_TWEAKS: Tweaks = {
   glassOpacity: 42,
   themePreset: DEFAULT_PRESET,
   interfaceMode: "modern",
+  persistCreativeDrafts: true,
 };
 
 function clampOpacity(value: unknown): number {
@@ -89,6 +90,10 @@ export function __resolveInitialInterfaceModeForTests(
   return normalizeInitialInterfaceMode(parsed);
 }
 
+export function __loadTweaksForTests(): Tweaks {
+  return load();
+}
+
 function load(): Tweaks {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -124,6 +129,10 @@ function load(): Tweaks {
       glassOpacity: clampOpacity(parsed?.glassOpacity),
       themePreset: presetId,
       interfaceMode: normalizeInitialInterfaceMode(parsed),
+      persistCreativeDrafts:
+        typeof parsed?.persistCreativeDrafts === "boolean"
+          ? parsed.persistCreativeDrafts
+          : true,
     };
   } catch {
     return DEFAULT_TWEAKS;

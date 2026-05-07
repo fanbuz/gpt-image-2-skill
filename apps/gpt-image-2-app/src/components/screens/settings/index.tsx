@@ -37,6 +37,7 @@ import {
   type AppUpdateInfo,
 } from "@/lib/app-updater";
 import { api, type ConfigPaths } from "@/lib/api";
+import { clearCreativeDrafts } from "@/lib/drafts";
 import { copyText, openPath, revealPath } from "@/lib/user-actions";
 import { effectiveDefaultProvider } from "@/lib/providers";
 import { AddProviderDialog } from "@/components/screens/providers/add-provider-dialog";
@@ -821,6 +822,18 @@ function RuntimePanel() {
     running + queued === 0
       ? "目前没有任务在队列里"
       : `当前 ${running} 个在跑，${queued} 个排队`;
+  const setDraftPersistence = async (enabled: boolean) => {
+    setTweaks({ persistCreativeDrafts: enabled });
+    if (enabled) return;
+    try {
+      await clearCreativeDrafts();
+      toast.success("创作草稿已清除");
+    } catch (error) {
+      toast.error("清除草稿失败", {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
   return (
     <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-5 space-y-4">
@@ -838,6 +851,22 @@ function RuntimePanel() {
               size="sm"
               ariaLabel="并发上限"
               options={PARALLEL_OPTIONS}
+            />
+          }
+        />
+      </Section>
+
+      <Section
+        title="草稿"
+        description="保留现代生成和编辑页的创作参数、参考图与遮罩。"
+      >
+        <Row
+          title="保留创作草稿"
+          description="开启后刷新页面或重启 App 仍会恢复现代页草稿；关闭会清理已保存草稿。"
+          control={
+            <Toggle
+              checked={tweaks.persistCreativeDrafts}
+              onChange={(v) => void setDraftPersistence(v)}
             />
           }
         />
