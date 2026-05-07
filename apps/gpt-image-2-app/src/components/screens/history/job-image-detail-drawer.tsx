@@ -27,6 +27,8 @@ type Props = {
    *  generate screen, which will pick up the prompt/params from
    *  localStorage and prefill the form. */
   onRerun?: () => void;
+  onRetry?: (jobId: string) => void;
+  onSendToEdit?: (job: Job, outputIndex: number) => void;
 };
 
 const RERUN_STORAGE_KEY = "gpt2.pendingRerun";
@@ -59,6 +61,8 @@ export function JobImageDetailDrawer({
   onChangeIndex,
   onDelete,
   onRerun,
+  onRetry,
+  onSendToEdit,
 }: Props) {
   const confirm = useConfirm();
   const [zoomOpen, setZoomOpen] = useState(false);
@@ -128,6 +132,22 @@ export function JobImageDetailDrawer({
     onChangeIndex(outputIndexes[(activePosition + 1) % outputCount]);
   };
 
+  useEffect(() => {
+    if (!zoomOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goPrev();
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goNext();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activePosition, outputCount, outputIndexes, zoomOpen]);
+
   return (
     <>
       <Drawer
@@ -175,6 +195,31 @@ export function JobImageDetailDrawer({
                 title="用相同的 prompt 和参数预填到生成屏"
               >
                 再来一次
+              </Button>
+            )}
+            {onRetry &&
+              job &&
+              (job.status === "failed" || job.status === "cancelled") && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="reload"
+                  onClick={() => onRetry(job.id)}
+                  title="原样重新提交这个任务"
+                >
+                  重试
+                </Button>
+              )}
+            {onSendToEdit && job && (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="edit"
+                disabled={!path && !url}
+                onClick={() => onSendToEdit(job, activeOutputIndex)}
+                title="把当前图片添加为编辑参考图"
+              >
+                发送到编辑
               </Button>
             )}
             <div className="min-w-2 flex-1" />
@@ -416,6 +461,65 @@ export function JobImageDetailDrawer({
                 duration={500}
                 className="block max-w-[92vw] max-h-[92vh] object-contain rounded-lg shadow-[var(--shadow-floating)]"
               />
+            )}
+            {outputCount > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={goPrev}
+                  aria-label="上一张"
+                  className="absolute left-3 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-[color:var(--surface-floating-border)] bg-[color:var(--surface-floating)] text-foreground backdrop-blur transition-colors hover:bg-[color:var(--surface-floating-strong)]"
+                  style={{ boxShadow: "var(--shadow-floating)" }}
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <button
+                  type="button"
+                  onClick={goNext}
+                  aria-label="下一张"
+                  className="absolute right-3 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-[color:var(--surface-floating-border)] bg-[color:var(--surface-floating)] text-foreground backdrop-blur transition-colors hover:bg-[color:var(--surface-floating-strong)]"
+                  style={{ boxShadow: "var(--shadow-floating)" }}
+                >
+                  <ChevronRight size={20} />
+                </button>
+                <div className="absolute bottom-3 left-1/2 flex max-w-[78vw] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-full border border-[color:var(--surface-floating-border)] bg-[color:var(--surface-floating)] p-1.5 backdrop-blur scrollbar-none">
+                  {job &&
+                    outputIndexes.map((idx, i) => {
+                      const thumbUrl = jobOutputUrl(job, idx);
+                      const isActive = idx === activeOutputIndex;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => onChangeIndex(idx)}
+                          className={cn(
+                            "h-10 w-10 shrink-0 overflow-hidden rounded-full border transition-all",
+                            isActive
+                              ? "border-[color:var(--accent)] opacity-100"
+                              : "border-transparent opacity-55 hover:opacity-90",
+                          )}
+                          aria-label={`切换到第 ${i + 1} 张`}
+                        >
+                          {thumbUrl ? (
+                            <img
+                              src={thumbUrl}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              className="h-full w-full object-cover"
+                              draggable={false}
+                            />
+                          ) : (
+                            <PlaceholderImage
+                              seed={idx + i + 41}
+                              variant={`zoom-thumb-${job.id}`}
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                </div>
+              </>
             )}
             <Radix.Close asChild>
               <button

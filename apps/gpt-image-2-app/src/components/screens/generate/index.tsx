@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Sparkles,
@@ -14,17 +14,25 @@ import ClickSpark from "@/components/reactbits/components/ClickSpark";
 import Masonry, {
   type MasonryItem,
 } from "@/components/reactbits/components/Masonry";
+import { Icon } from "@/components/icon";
 import { PlaceholderImage } from "@/components/screens/shared/placeholder-image";
 import logoUrl from "@/assets/logo.png";
 import { useTweaks } from "@/hooks/use-tweaks";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import { THEME_PRESETS } from "@/lib/theme-presets";
+import { loadGenerateDraft, saveGenerateDraft } from "@/lib/drafts";
 import { GlassSelect } from "@/components/ui/select";
 import { GlassCombobox } from "@/components/ui/combobox";
 import { useCreateGenerate, useJobs } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import {
+  jobOutputIndexes,
+  jobOutputPath,
+  jobOutputUrl,
+} from "@/lib/job-outputs";
+import { sendImageToEdit } from "@/lib/job-navigation";
 import {
   errorMessage,
   outputCountMismatchMessage,
@@ -106,6 +114,8 @@ type PendingGalleryTile = {
 type CompletedGalleryTile = {
   kind: "completed";
   job: Job;
+  outputIndex: number;
+  path: string | null;
   url: string | null;
   promptText: string;
 };
@@ -114,32 +124,56 @@ type GalleryTile = PendingGalleryTile | CompletedGalleryTile;
 
 function RecentWorkTile({
   job,
+  outputIndex,
+  path,
   url,
   promptText,
   onOpenJob,
+  onSendToEdit,
 }: {
   job: Job;
+  outputIndex: number;
+  path: string | null;
   url: string | null;
   promptText: string;
   onOpenJob?: (jobId: string) => void;
+  onSendToEdit?: () => void;
 }) {
   const reducedMotion = useReducedMotion();
+  const [hover, setHover] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
+  const canSendToEdit = Boolean(onSendToEdit && (path || url));
 
   useEffect(() => {
     setImageFailed(false);
   }, [url]);
 
   return (
-    <motion.button
+    <motion.div
       key={job.id}
-      type="button"
+      role="button"
+      tabIndex={0}
       onClick={() => onOpenJob?.(job.id)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onFocusCapture={() => setFocusWithin(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setFocusWithin(false);
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onOpenJob?.(job.id);
+      }}
       whileTap={reducedMotion ? undefined : { scale: 0.985 }}
       transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-      className="h-full w-full rounded-md overflow-hidden ring-1 ring-[color:var(--w-10)] hover:ring-[color:var(--accent-45)] hover:scale-[1.025] transition-[box-shadow,transform] bg-[color:var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-[color:var(--accent-55)]"
+      className="relative h-full w-full cursor-pointer rounded-md overflow-hidden ring-1 ring-[color:var(--w-10)] hover:ring-[color:var(--accent-45)] hover:scale-[1.025] transition-[box-shadow,transform] bg-[color:var(--bg-sunken)] focus-visible:outline-none focus-visible:ring-[color:var(--accent-55)]"
       title={promptText.slice(0, 80)}
-      aria-label={`打开作品:${promptText.slice(0, 40)}`}
+      aria-label={`打开作品 ${outputIndex + 1}:${promptText.slice(0, 40)}`}
     >
       {url && !imageFailed ? (
         <img
@@ -154,7 +188,21 @@ function RecentWorkTile({
       ) : (
         <PlaceholderImage seed={jobPlaceholderSeed(job)} variant="recent" />
       )}
-    </motion.button>
+      {canSendToEdit && (hover || focusWithin) && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSendToEdit?.();
+          }}
+          className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-[5px] border border-[color:var(--surface-floating-border)] bg-[color:var(--surface-floating)] text-foreground shadow-[var(--shadow-floating)] backdrop-blur transition-colors hover:bg-[color:var(--surface-floating-strong)]"
+          title="发送到编辑"
+          aria-label="发送到编辑"
+        >
+          <Icon name="edit" size={13} />
+        </button>
+      )}
+    </motion.div>
   );
 }
 
@@ -225,6 +273,8 @@ export function GenerateScreen({
     null,
   );
   const [runError, setRunError] = useState<string | null>(null);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const pendingRerunAppliedRef = useRef(false);
   // Increments on every successful click of the generate CTA. Used as a
   // remount key for the brand-accent ripple span inside the button so the
   // ripple animation replays on each press.
@@ -253,6 +303,57 @@ export function GenerateScreen({
     }
     return result;
   }, [jobs]);
+
+  useEffect(() => {
+    if (!tweaks.persistCreativeDrafts) {
+      setDraftLoaded(true);
+      return;
+    }
+    let cancelled = false;
+    void loadGenerateDraft()
+      .then((draft) => {
+        if (cancelled || pendingRerunAppliedRef.current) return;
+        if (!draft) return;
+        setPrompt(draft.prompt);
+        setProvider(draft.provider);
+        setSize(draft.size);
+        setFormat(draft.format);
+        setQuality(draft.quality);
+        setN(draft.n);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setDraftLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tweaks.persistCreativeDrafts]);
+
+  useEffect(() => {
+    if (!draftLoaded || !tweaks.persistCreativeDrafts) return;
+    const handle = window.setTimeout(() => {
+      void saveGenerateDraft({
+        prompt,
+        provider,
+        size,
+        quality,
+        format,
+        n,
+      }).catch(() => undefined);
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [
+    draftLoaded,
+    format,
+    n,
+    prompt,
+    provider,
+    quality,
+    size,
+    tweaks.persistCreativeDrafts,
+  ]);
+
   // Pick up "rerun" payload written by the detail drawer when the user
   // clicks 「再来一次」. Drains the slot on read so the prefill happens
   // exactly once per click.
@@ -266,6 +367,7 @@ export function GenerateScreen({
       if (typeof data.format === "string") setFormat(data.format);
       if (typeof data.quality === "string") setQuality(data.quality);
       if (typeof data.n === "number") setN(data.n);
+      pendingRerunAppliedRef.current = true;
       localStorage.removeItem("gpt2.pendingRerun");
       toast.message("已预填上一次的提示词", {
         description: "改一下再点「生成」就能跑变体。",
@@ -322,11 +424,15 @@ export function GenerateScreen({
     );
     const completedItems: MasonryItem<GalleryTile>[] = recentCompleted.map(
       (job) => {
+        const outputIndex = jobOutputIndexes(job)[0] ?? 0;
         let url: string | null = null;
+        let path: string | null = null;
         try {
-          url = api.jobOutputUrl(job, 0) || null;
+          url = jobOutputUrl(job, outputIndex);
+          path = jobOutputPath(job, outputIndex);
         } catch {
           url = null;
+          path = null;
         }
         const meta = (job.metadata ?? {}) as Record<string, unknown>;
         const promptText = (meta.prompt as string | undefined) ?? "";
@@ -336,6 +442,8 @@ export function GenerateScreen({
           data: {
             kind: "completed",
             job,
+            outputIndex,
+            path,
             url,
             promptText,
           },
@@ -832,9 +940,20 @@ export function GenerateScreen({
                 ) : (
                   <RecentWorkTile
                     job={data.job}
+                    outputIndex={data.outputIndex}
+                    path={data.path}
                     url={data.url}
                     promptText={data.promptText}
                     onOpenJob={onOpenJob}
+                    onSendToEdit={() => {
+                      sendImageToEdit({
+                        jobId: data.job.id,
+                        outputIndex: data.outputIndex,
+                        path: data.path,
+                        url: data.url,
+                      });
+                      onOpenEdit?.();
+                    }}
                   />
                 )
               }

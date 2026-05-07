@@ -1,5 +1,6 @@
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { toast } from "sonner";
 import {
   CheckCircle2,
   ChevronDown,
@@ -9,9 +10,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useCancelJob, useDeleteJob, useJobs } from "@/hooks/use-jobs";
-import { OPEN_JOB_EVENT } from "@/lib/job-navigation";
-import { revealPath, saveImages } from "@/lib/user-actions";
+import {
+  useCancelJob,
+  useDeleteJob,
+  useJobs,
+  useRetryJob,
+} from "@/hooks/use-jobs";
+import { OPEN_JOB_EVENT, sendImageToEdit } from "@/lib/job-navigation";
+import { revealPath, saveJobImages } from "@/lib/user-actions";
 import { formatTime } from "@/lib/format";
 import {
   jobOutputCount,
@@ -177,6 +183,7 @@ function JobRowExpandable({
   onCancel,
   onDelete,
   onOpenDetail,
+  onRetry,
 }: {
   index: number;
   job: Job;
@@ -185,6 +192,7 @@ function JobRowExpandable({
   onCancel: () => void;
   onDelete: () => void;
   onOpenDetail: (outputIndex: number) => void;
+  onRetry: () => void;
 }) {
   const confirm = useConfirm();
   const reducedMotion = useReducedMotion();
@@ -194,18 +202,14 @@ function JobRowExpandable({
   const prompt = jobPrompt(job);
   const status = job.status;
   const showCancel = status === "running" || status === "queued";
+  const showRetry = status === "failed" || status === "cancelled";
   const isQueueing = status === "queued";
   const isRunning = status === "running";
   const outputIndexes = jobOutputIndexes(job);
   const outputCount = outputIndexes.length;
   const extraCount = Math.max(0, outputCount - 1);
 
-  const saveAll = () => {
-    const paths = outputIndexes
-      .map((index) => jobOutputPath(job, index))
-      .filter((p): p is string => Boolean(p));
-    if (paths.length > 0) void saveImages(paths, "图片");
-  };
+  const saveAll = () => void saveJobImages(job.id, "任务图片");
 
   return (
     <div
@@ -350,6 +354,21 @@ function JobRowExpandable({
               <X size={14} />
             </button>
           )}
+          {showRetry && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry();
+              }}
+              className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11.5px] font-semibold text-foreground transition-colors hover:bg-[color:var(--accent-12)]"
+              aria-label="重试任务"
+              title="原样重试"
+            >
+              <Loader2 size={12} className="hidden" />
+              重试
+            </button>
+          )}
           <ChevronDown
             size={14}
             aria-hidden
@@ -368,9 +387,7 @@ function JobRowExpandable({
             key="expanded"
             className="grid overflow-hidden"
             initial={
-              reducedMotion
-                ? false
-                : { opacity: 0, gridTemplateRows: "0fr" }
+              reducedMotion ? false : { opacity: 0, gridTemplateRows: "0fr" }
             }
             animate={{ opacity: 1, gridTemplateRows: "1fr" }}
             exit={{ opacity: 0, gridTemplateRows: "0fr" }}
@@ -387,9 +404,11 @@ function JobRowExpandable({
                 {outputCount > 0 ? (
                   <div
                     className="grid grid-cols-2 gap-2 sm:[grid-template-columns:repeat(var(--history-output-cols),minmax(0,1fr))]"
-                    style={{
-                      "--history-output-cols": Math.min(outputCount, 4),
-                    } as CSSProperties}
+                    style={
+                      {
+                        "--history-output-cols": Math.min(outputCount, 4),
+                      } as CSSProperties
+                    }
                   >
                     {outputIndexes.map((outputIndex, i) => {
                       const url = jobOutputUrl(job, outputIndex);
@@ -470,6 +489,19 @@ function JobRowExpandable({
                       )}
                     </>
                   )}
+                  {showRetry && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon="reload"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRetry();
+                      }}
+                    >
+                      重试
+                    </Button>
+                  )}
                   <div className="flex-1" />
                   <Button
                     variant="ghost"
@@ -478,9 +510,7 @@ function JobRowExpandable({
                     onClick={async (e) => {
                       e.stopPropagation();
                       const summary =
-                        prompt.length > 60
-                          ? `${prompt.slice(0, 60)}…`
-                          : prompt;
+                        prompt.length > 60 ? `${prompt.slice(0, 60)}…` : prompt;
                       const ok = await confirm({
                         title: "删除任务记录",
                         description: (
@@ -512,12 +542,15 @@ function JobRowExpandable({
 
 export function HistoryScreen({
   onSwitchToGenerate,
+  onSwitchToEdit,
 }: {
   onSwitchToGenerate?: () => void;
+  onSwitchToEdit?: () => void;
 } = {}) {
   const { data: jobs = [], isLoading } = useJobs();
   const deleteJob = useDeleteJob();
   const cancelJob = useCancelJob();
+  const retryJob = useRetryJob();
   const confirm = useConfirm();
   const [filter, setFilter] = useState<FilterValue>("all");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -588,6 +621,27 @@ export function HistoryScreen({
     });
     if (!ok) return;
     finished.forEach((j) => deleteJob.mutate(j.id));
+  };
+
+  const handleRetry = async (jobId: string) => {
+    const toastId = toast.loading("正在重试任务");
+    try {
+      const result = await retryJob.mutateAsync(jobId);
+      toast.success("已重新提交", {
+        id: toastId,
+        description: `新任务 ${result.job_id} 已进入队列。`,
+      });
+      setExpandedIds((prev) => {
+        const next = new Set(prev);
+        next.add(result.job_id);
+        return next;
+      });
+    } catch (error) {
+      toast.error("重试失败", {
+        id: toastId,
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
   };
 
   const detailJob = detailJobId
@@ -695,6 +749,7 @@ export function HistoryScreen({
                   setDetailJobId(j.id);
                   setDetailIndex(outputIndex);
                 }}
+                onRetry={() => void handleRetry(j.id)}
               />
             ))
           )}
@@ -723,6 +778,17 @@ export function HistoryScreen({
           });
         }}
         onRerun={onSwitchToGenerate}
+        onRetry={(jobId) => void handleRetry(jobId)}
+        onSendToEdit={(job, outputIndex) => {
+          sendImageToEdit({
+            jobId: job.id,
+            outputIndex,
+            path: jobOutputPath(job, outputIndex),
+            url: jobOutputUrl(job, outputIndex),
+          });
+          setDetailJobId(null);
+          onSwitchToEdit?.();
+        }}
       />
     </div>
   );

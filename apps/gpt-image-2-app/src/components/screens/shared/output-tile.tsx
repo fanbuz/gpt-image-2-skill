@@ -17,11 +17,13 @@ export function OutputTile({
   onSelect,
   onDownload,
   onOpen,
+  onSendToEdit,
 }: {
   output: OutputMeta;
   onSelect?: () => void;
   onDownload?: () => void;
   onOpen?: () => void;
+  onSendToEdit?: () => void;
 }) {
   const reducedMotion = useReducedMotion();
   const [hover, setHover] = useState(false);
@@ -155,6 +157,19 @@ export function OutputTile({
                 className="touch-target image-overlay flex h-8 w-8 items-center justify-center rounded-[4px] border-none"
               >
                 <Icon name="external" size={13} />
+              </button>
+            )}
+            {onSendToEdit && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSendToEdit();
+                }}
+                title="发送到编辑"
+                aria-label="发送到编辑"
+                className="touch-target image-overlay flex h-8 w-8 items-center justify-center rounded-[4px] border-none"
+              >
+                <Icon name="edit" size={13} />
               </button>
             )}
             {onDownload && (
