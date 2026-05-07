@@ -51,7 +51,7 @@ import {
   type MaskMode,
   type MaskTool,
 } from "./mask-canvas";
-import { ReferenceImageCard, type RefImage } from "./reference-card";
+import { type RefImage } from "./reference-card";
 import { LocalEditOnboarding } from "./local-edit-onboarding";
 import { useCreateEdit } from "@/hooks/use-jobs";
 import { useJobEvents } from "@/hooks/use-job-events";
@@ -940,85 +940,6 @@ export function EditScreen({
           ]}
         />
 
-        {/* Refs popover */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className={cn(
-                "inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] transition-colors",
-                "border bg-[color:var(--w-04)] hover:bg-[color:var(--w-07)]",
-                referenceCountError
-                  ? "border-[color:var(--status-err)] text-[color:var(--status-err)]"
-                  : "border-border text-foreground",
-              )}
-            >
-              <ImageIcon size={12} className="opacity-80" />
-              <span>参考图</span>
-              <span className="font-mono text-faint">
-                {refs.length}/{maxReferenceImages}
-              </span>
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-[380px]">
-            <div className="flex items-center justify-between mb-2.5">
-              <div className="text-[12px] font-semibold text-foreground">
-                {usesRegion ? "目标图与参考图" : "参考图"}
-              </div>
-              <span
-                className={cn(
-                  "text-[10.5px] font-mono",
-                  referenceCountError
-                    ? "text-[color:var(--status-err)]"
-                    : "text-faint",
-                )}
-              >
-                {refs.length}/{maxReferenceImages}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {refs.map((ref) => (
-                <ReferenceImageCard
-                  key={ref.id}
-                  ref_={ref}
-                  active={ref.id === selectedRef}
-                  role={
-                    usesRegion
-                      ? ref.id === targetRef?.id
-                        ? "target"
-                        : "reference"
-                      : undefined
-                  }
-                  onSelect={() => setSelectedRef(ref.id)}
-                  onSetTarget={
-                    usesRegion
-                      ? () => {
-                          setTargetRefId(ref.id);
-                          setSelectedRef(ref.id);
-                        }
-                      : undefined
-                  }
-                  onRemove={() => removeRef(ref.id)}
-                />
-              ))}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={refs.length >= maxReferenceImages}
-                className="touch-target flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-[1.5px] border-dashed border-border-strong bg-[color:var(--w-02)] text-muted hover:border-foreground/30 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-              >
-                <Plus size={16} />
-                <span className="text-[10.5px]">添加</span>
-              </button>
-            </div>
-            {usesRegion && (
-              <div className="mt-3 rounded-md border border-border-faint bg-[color:var(--w-04)] px-2.5 py-1.5 text-[11px] leading-relaxed text-muted">
-                遮罩只作用在标记为「目标图」的图片上；其他图片只作为风格、人物或物体参考。
-              </div>
-            )}
-          </PopoverContent>
-        </Popover>
-
         <div className="flex-1" />
       </header>
 
@@ -1034,107 +955,124 @@ export function EditScreen({
         }}
       />
 
-      {refs.length > 0 && (
-        <section className="shrink-0 px-4 pb-2" aria-label="参考图缩略图">
-          <div className="surface-panel flex min-w-0 items-center gap-2 px-2.5 py-2">
-            <div className="flex w-12 shrink-0 flex-col items-start justify-center gap-0.5 px-1 leading-none">
-              <span className="t-caps">参考图</span>
-              <span
-                className={cn(
-                  "font-mono text-[10.5px] leading-none",
-                  referenceCountError
-                    ? "text-[color:var(--status-err)]"
-                    : "text-faint",
-                )}
-              >
-                {refs.length}/{maxReferenceImages}
-              </span>
-            </div>
-            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto scrollbar-none pb-0.5">
-              {refs.map((ref, index) => {
-                const isSelected = ref.id === selectedRef;
-                const isTarget = usesRegion && ref.id === targetRef?.id;
-                const hasMask = Boolean(maskSnapshots[ref.id]);
-                return (
-                  <div key={ref.id} className="group relative shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedRef(ref.id)}
-                      className={cn(
-                        "relative h-14 w-14 overflow-hidden rounded-md border transition-[border-color,box-shadow,transform,opacity]",
-                        isSelected
-                          ? "border-[color:var(--accent)] shadow-[0_0_0_2px_var(--accent-faint)]"
-                          : "border-border opacity-75 hover:opacity-100",
-                      )}
-                      title={ref.name}
-                      aria-label={`查看参考图 ${index + 1}: ${ref.name}`}
+      <section className="shrink-0 px-4 pb-2" aria-label="参考图缩略图">
+        <div className="surface-panel flex min-w-0 items-center gap-2 px-2.5 py-2">
+          <div className="flex w-12 shrink-0 flex-col items-start justify-center gap-0.5 px-1 leading-none">
+            <span className="t-caps">参考图</span>
+            <span
+              className={cn(
+                "font-mono text-[10.5px] leading-none",
+                referenceCountError
+                  ? "text-[color:var(--status-err)]"
+                  : "text-faint",
+              )}
+            >
+              {refs.length}/{maxReferenceImages}
+            </span>
+          </div>
+          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto scrollbar-none pb-0.5">
+            {refs.map((ref, index) => {
+              const isSelected = ref.id === selectedRef;
+              const isTarget = usesRegion && ref.id === targetRef?.id;
+              const hasMask = Boolean(maskSnapshots[ref.id]);
+              return (
+                <div key={ref.id} className="group relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRef(ref.id)}
+                    className={cn(
+                      "relative h-14 w-14 overflow-hidden rounded-md border transition-[border-color,box-shadow,transform,opacity]",
+                      isSelected
+                        ? "border-[color:var(--accent)] shadow-[0_0_0_2px_var(--accent-faint)]"
+                        : "border-border opacity-75 hover:opacity-100",
+                    )}
+                    title={ref.name}
+                    aria-label={`查看参考图 ${index + 1}: ${ref.name}`}
+                  >
+                    <img
+                      src={ref.url}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      draggable={false}
+                      className="h-full w-full object-cover"
+                    />
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute inset-x-0 bottom-0 h-7 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                      style={{
+                        background:
+                          "linear-gradient(to top, rgba(7, 9, 18, 0.82), transparent)",
+                      }}
+                    />
+                    <span
+                      className="absolute bottom-0 left-0 right-0 flex h-4 items-center justify-center text-[8.5px] font-mono text-foreground"
+                      style={{
+                        background:
+                          "linear-gradient(to top, var(--k-72), transparent)",
+                      }}
                     >
-                      <img
-                        src={ref.url}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        draggable={false}
-                        className="h-full w-full object-cover"
-                      />
+                      {index + 1}
+                    </span>
+                  </button>
+                  <div className="pointer-events-none absolute left-1 top-1 flex max-w-[calc(100%-8px)] flex-col items-start gap-0.5">
+                    {isTarget && (
                       <span
-                        className="absolute bottom-0 left-0 right-0 flex h-4 items-center justify-center text-[8.5px] font-mono text-foreground"
+                        className="max-w-full truncate rounded px-1 py-px text-[8px] font-semibold leading-none"
                         style={{
-                          background:
-                            "linear-gradient(to top, var(--k-72), transparent)",
+                          background: "var(--accent)",
+                          color: "var(--accent-on)",
                         }}
                       >
-                        {index + 1}
+                        目标
                       </span>
-                    </button>
-                    <div className="pointer-events-none absolute left-1 top-1 flex max-w-[calc(100%-8px)] flex-col items-start gap-0.5">
-                      {isTarget && (
-                        <span
-                          className="max-w-full truncate rounded px-1 py-px text-[8px] font-semibold leading-none"
-                          style={{
-                            background: "var(--accent)",
-                            color: "var(--accent-on)",
-                          }}
-                        >
-                          目标
-                        </span>
-                      )}
-                      {hasMask && (
-                        <span className="max-w-full truncate rounded bg-[color:var(--k-65)] px-1 py-px text-[8px] font-semibold leading-none text-foreground">
-                          遮罩
-                        </span>
-                      )}
-                    </div>
-                    {usesRegion && !isTarget && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTargetRefId(ref.id);
-                          setSelectedRef(ref.id);
-                        }}
-                        className="pointer-events-none absolute inset-x-1 bottom-1 inline-flex h-5 translate-y-1 items-center justify-center rounded border border-[color:var(--w-14)] bg-[color:var(--k-72)] px-1 text-[8.5px] font-semibold leading-none text-foreground opacity-0 shadow-sm backdrop-blur transition-[opacity,transform,background-color] hover:bg-[color:var(--k-82)] focus-visible:pointer-events-auto focus-visible:translate-y-0 focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100"
-                        aria-label={`把第 ${index + 1} 张设为目标图`}
-                      >
-                        设为目标
-                      </button>
+                    )}
+                    {hasMask && (
+                      <span className="max-w-full truncate rounded bg-[color:var(--k-65)] px-1 py-px text-[8px] font-semibold leading-none text-foreground">
+                        遮罩
+                      </span>
                     )}
                   </div>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={refs.length >= maxReferenceImages}
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-border-strong bg-[color:var(--w-03)] text-muted transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
-                aria-label="添加参考图"
-                title="添加参考图"
-              >
-                <Plus size={15} />
-              </button>
-            </div>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      removeRef(ref.id);
+                    }}
+                    className="pointer-events-none absolute right-1 top-1 inline-flex h-5 w-5 translate-y-[-2px] items-center justify-center rounded-full border border-white/30 bg-black/70 text-white opacity-0 shadow-[0_2px_10px_rgba(0,0,0,0.42)] backdrop-blur transition-[opacity,transform,background-color] hover:bg-black/85 focus-visible:pointer-events-auto focus-visible:translate-y-0 focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100"
+                    aria-label={`删除第 ${index + 1} 张参考图`}
+                  >
+                    <X size={11} />
+                  </button>
+                  {usesRegion && !isTarget && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTargetRefId(ref.id);
+                        setSelectedRef(ref.id);
+                      }}
+                      className="pointer-events-none absolute inset-x-1 bottom-1 inline-flex h-5 translate-y-1 items-center justify-center rounded border border-white/35 bg-black/75 px-1 text-[8.5px] font-semibold leading-none text-white opacity-0 shadow-[0_2px_12px_rgba(0,0,0,0.45)] backdrop-blur transition-[opacity,transform,background-color] hover:bg-black/90 focus-visible:pointer-events-auto focus-visible:translate-y-0 focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100"
+                      aria-label={`把第 ${index + 1} 张设为目标图`}
+                    >
+                      设为目标
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={refs.length >= maxReferenceImages}
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-dashed border-border-strong bg-[color:var(--w-03)] text-muted transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+              aria-label="添加参考图"
+              title="添加参考图"
+            >
+              <Plus size={15} />
+            </button>
           </div>
-        </section>
-      )}
+        </div>
+      </section>
 
       {/* CANVAS — full bleed, responsive */}
       <main className="flex-1 min-h-0 px-4 py-2 flex items-center justify-center overflow-hidden">
