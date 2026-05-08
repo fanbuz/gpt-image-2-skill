@@ -586,6 +586,7 @@ export function HistoryScreen({
   const cancelJob = useCancelJob();
   const retryJob = useRetryJob();
   const confirm = useConfirm();
+  const reducedMotion = useReducedMotion();
   const [filter, setFilter] = useState<FilterValue>("all");
   const [searchText, setSearchText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -746,21 +747,37 @@ export function HistoryScreen({
       {/* filters */}
       <div className="mb-4 grid grid-cols-1 items-center gap-3 lg:grid-cols-[1fr_minmax(320px,560px)_1fr]">
         <div className="flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-none">
-          {FILTERS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              onClick={() => setFilter(f.value)}
-              className={cn(
-                "px-3.5 h-8 rounded-full text-[12.5px] font-medium transition-colors",
-                filter === f.value
-                  ? "bg-[color:var(--accent-14)] text-foreground border border-[color:var(--accent-30)]"
-                  : "border border-transparent text-muted hover:text-foreground hover:bg-[color:var(--w-04)]",
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
+          {FILTERS.map((f) => {
+            const isActive = filter === f.value;
+            return (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setFilter(f.value)}
+                className={cn(
+                  "relative px-3.5 h-8 rounded-full text-[12.5px] font-medium transition-colors",
+                  isActive
+                    ? "text-foreground"
+                    : "text-muted hover:text-foreground hover:bg-[color:var(--w-04)]",
+                )}
+              >
+                {/* Shared accent pill that slides between filter chips. */}
+                {isActive && (
+                  <motion.span
+                    layoutId="history-filter-active-pill"
+                    aria-hidden="true"
+                    className="absolute inset-0 z-0 rounded-full border border-[color:var(--accent-30)]"
+                    style={{ background: "var(--accent-14)" }}
+                    transition={{
+                      duration: reducedMotion ? 0 : 0.24,
+                      ease: [0.22, 1, 0.36, 1],
+                    }}
+                  />
+                )}
+                <span className="relative z-10">{f.label}</span>
+              </button>
+            );
+          })}
         </div>
         <label className="relative block min-w-0">
           <Search
@@ -835,32 +852,50 @@ export function HistoryScreen({
             </div>
           ) : (
             <>
-              {jobs.map((j, i) => (
-                <JobRowExpandable
-                  key={j.id}
-                  index={i + 1}
-                  job={j}
-                  expanded={expandedIds.has(j.id)}
-                  onToggleExpand={() => toggleExpand(j.id)}
-                  onCancel={() => cancelJob.mutate(j.id)}
-                  onDelete={() => {
-                    deleteJob.mutate(j.id);
-                    setExpandedIds((prev) => {
-                      const next = new Set(prev);
-                      next.delete(j.id);
-                      return next;
-                    });
-                    if (detailJobId === j.id) {
-                      setDetailJobId(null);
+              <AnimatePresence initial={false}>
+                {jobs.map((j, i) => (
+                  <motion.div
+                    key={j.id}
+                    layout="position"
+                    initial={
+                      reducedMotion
+                        ? false
+                        : { opacity: 0, y: 4 }
                     }
-                  }}
-                  onOpenDetail={(outputIndex) => {
-                    setDetailJobId(j.id);
-                    setDetailIndex(outputIndex);
-                  }}
-                  onRetry={() => void handleRetry(j.id)}
-                />
-              ))}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={
+                      reducedMotion
+                        ? { opacity: 0 }
+                        : { opacity: 0, x: -16, scale: 0.98 }
+                    }
+                    transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <JobRowExpandable
+                      index={i + 1}
+                      job={j}
+                      expanded={expandedIds.has(j.id)}
+                      onToggleExpand={() => toggleExpand(j.id)}
+                      onCancel={() => cancelJob.mutate(j.id)}
+                      onDelete={() => {
+                        deleteJob.mutate(j.id);
+                        setExpandedIds((prev) => {
+                          const next = new Set(prev);
+                          next.delete(j.id);
+                          return next;
+                        });
+                        if (detailJobId === j.id) {
+                          setDetailJobId(null);
+                        }
+                      }}
+                      onOpenDetail={(outputIndex) => {
+                        setDetailJobId(j.id);
+                        setDetailIndex(outputIndex);
+                      }}
+                      onRetry={() => void handleRetry(j.id)}
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
               {hasMore && (
                 <div className="flex justify-center px-4 py-4">
                   <Button

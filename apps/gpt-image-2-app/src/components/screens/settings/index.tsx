@@ -1,6 +1,8 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useAnimationControls } from "motion/react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import {
   KeyRound,
   Sparkles,
@@ -243,6 +245,7 @@ function SettingsNav({
   tab: SettingsTab;
   setTab: (t: SettingsTab) => void;
 }) {
+  const reducedMotion = useReducedMotion();
   return (
     <aside className="flex min-w-0 shrink-0 flex-col gap-2">
       <div className="px-2 pt-1 pb-1 sm:pb-2">
@@ -258,14 +261,29 @@ function SettingsNav({
               type="button"
               onClick={() => setTab(n.id)}
               className={cn(
-                "flex h-9 shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-[13px] transition-colors md:w-full",
+                "relative flex h-9 shrink-0 items-center gap-2.5 rounded-md px-3 text-left text-[13px] transition-colors md:w-full",
                 active
-                  ? "bg-[color:var(--w-10)] text-foreground border border-[color:var(--w-10)]"
-                  : "border border-transparent text-muted hover:text-foreground hover:bg-[color:var(--w-05)]",
+                  ? "text-foreground"
+                  : "text-muted hover:text-foreground hover:bg-[color:var(--w-05)]",
               )}
             >
-              <I size={14} className="opacity-80" />
-              <span className="flex-1">{n.label}</span>
+              {/* Sliding active pill — same trick the top-nav uses.
+                  motion shares one element across all tabs via layoutId,
+                  so the highlight slides between tabs instead of cutting. */}
+              {active && (
+                <motion.span
+                  layoutId="settings-nav-active-pill"
+                  aria-hidden="true"
+                  className="absolute inset-0 z-0 rounded-md border border-[color:var(--w-10)]"
+                  style={{ background: "var(--w-10)" }}
+                  transition={{
+                    duration: reducedMotion ? 0 : 0.24,
+                    ease: [0.22, 1, 0.36, 1],
+                  }}
+                />
+              )}
+              <I size={14} className="relative z-10 opacity-80" />
+              <span className="relative z-10 flex-1">{n.label}</span>
             </button>
           );
         })}
@@ -327,6 +345,32 @@ function CredCard({
   onDelete,
 }: CredCardProps) {
   const confirm = useConfirm();
+  const reducedMotion = useReducedMotion();
+  // Bumped on every transition into "ok" / "err" so the success ring
+  // (or failure shake) replays even when the user clicks 测试 twice
+  // in a row and lands on the same terminal state. Without this the
+  // motion would only fire on the very first state change.
+  const [resultPulseKey, setResultPulseKey] = useState(0);
+  useEffect(() => {
+    if (testStatus === "ok" || testStatus === "err") {
+      setResultPulseKey((k) => k + 1);
+    }
+  }, [testStatus]);
+  // Imperative shake on each "err" transition. Previously the button
+  // got `key={\`err-${resultPulseKey}\`}` so React would unmount and
+  // remount it on every failure, which is the standard "remount to
+  // replay" trick — but it dropped keyboard focus mid-retry. Using
+  // animation controls keeps the DOM stable and replays the keyframes
+  // on resultPulseKey bumps so consecutive failures still cue.
+  const shakeControls = useAnimationControls();
+  useEffect(() => {
+    if (testStatus === "err" && !reducedMotion) {
+      void shakeControls.start({
+        x: [0, -2, 2, -1.5, 1.5, 0],
+        transition: { duration: 0.32, ease: [0.22, 1, 0.36, 1] },
+      });
+    }
+  }, [resultPulseKey, testStatus, reducedMotion, shakeControls]);
   // Surface a key value if any credential exposes a literal value.
   const apiKeyCredential = Object.values(prov.credentials ?? {}).find(
     (c) =>
@@ -396,23 +440,68 @@ function CredCard({
                 : "测试连接"
           }
         >
-          <button
+          <motion.button
             type="button"
             onClick={onTest}
             disabled={testStatus === "running"}
-            className="h-8 w-8 inline-flex items-center justify-center rounded-md text-muted hover:text-foreground hover:bg-[color:var(--w-06)] transition-colors disabled:opacity-50"
+            // Failure shake — three small horizontal nudges, only on
+            // the err pulse. Success path leaves the button still and
+            // lets the ring carry the news. Driven by shakeControls
+            // (see effect above) so the DOM node stays stable across
+            // retries — `key`-based remount drops keyboard focus.
+            animate={shakeControls}
+            className="relative h-8 w-8 inline-flex items-center justify-center rounded-md text-muted hover:text-foreground hover:bg-[color:var(--w-06)] transition-colors disabled:opacity-50"
             aria-label={`测试 ${name} 的连接`}
           >
-            {testStatus === "running" ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : testStatus === "ok" ? (
-              <Check size={14} className="text-[color:var(--status-ok)]" />
-            ) : testStatus === "err" ? (
-              <X size={14} className="text-[color:var(--status-err)]" />
-            ) : (
-              <Play size={13} />
-            )}
-          </button>
+            {/* Success ring pulse — radial accent fading from 0.7 -> 0
+                as it scales out. Only paints on each fresh "ok" via
+                resultPulseKey so re-tests replay the cue. */}
+            <AnimatePresence>
+              {testStatus === "ok" && !reducedMotion && (
+                <motion.span
+                  key={`ok-pulse-${resultPulseKey}`}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 rounded-md"
+                  initial={{ opacity: 0.75, scale: 0.7 }}
+                  animate={{ opacity: 0, scale: 1.6 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                  style={{
+                    background:
+                      "radial-gradient(circle at center, var(--status-ok-25), transparent 70%)",
+                    boxShadow: "0 0 0 1px var(--status-ok-25)",
+                  }}
+                />
+              )}
+            </AnimatePresence>
+            {/* Status icon swap — mode="wait" so each glyph plays its
+                own enter after the previous one finishes its exit;
+                avoids two icons overlapping mid-transition. */}
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={testStatus ?? "idle"}
+                initial={
+                  reducedMotion ? { opacity: 1 } : { opacity: 0, scale: 0.6 }
+                }
+                animate={{ opacity: 1, scale: 1 }}
+                exit={
+                  reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8 }
+                }
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                className="relative z-10 inline-flex"
+              >
+                {testStatus === "running" ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : testStatus === "ok" ? (
+                  <Check size={14} className="text-[color:var(--status-ok)]" />
+                ) : testStatus === "err" ? (
+                  <X size={14} className="text-[color:var(--status-err)]" />
+                ) : (
+                  <Play size={13} />
+                )}
+              </motion.span>
+            </AnimatePresence>
+          </motion.button>
         </Tooltip>
         <Tooltip text="编辑凭证">
           <button
@@ -461,6 +550,7 @@ function CredsPanel({ config }: { config?: ServerConfig }) {
   const setDefault = useSetDefaultProvider();
   const deleteProv = useDeleteProvider();
   const test = useTestProvider();
+  const reducedMotion = useReducedMotion();
   const [showAdd, setShowAdd] = useState(false);
   const [editingName, setEditingName] = useState<string | undefined>();
   const [testMap, setTestMap] = useState<
@@ -528,19 +618,37 @@ function CredsPanel({ config }: { config?: ServerConfig }) {
         />
       ) : (
         <div className="space-y-2.5">
-          {names.map((name) => (
-            <CredCard
-              key={name}
-              name={name}
-              prov={providers[name]}
-              isDefault={name === effectiveDefault}
-              testStatus={testMap[name]?.status}
-              onEdit={() => setEditingName(name)}
-              onUse={() => makeDefault(name)}
-              onTest={() => runTest(name)}
-              onDelete={() => removeProvider(name)}
-            />
-          ))}
+          <AnimatePresence initial={false}>
+            {names.map((name) => (
+              <motion.div
+                key={name}
+                layout="position"
+                initial={
+                  reducedMotion
+                    ? false
+                    : { opacity: 0, y: 6, scale: 0.98 }
+                }
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={
+                  reducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, scale: 0.96, x: -12 }
+                }
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <CredCard
+                  name={name}
+                  prov={providers[name]}
+                  isDefault={name === effectiveDefault}
+                  testStatus={testMap[name]?.status}
+                  onEdit={() => setEditingName(name)}
+                  onUse={() => makeDefault(name)}
+                  onTest={() => runTest(name)}
+                  onDelete={() => removeProvider(name)}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       )}
 
@@ -1192,6 +1300,7 @@ function AboutPanel() {
 
 export function SettingsScreen({ config }: { config?: ServerConfig } = {}) {
   const [tab, setTab] = useState<SettingsTab>("creds");
+  const reducedMotion = useReducedMotion();
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-hidden px-4 pb-4 pt-3 md:grid md:grid-cols-[200px_minmax(0,1fr)] md:gap-5 md:px-6 md:pb-6 md:pt-2">
@@ -1200,11 +1309,22 @@ export function SettingsScreen({ config }: { config?: ServerConfig } = {}) {
       <div className="surface-panel flex min-h-0 flex-1 flex-col overflow-hidden">
         <PanelHeader tab={tab} />
 
-        {tab === "creds" && <CredsPanel config={config} />}
-        {tab === "appearance" && <AppearancePanel />}
-        {tab === "runtime" && <RuntimePanel />}
-        {tab === "prompts" && <PromptTemplatesPanel />}
-        {tab === "about" && <AboutPanel />}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={tab}
+            initial={reducedMotion ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          >
+            {tab === "creds" && <CredsPanel config={config} />}
+            {tab === "appearance" && <AppearancePanel />}
+            {tab === "runtime" && <RuntimePanel />}
+            {tab === "prompts" && <PromptTemplatesPanel />}
+            {tab === "about" && <AboutPanel />}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );
