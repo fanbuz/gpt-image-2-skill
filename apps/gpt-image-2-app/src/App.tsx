@@ -6,6 +6,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { Toaster, toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ClassicShell } from "@/components/legacy/classic-shell";
@@ -17,10 +18,17 @@ import { EditScreen } from "@/components/screens/edit";
 import { HistoryScreen } from "@/components/screens/history";
 import { SettingsScreen } from "@/components/screens/settings";
 import { useConfig } from "@/hooks/use-config";
+import { useConfirm } from "@/hooks/use-confirm";
+import { useDisableWebviewContextMenu } from "@/hooks/use-disable-webview-contextmenu";
+import { useImageShortcuts } from "@/hooks/use-image-shortcuts";
 import { useJobNotifications } from "@/hooks/use-job-notifications";
 import { useJobs } from "@/hooks/use-jobs";
 import { useGlobalShortcuts } from "@/hooks/use-shortcuts";
 import { useTweaks } from "@/hooks/use-tweaks";
+import { TextSelectionContextMenu } from "@/components/ui/text-selection-context-menu";
+import { QuickLookHost } from "@/components/ui/quick-look";
+import { setActionsConfirm } from "@/lib/image-actions/confirm-action";
+import { setActionsNavigator } from "@/lib/image-actions/navigation";
 import {
   checkForAppUpdate,
   installAppUpdate,
@@ -93,6 +101,7 @@ export default function App() {
   } = useConfig();
   const { data: jobs } = useJobs();
   const { tweaks } = useTweaks();
+  const confirm = useConfirm();
 
   const setScreen = useCallback((s: ScreenId) => {
     setScreenState(s);
@@ -121,6 +130,22 @@ export default function App() {
     },
   });
   useJobNotifications(jobs, openJob);
+  useDisableWebviewContextMenu();
+  useImageShortcuts();
+
+  // Hand the screen setter to image-action executors so "Use as Reference"
+  // / "Edit with Prompt" / "Reveal Job in History" can navigate after their
+  // backend bookkeeping completes.
+  useEffect(() => {
+    setActionsNavigator(setScreen);
+  }, [setScreen]);
+
+  // And the confirm dialog so destructive executors (Delete) can prompt
+  // before tearing down a multi-output job.
+  useEffect(() => {
+    setActionsConfirm(confirm);
+    return () => setActionsConfirm(null);
+  }, [confirm]);
 
   useEffect(() => {
     if (!shouldAutoCheckForUpdates()) return;
@@ -302,14 +327,29 @@ export default function App() {
               </div>
             </div>
           )}
+          <TextSelectionContextMenu />
+          <QuickLookHost />
+        </div>
+      </WindowChrome>
+      {/*
+        Sonner doesn't internally portal its toaster to <body>, so when it
+        renders inside a stacking context (`div.desktop` / `div.relative`)
+        its `z-index` gets clamped to that context's stacking position —
+        and Radix Drawer / Quick Look (which DO portal to <body>) end up
+        on top regardless of how high we crank the value. Mounting the
+        Toaster via a Portal to <body> puts it in the root stacking
+        context where the z-index 9999 in index.css actually wins.
+      */}
+      {typeof document !== "undefined" &&
+        createPortal(
           <Toaster
             position="top-right"
             theme={legacyInterface ? tweaks.theme : "dark"}
             closeButton
             richColors
-          />
-        </div>
-      </WindowChrome>
+          />,
+          document.body,
+        )}
     </div>
   );
 }

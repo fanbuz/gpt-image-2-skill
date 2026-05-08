@@ -2,7 +2,15 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Icon } from "@/components/icon";
 import { RevealImage } from "@/components/ui/reveal-image";
+import { ImageContextMenu } from "@/components/ui/image-context-menu";
+import { ImageHoverToolbar } from "@/components/ui/image-hover-toolbar";
 import { useReducedMotion } from "@/hooks/use-reduced-motion";
+import { imageDragProps } from "@/lib/image-actions/drag-out";
+import {
+  clearFocusedImageIfMatches,
+  setFocusedImage,
+} from "@/lib/image-actions/focused-image";
+import type { ImageAsset } from "@/lib/image-actions/types";
 import { PlaceholderImage } from "./placeholder-image";
 
 type OutputMeta = {
@@ -19,6 +27,7 @@ export function OutputTile({
   onOpen,
   onSendToEdit,
   downloadLabel = "保存图片",
+  asset,
 }: {
   output: OutputMeta;
   onSelect?: () => void;
@@ -26,6 +35,12 @@ export function OutputTile({
   onOpen?: () => void;
   onSendToEdit?: () => void;
   downloadLabel?: string;
+  /**
+   * When provided, the tile is wrapped in an `ImageContextMenu` so right-click
+   * surfaces the runtime-aware action set. The legacy/classic shells leave
+   * this undefined and keep the existing hover-only behavior.
+   */
+  asset?: ImageAsset;
 }) {
   const reducedMotion = useReducedMotion();
   const [hover, setHover] = useState(false);
@@ -38,14 +53,33 @@ export function OutputTile({
     setImageFailed(false);
   }, [output.url]);
 
-  return (
+  const dragProps = asset ? imageDragProps(asset) : { draggable: false };
+  const tile = (
     <motion.div
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      onFocusCapture={() => setFocusWithin(true)}
+      onMouseEnter={() => {
+        setHover(true);
+        if (asset) setFocusedImage(asset);
+      }}
+      onMouseLeave={() => {
+        setHover(false);
+        // Clear the global focused-image when the pointer leaves so global
+        // shortcuts (Space / ⌘C / ⌘⌫) don't keep targeting a stale tile.
+        // `output.selected` opts in to "sticky" focus — selected tiles
+        // remain the keyboard target after the pointer wanders off.
+        if (asset && !output.selected) {
+          clearFocusedImageIfMatches(asset.jobId, asset.outputIndex);
+        }
+      }}
+      onFocusCapture={() => {
+        setFocusWithin(true);
+        if (asset) setFocusedImage(asset);
+      }}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           setFocusWithin(false);
+          if (asset && !output.selected) {
+            clearFocusedImageIfMatches(asset.jobId, asset.outputIndex);
+          }
         }
       }}
       onClick={onSelect}
@@ -105,6 +139,7 @@ export function OutputTile({
           decoding="async"
           className="w-full h-full object-cover"
           onError={() => setImageFailed(true)}
+          {...dragProps}
         />
       ) : (
         <PlaceholderImage
@@ -139,61 +174,75 @@ export function OutputTile({
         </div>
         {output.selected && <Icon name="check" size={12} />}
       </div>
-      <AnimatePresence>
-        {(hover || focusWithin || output.selected) && (
-          <motion.div
-            className="absolute top-2 right-2 z-20 flex gap-1"
-            initial={reducedMotion ? false : { opacity: 0, y: -3, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={
-              reducedMotion
-                ? { opacity: 0 }
-                : { opacity: 0, y: -2, scale: 0.98 }
-            }
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-          >
-            {onOpen && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpen();
-                }}
-                title="打开图片"
-                aria-label="打开图片"
-                className="touch-target image-overlay flex h-8 w-8 items-center justify-center rounded-[4px] border-none"
-              >
-                <Icon name="external" size={13} />
-              </button>
-            )}
-            {onSendToEdit && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSendToEdit();
-                }}
-                title="发送到编辑"
-                aria-label="发送到编辑"
-                className="touch-target image-overlay flex h-8 w-8 items-center justify-center rounded-[4px] border-none"
-              >
-                <Icon name="edit" size={13} />
-              </button>
-            )}
-            {onDownload && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDownload();
-                }}
-                title={downloadLabel}
-                aria-label={downloadLabel}
-                className="touch-target image-overlay flex h-8 w-8 items-center justify-center rounded-[4px] border-none"
-              >
-                <Icon name="download" size={13} />
-              </button>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {asset ? (
+        <ImageHoverToolbar
+          asset={asset}
+          visible={hover || focusWithin || Boolean(output.selected)}
+        />
+      ) : (
+        <AnimatePresence>
+          {(hover || focusWithin || output.selected) && (
+            <motion.div
+              className="absolute top-2 right-2 z-20 flex gap-1"
+              initial={
+                reducedMotion ? false : { opacity: 0, y: -3, scale: 0.98 }
+              }
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={
+                reducedMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, y: -2, scale: 0.98 }
+              }
+              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {onOpen && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpen();
+                  }}
+                  title="打开图片"
+                  aria-label="打开图片"
+                  className="touch-target image-overlay flex h-8 w-8 items-center justify-center rounded-[4px] border-none"
+                >
+                  <Icon name="external" size={13} />
+                </button>
+              )}
+              {onSendToEdit && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSendToEdit();
+                  }}
+                  title="发送到编辑"
+                  aria-label="发送到编辑"
+                  className="touch-target image-overlay flex h-8 w-8 items-center justify-center rounded-[4px] border-none"
+                >
+                  <Icon name="edit" size={13} />
+                </button>
+              )}
+              {onDownload && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDownload();
+                  }}
+                  title={downloadLabel}
+                  aria-label={downloadLabel}
+                  className="touch-target image-overlay flex h-8 w-8 items-center justify-center rounded-[4px] border-none"
+                >
+                  <Icon name="download" size={13} />
+                </button>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      )}
     </motion.div>
   );
+
+  if (asset) {
+    return <ImageContextMenu asset={asset}>{tile}</ImageContextMenu>;
+  }
+  return tile;
 }

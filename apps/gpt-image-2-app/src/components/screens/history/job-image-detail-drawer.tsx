@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import * as Radix from "@radix-ui/react-dialog";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Drawer } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
-import { RevealImage } from "@/components/ui/reveal-image";
+import { Tooltip } from "@/components/ui/tooltip";
+import { ImageContextMenu } from "@/components/ui/image-context-menu";
+import { openQuickLook } from "@/components/ui/quick-look";
 import TiltedCard from "@/components/reactbits/components/TiltedCard";
 import { copyText, openPath, revealPath, saveImages } from "@/lib/user-actions";
 import { useConfirm } from "@/hooks/use-confirm";
@@ -16,6 +17,8 @@ import {
   jobOutputPath,
   jobOutputUrl,
 } from "@/lib/job-outputs";
+import { imageAssetFromOutput } from "@/lib/image-actions/asset";
+import type { ImageAsset } from "@/lib/image-actions/types";
 import { PlaceholderImage } from "@/components/screens/shared/placeholder-image";
 
 type Props = {
@@ -66,7 +69,6 @@ export function JobImageDetailDrawer({
   onSendToEdit,
 }: Props) {
   const confirm = useConfirm();
-  const [zoomOpen, setZoomOpen] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const [thumbFailed, setThumbFailed] = useState<Set<number>>(new Set());
   const copy = runtimeCopy();
@@ -135,21 +137,44 @@ export function JobImageDetailDrawer({
     onChangeIndex(outputIndexes[(activePosition + 1) % outputCount]);
   };
 
-  useEffect(() => {
-    if (!zoomOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        goPrev();
-      }
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        goNext();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activePosition, outputCount, outputIndexes, zoomOpen]);
+  // QuickLook owns its own ArrowLeft/ArrowRight handling; the drawer no
+  // longer needs a parallel keyboard listener.
+
+  const peerAssets: ImageAsset[] = job
+    ? outputIndexes.map((idx) =>
+        imageAssetFromOutput({
+          jobId: job.id,
+          outputIndex: idx,
+          src: jobOutputUrl(job, idx) ?? "",
+          path: jobOutputPath(job, idx) ?? null,
+          prompt: prompt || undefined,
+          command: job.command,
+          job,
+        }),
+      )
+    : [];
+  const activeAsset =
+    peerAssets[activePosition] ??
+    (job && url
+      ? imageAssetFromOutput({
+          jobId: job.id,
+          outputIndex: activeOutputIndex,
+          src: url,
+          path: path ?? null,
+          prompt: prompt || undefined,
+          command: job.command,
+          job,
+        })
+      : null);
+
+  const openZoom = () => {
+    if (!activeAsset) return;
+    openQuickLook({
+      asset: activeAsset,
+      peers: peerAssets.length > 1 ? peerAssets : undefined,
+      onChange: (next) => onChangeIndex(next.outputIndex),
+    });
+  };
 
   return (
     <>
@@ -166,115 +191,110 @@ export function JobImageDetailDrawer({
         description={prompt ? prompt.slice(0, 80) : "（无提示词）"}
         width={520}
         footer={
-          <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
+          <div className="flex w-full min-w-0 items-center gap-1.5">
             {canShowFileLocation && (
               <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon="copy"
-                  disabled={!path}
-                  onClick={() => {
-                    if (path) void copyText(path, "图片路径");
-                  }}
-                >
-                  复制路径
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  icon="folder"
-                  disabled={!path}
-                  onClick={() => {
-                    if (path) void revealPath(path);
-                  }}
-                >
-                  打开位置
-                </Button>
+                <Tooltip text="复制路径">
+                  <Button
+                    variant="ghost"
+                    size="iconSm"
+                    icon="copy"
+                    aria-label="复制路径"
+                    disabled={!path}
+                    onClick={() => {
+                      if (path) void copyText(path, "图片路径");
+                    }}
+                  />
+                </Tooltip>
+                <Tooltip text="在 Finder 中显示">
+                  <Button
+                    variant="ghost"
+                    size="iconSm"
+                    icon="folder"
+                    aria-label="在 Finder 中显示"
+                    disabled={!path}
+                    onClick={() => {
+                      if (path) void revealPath(path);
+                    }}
+                  />
+                </Tooltip>
               </>
             )}
             {onRerun && job && (
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="reload"
-                onClick={handleRerun}
-                title="用相同的 prompt 和参数预填到生成屏"
-              >
-                再来一次
-              </Button>
+              <Tooltip text="再来一次（用相同参数预填生成屏）">
+                <Button
+                  variant="ghost"
+                  size="iconSm"
+                  icon="reload"
+                  aria-label="再来一次"
+                  onClick={handleRerun}
+                />
+              </Tooltip>
             )}
             {onRetry &&
               job &&
               (job.status === "failed" || job.status === "cancelled") && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon="reload"
-                  onClick={() => onRetry(job.id)}
-                  title="原样重新提交这个任务"
-                >
-                  重试
-                </Button>
+                <Tooltip text="重试（原样重新提交）">
+                  <Button
+                    variant="secondary"
+                    size="iconSm"
+                    icon="reload"
+                    aria-label="重试"
+                    onClick={() => onRetry(job.id)}
+                  />
+                </Tooltip>
               )}
             {onSendToEdit && job && (
-              <Button
-                variant="secondary"
-                size="sm"
-                icon="edit"
-                disabled={!path && !url}
-                onClick={() => onSendToEdit(job, activeOutputIndex)}
-                title="把当前图片添加为编辑参考图"
-              >
-                发送到编辑
-              </Button>
+              <Tooltip text="发送到编辑（作为参考图）">
+                <Button
+                  variant="secondary"
+                  size="iconSm"
+                  icon="edit"
+                  aria-label="发送到编辑"
+                  disabled={!path && !url}
+                  onClick={() => onSendToEdit(job, activeOutputIndex)}
+                />
+              </Tooltip>
             )}
             <div className="min-w-2 flex-1" />
             {onDelete && job && (
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="trash"
-                onClick={async () => {
-                  const summary = prompt
-                    ? prompt.length > 60
-                      ? `${prompt.slice(0, 60)}…`
-                      : prompt
-                    : "（无提示词）";
-                  const ok = await confirm({
-                    title: "删除整个任务记录",
-                    description: (
-                      <>
-                        将删除任务{" "}
-                        <span className="text-foreground font-medium">
-                          「{summary}」
-                        </span>
-                        。图片文件不会被删除。
-                      </>
-                    ),
-                    confirmText: "删除",
-                    variant: "danger",
-                  });
-                  if (!ok) return;
-                  onDelete(job.id);
-                  onClose();
-                }}
-              >
-                删除
-              </Button>
+              <Tooltip text="删除任务">
+                <Button
+                  variant="ghost"
+                  size="iconSm"
+                  icon="trash"
+                  aria-label="删除任务"
+                  onClick={async () => {
+                    const outputCount = job.outputs?.length ?? 1;
+                    const description =
+                      outputCount > 1
+                        ? `这是包含 ${outputCount} 张图的任务，删除会移除整个任务记录和全部 ${outputCount} 张图，无法分别删除单张。`
+                        : "这会删除这张图和它的任务记录。图片文件会移到回收站。";
+                    const ok = await confirm({
+                      title: "删除任务？",
+                      description,
+                      confirmText: "删除任务",
+                      variant: "danger",
+                    });
+                    if (!ok) return;
+                    onDelete(job.id);
+                    onClose();
+                  }}
+                />
+              </Tooltip>
             )}
-            <Button
-              variant="primary"
-              size="sm"
-              icon="download"
-              className="ml-auto"
-              disabled={!path}
-              onClick={() => {
-                if (path) void saveImages([path], "图片");
-              }}
-            >
-              {copy.saveImageLabel}
-            </Button>
+            <Tooltip text={copy.saveImageLabel}>
+              <Button
+                variant="primary"
+                size="iconSm"
+                icon="download"
+                aria-label={copy.saveImageLabel}
+                disabled={!path}
+                onClick={() => {
+                  if (path) void saveImages([path], "图片");
+                }}
+              />
+            </Tooltip>
           </div>
         }
       >
@@ -282,27 +302,29 @@ export function JobImageDetailDrawer({
           {/* Big image — TiltedCard for the brand "liquid" hover-tilt feel,
             wrapped in a button so click still escalates to fullscreen zoom. */}
           <div className="relative flex min-w-0 items-center justify-center overflow-hidden">
-            {url && !imageFailed ? (
-              <button
-                type="button"
-                onClick={() => setZoomOpen(true)}
-                className="mx-auto block w-full max-w-[340px] cursor-zoom-in rounded-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-55)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
-                aria-label={`查看第 ${letter} 张大图`}
-              >
-                <TiltedCard
-                  imageSrc={url}
-                  altText={`第 ${letter} 张`}
-                  containerWidth="100%"
-                  containerHeight={DETAIL_IMAGE_SIZE}
-                  imageWidth={DETAIL_IMAGE_SIZE}
-                  imageHeight={DETAIL_IMAGE_SIZE}
-                  rotateAmplitude={8}
-                  scaleOnHover={1.04}
-                  showMobileWarning={false}
-                  showTooltip={false}
-                  onImageError={() => setImageFailed(true)}
-                />
-              </button>
+            {url && !imageFailed && activeAsset ? (
+              <ImageContextMenu asset={activeAsset}>
+                <button
+                  type="button"
+                  onClick={openZoom}
+                  className="mx-auto block w-full max-w-[340px] cursor-zoom-in rounded-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-55)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
+                  aria-label={`查看第 ${letter} 张大图`}
+                >
+                  <TiltedCard
+                    imageSrc={url}
+                    altText={`第 ${letter} 张`}
+                    containerWidth="100%"
+                    containerHeight={DETAIL_IMAGE_SIZE}
+                    imageWidth={DETAIL_IMAGE_SIZE}
+                    imageHeight={DETAIL_IMAGE_SIZE}
+                    rotateAmplitude={8}
+                    scaleOnHover={1.04}
+                    showMobileWarning={false}
+                    showTooltip={false}
+                    onImageError={() => setImageFailed(true)}
+                  />
+                </button>
+              </ImageContextMenu>
             ) : (
               <div className="h-[340px] w-full overflow-hidden rounded-lg border border-[color:var(--w-08)] bg-[color:var(--w-02)]">
                 <PlaceholderImage
@@ -340,7 +362,8 @@ export function JobImageDetailDrawer({
               {outputIndexes.map((outputIndex, i) => {
                 const tUrl = jobOutputUrl(job, outputIndex);
                 const isActive = outputIndex === activeOutputIndex;
-                return (
+                const thumbAsset = peerAssets[i] ?? activeAsset;
+                const button = (
                   <button
                     key={outputIndex}
                     type="button"
@@ -384,6 +407,13 @@ export function JobImageDetailDrawer({
                       {String.fromCharCode(65 + i)}
                     </span>
                   </button>
+                );
+                return thumbAsset ? (
+                  <ImageContextMenu key={outputIndex} asset={thumbAsset}>
+                    {button}
+                  </ImageContextMenu>
+                ) : (
+                  button
                 );
               })}
             </div>
@@ -449,108 +479,6 @@ export function JobImageDetailDrawer({
           </section>
         </div>
       </Drawer>
-
-      {/* Fullscreen image zoom — opened by clicking the big image. Plain
-        Radix Dialog so we can size it 90vw/90vh without the standard
-        <Dialog> wrapper's max-width. */}
-      <Radix.Root open={zoomOpen} onOpenChange={setZoomOpen}>
-        <Radix.Portal>
-          <Radix.Overlay
-            className="fixed inset-0 z-[60] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0"
-            style={{
-              background: "var(--k-70)",
-              backdropFilter: "blur(8px)",
-              WebkitBackdropFilter: "blur(8px)",
-            }}
-          />
-          <Radix.Content
-            aria-describedby={undefined}
-            className="fixed left-1/2 top-1/2 z-[61] -translate-x-1/2 -translate-y-1/2 max-w-[92vw] max-h-[92vh] outline-none data-[state=open]:animate-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:zoom-out-95"
-          >
-            <Radix.Title className="sr-only">
-              {outputCount > 1 ? `作品 ${letter}` : "作品详情"}
-            </Radix.Title>
-            {url && !imageFailed && (
-              <RevealImage
-                src={url}
-                alt={`第 ${letter} 张大图`}
-                decoding="async"
-                duration={500}
-                className="block max-w-[92vw] max-h-[92vh] object-contain rounded-lg shadow-[var(--shadow-floating)]"
-              />
-            )}
-            {outputCount > 1 && (
-              <>
-                <button
-                  type="button"
-                  onClick={goPrev}
-                  aria-label="上一张"
-                  className="absolute left-3 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-[color:var(--surface-floating-border)] bg-[color:var(--surface-floating)] text-foreground backdrop-blur transition-colors hover:bg-[color:var(--surface-floating-strong)]"
-                  style={{ boxShadow: "var(--shadow-floating)" }}
-                >
-                  <ChevronLeft size={20} />
-                </button>
-                <button
-                  type="button"
-                  onClick={goNext}
-                  aria-label="下一张"
-                  className="absolute right-3 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-[color:var(--surface-floating-border)] bg-[color:var(--surface-floating)] text-foreground backdrop-blur transition-colors hover:bg-[color:var(--surface-floating-strong)]"
-                  style={{ boxShadow: "var(--shadow-floating)" }}
-                >
-                  <ChevronRight size={20} />
-                </button>
-                <div className="absolute bottom-3 left-1/2 flex max-w-[78vw] -translate-x-1/2 items-center gap-1.5 overflow-x-auto rounded-full border border-[color:var(--surface-floating-border)] bg-[color:var(--surface-floating)] p-1.5 backdrop-blur scrollbar-none">
-                  {job &&
-                    outputIndexes.map((idx, i) => {
-                      const thumbUrl = jobOutputUrl(job, idx);
-                      const isActive = idx === activeOutputIndex;
-                      return (
-                        <button
-                          key={idx}
-                          type="button"
-                          onClick={() => onChangeIndex(idx)}
-                          className={cn(
-                            "h-10 w-10 shrink-0 overflow-hidden rounded-full border transition-all",
-                            isActive
-                              ? "border-[color:var(--accent)] opacity-100"
-                              : "border-transparent opacity-55 hover:opacity-90",
-                          )}
-                          aria-label={`切换到第 ${i + 1} 张`}
-                        >
-                          {thumbUrl ? (
-                            <img
-                              src={thumbUrl}
-                              alt=""
-                              loading="lazy"
-                              decoding="async"
-                              className="h-full w-full object-cover"
-                              draggable={false}
-                            />
-                          ) : (
-                            <PlaceholderImage
-                              seed={idx + i + 41}
-                              variant={`zoom-thumb-${job.id}`}
-                            />
-                          )}
-                        </button>
-                      );
-                    })}
-                </div>
-              </>
-            )}
-            <Radix.Close asChild>
-              <button
-                type="button"
-                aria-label="关闭"
-                className="absolute -top-2 -right-2 h-9 w-9 rounded-full inline-flex items-center justify-center bg-[color:var(--surface-floating)] backdrop-blur border border-[color:var(--surface-floating-border)] text-foreground hover:bg-[color:var(--surface-floating-strong)] transition-colors"
-                style={{ boxShadow: "var(--shadow-floating)" }}
-              >
-                <X size={16} />
-              </button>
-            </Radix.Close>
-          </Radix.Content>
-        </Radix.Portal>
-      </Radix.Root>
     </>
   );
 }
