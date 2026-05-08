@@ -59,12 +59,12 @@ jobs:
         include:
           - platform: macos-15
             rust_target: aarch64-apple-darwin
-            args: --target aarch64-apple-darwin --bundles app,dmg
+            args: --target aarch64-apple-darwin --bundles app
             updater_arch: aarch64
             updater_suffix: app.tar.gz
           - platform: macos-15-intel
             rust_target: x86_64-apple-darwin
-            args: --target x86_64-apple-darwin --bundles app,dmg
+            args: --target x86_64-apple-darwin --bundles app
             updater_arch: x64
             updater_suffix: app.tar.gz
           - platform: ubuntu-22.04
@@ -163,6 +163,52 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm --prefix apps/gpt-image-2-app run tauri -- build ${{ matrix.args }} --ci
+
+      - name: Create macOS DMG
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          UPDATER_ARCH: ${{ matrix.updater_arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          app_bundle=""
+          while IFS= read -r candidate; do
+            app_bundle="$candidate"
+            break
+          done < <(find target -type d -name 'GPT Image 2.app' -prune | sort)
+
+          if [ -z "$app_bundle" ]; then
+            echo "No macOS app bundle found."
+            find target -type d -path '*/release/bundle/*' | sort
+            exit 1
+          fi
+
+          bundle_dir="$(dirname "$(dirname "$app_bundle")")"
+          dmg_dir="$bundle_dir/dmg"
+          staging_dir="$RUNNER_TEMP/gpt-image-2-dmg-${UPDATER_ARCH}"
+          dmg_path="$dmg_dir/GPT Image 2_${version}_${UPDATER_ARCH}.dmg"
+
+          rm -rf "$staging_dir"
+          mkdir -p "$staging_dir" "$dmg_dir"
+          ditto "$app_bundle" "$staging_dir/GPT Image 2.app"
+          ln -s /Applications "$staging_dir/Applications"
+
+          rm -f "$dmg_path"
+          hdiutil create \
+            -volname "GPT Image 2" \
+            -srcfolder "$staging_dir" \
+            -ov \
+            -format UDZO \
+            "$dmg_path"
+
+          if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp "$dmg_path"
+          fi
+
+          hdiutil verify "$dmg_path"
 
       - name: Normalize updater artifacts
         env:
