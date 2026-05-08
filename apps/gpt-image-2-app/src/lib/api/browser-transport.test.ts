@@ -107,6 +107,63 @@ describe("browserApi", () => {
     expect(secret.value).toBe("sk-test");
   });
 
+  it("keeps browser notification preferences while disabling server channels and scrubbing inline secrets", async () => {
+    const config = await browserApi.updateNotifications({
+      enabled: true,
+      on_completed: true,
+      on_failed: true,
+      on_cancelled: true,
+      toast: { enabled: true },
+      system: { enabled: true, mode: "auto" },
+      email: {
+        enabled: true,
+        smtp_host: "smtp.example.com",
+        smtp_port: 587,
+        tls: "start-tls",
+        username: "robot",
+        password: { source: "file", value: "smtp-secret" },
+        from: "robot@example.com",
+        to: ["owner@example.com"],
+        timeout_seconds: 10,
+      },
+      webhooks: [
+        {
+          id: "ops",
+          name: "Ops",
+          enabled: true,
+          url: "https://hooks.example.com/task",
+          method: "POST",
+          headers: {
+            Authorization: { source: "file", value: "Bearer secret" },
+          },
+          timeout_seconds: 10,
+        },
+      ],
+    });
+
+    expect(config.notifications.enabled).toBe(true);
+    expect(config.notifications.system.enabled).toBe(true);
+    expect(config.notifications.email.enabled).toBe(false);
+    expect(config.notifications.webhooks[0].enabled).toBe(false);
+    // The browser cannot deliver SMTP / webhook calls and must not persist
+    // their plaintext secrets to IndexedDB. The source stays so the editor
+    // still renders a file input, but `present: false` proves the value was
+    // scrubbed before storage.
+    expect(config.notifications.email.password).toEqual({
+      source: "file",
+      present: false,
+    });
+    expect(config.notifications.webhooks[0].headers.Authorization).toEqual({
+      source: "file",
+      present: false,
+    });
+
+    const test = await browserApi.testNotifications("completed");
+    expect(test.ok).toBe(true);
+    expect(test.reason).toBe("local_only");
+    expect(test.deliveries[0].channel).toBe("browser");
+  });
+
   it("uses native n for providers that support multiple outputs", async () => {
     const requests: CapturedRequest[] = [];
     vi.stubGlobal(
