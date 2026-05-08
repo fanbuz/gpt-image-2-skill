@@ -80,8 +80,8 @@ import {
   requestOutputCount,
 } from "@/lib/provider-capabilities";
 import {
-  effectiveDefaultProvider,
   providerNames as readProviderNames,
+  reconcileProviderSelection,
 } from "@/lib/providers";
 import {
   openPath,
@@ -246,7 +246,6 @@ export function EditScreen({
   const reducedMotion = useReducedMotion();
   const { tweaks } = useTweaks();
   const providerNames = useMemo(() => readProviderNames(config), [config]);
-  const defaultProvider = effectiveDefaultProvider(config);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const canvasViewportRef = useRef<HTMLDivElement>(null);
@@ -329,13 +328,9 @@ export function EditScreen({
   }, []);
 
   useEffect(() => {
-    if (
-      providerNames.length > 0 &&
-      (!provider || !config?.providers[provider])
-    ) {
-      setProvider(defaultProvider || providerNames[0]);
-    }
-  }, [config?.providers, defaultProvider, provider, providerNames]);
+    const nextProvider = reconcileProviderSelection(config, provider);
+    if (provider !== nextProvider) setProvider(nextProvider);
+  }, [config, provider]);
 
   useEffect(() => {
     if (refs.length === 0) {

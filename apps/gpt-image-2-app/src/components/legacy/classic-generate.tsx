@@ -31,8 +31,8 @@ import {
   requestOutputCount,
 } from "@/lib/provider-capabilities";
 import {
-  effectiveDefaultProvider,
   providerNames as readProviderNames,
+  reconcileProviderSelection,
 } from "@/lib/providers";
 import { openPath, saveImages } from "@/lib/user-actions";
 import type { ServerConfig } from "@/lib/types";
@@ -58,9 +58,9 @@ export function ClassicGenerateScreen({
   onOpenHistory?: () => void;
 }) {
   const providerNames = useMemo(() => readProviderNames(config), [config]);
-  const defaultProvider = effectiveDefaultProvider(config);
   const [prompt, setPrompt] = useState("");
   const [provider, setProvider] = useState("");
+  const [userSelectedProvider, setUserSelectedProvider] = useState(false);
   const [size, setSize] = useState("1024x1024");
   const [format, setFormat] = useState("png");
   const [quality, setQuality] = useState("auto");
@@ -74,13 +74,14 @@ export function ClassicGenerateScreen({
   );
 
   useEffect(() => {
-    if (
-      providerNames.length > 0 &&
-      (!provider || !config?.providers[provider])
-    ) {
-      setProvider(defaultProvider || providerNames[0]);
+    const nextProvider = reconcileProviderSelection(config, provider, {
+      userSelected: userSelectedProvider,
+    });
+    if (provider !== nextProvider) {
+      if (userSelectedProvider) setUserSelectedProvider(false);
+      setProvider(nextProvider);
     }
-  }, [config?.providers, defaultProvider, provider, providerNames]);
+  }, [config, provider, userSelectedProvider]);
 
   const { events, running } = useJobEvents(jobId);
   const mutate = useCreateGenerate();
@@ -290,7 +291,10 @@ export function ClassicGenerateScreen({
             <Field label="凭证">
               <GlassSelect
                 value={provider}
-                onValueChange={setProvider}
+                onValueChange={(value) => {
+                  setUserSelectedProvider(true);
+                  setProvider(value);
+                }}
                 options={providerNames.map((name) => ({
                   value: name,
                   label: name,

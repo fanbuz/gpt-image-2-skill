@@ -24,3 +24,19 @@ export function effectiveDefaultProvider(config?: ServerConfig) {
 export function defaultProviderLabel(config?: ServerConfig) {
   return effectiveDefaultProvider(config) || "—";
 }
+
+export function isProviderAvailable(config: ServerConfig | undefined, name: string) {
+  const provider = name ? config?.providers[name] : undefined;
+  return Boolean(provider && !provider.disabled);
+}
+
+export function reconcileProviderSelection(
+  config: ServerConfig | undefined,
+  selectedProvider: string,
+  options: { userSelected?: boolean } = {},
+) {
+  const fallback = effectiveDefaultProvider(config);
+  if (!fallback) return "";
+  if (!isProviderAvailable(config, selectedProvider)) return fallback;
+  return options.userSelected ? selectedProvider : fallback;
+}

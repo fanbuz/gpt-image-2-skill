@@ -57,8 +57,8 @@ import {
   requestOutputCount,
 } from "@/lib/provider-capabilities";
 import {
-  effectiveDefaultProvider,
   providerNames as readProviderNames,
+  reconcileProviderSelection,
 } from "@/lib/providers";
 import { openPath, saveImages } from "@/lib/user-actions";
 import type { ProviderConfig, ServerConfig } from "@/lib/types";
@@ -210,13 +210,13 @@ function ReferenceTile({
 
 export function ClassicEditScreen({ config }: { config?: ServerConfig }) {
   const providerNames = useMemo(() => readProviderNames(config), [config]);
-  const defaultProvider = effectiveDefaultProvider(config);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refsRef = useRef<RefWithFile[]>([]);
   const dragDepthRef = useRef(0);
   const [editMode, setEditMode] = useState<EditMode>("reference");
   const [prompt, setPrompt] = useState("");
   const [provider, setProvider] = useState("");
+  const [userSelectedProvider, setUserSelectedProvider] = useState(false);
   const [size, setSize] = useState("1024x1024");
   const [format, setFormat] = useState("png");
   const [quality, setQuality] = useState("auto");
@@ -242,13 +242,14 @@ export function ClassicEditScreen({ config }: { config?: ServerConfig }) {
   const [isDraggingImages, setIsDraggingImages] = useState(false);
 
   useEffect(() => {
-    if (
-      providerNames.length > 0 &&
-      (!provider || !config?.providers[provider])
-    ) {
-      setProvider(defaultProvider || providerNames[0]);
+    const nextProvider = reconcileProviderSelection(config, provider, {
+      userSelected: userSelectedProvider,
+    });
+    if (provider !== nextProvider) {
+      if (userSelectedProvider) setUserSelectedProvider(false);
+      setProvider(nextProvider);
     }
-  }, [config?.providers, defaultProvider, provider, providerNames]);
+  }, [config, provider, userSelectedProvider]);
 
   useEffect(() => {
     if (refs.length === 0) {
@@ -746,7 +747,10 @@ export function ClassicEditScreen({ config }: { config?: ServerConfig }) {
         <Field label="凭证">
           <GlassSelect
             value={provider}
-            onValueChange={setProvider}
+            onValueChange={(value) => {
+              setUserSelectedProvider(true);
+              setProvider(value);
+            }}
             options={providerNames.map((name) => ({
               value: name,
               label: name,

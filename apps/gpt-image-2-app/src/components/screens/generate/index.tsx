@@ -59,8 +59,8 @@ import {
   requestOutputCount,
 } from "@/lib/provider-capabilities";
 import {
-  effectiveDefaultProvider,
   providerNames as readProviderNames,
+  reconcileProviderSelection,
 } from "@/lib/providers";
 import type { Job, ServerConfig } from "@/lib/types";
 
@@ -253,7 +253,6 @@ export function GenerateScreen({
 }) {
   const reducedMotion = useReducedMotion();
   const providerNames = useMemo(() => readProviderNames(config), [config]);
-  const defaultProvider = effectiveDefaultProvider(config);
   // ClickSpark needs a real CSS color value, not a var() reference,
   // so tint it to whatever preset is active.
   const { tweaks } = useTweaks();
@@ -471,13 +470,9 @@ export function GenerateScreen({
   const safeN = normalizeOutputCount(n);
 
   useEffect(() => {
-    if (
-      providerNames.length > 0 &&
-      (!provider || !config?.providers[provider])
-    ) {
-      setProvider(defaultProvider || providerNames[0]);
-    }
-  }, [config?.providers, defaultProvider, provider, providerNames]);
+    const nextProvider = reconcileProviderSelection(config, provider);
+    if (provider !== nextProvider) setProvider(nextProvider);
+  }, [config, provider]);
 
   useEffect(() => {
     if (!supportsMultipleOutputs && n !== 1) {

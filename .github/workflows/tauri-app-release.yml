@@ -57,12 +57,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
+          - platform: macos-15
             rust_target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin --bundles app,dmg
             updater_arch: aarch64
             updater_suffix: app.tar.gz
-          - platform: macos-latest
+          - platform: macos-15-intel
             rust_target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin --bundles app,dmg
             updater_arch: x64
