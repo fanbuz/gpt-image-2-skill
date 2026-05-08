@@ -9,13 +9,17 @@ use std::{
 };
 
 use gpt_image_2_core::{
-    AppConfig, CredentialRef, HistoryListOptions, KEYCHAIN_SERVICE, NotificationConfig,
-    ProviderConfig, default_config_path, default_keychain_account, delete_history_job,
-    dispatch_task_notifications, history_db_path, jobs_dir, list_active_history_jobs,
+    AppConfig, CredentialRef, HistoryListOptions, KEYCHAIN_SERVICE, NotificationConfig, PathConfig,
+    ProductRuntime, ProviderConfig, StorageConfig, StorageTargetConfig, StorageUploadOverrides,
+    default_config_path, default_keychain_account, delete_history_job, dispatch_task_notifications,
+    history_db_path, legacy_jobs_dir, legacy_shared_codex_dir, list_active_history_jobs,
     list_expired_deleted_history_jobs, list_history_jobs_page, load_app_config,
-    notification_status_allowed, preserve_notification_secrets, read_keychain_secret,
+    notification_status_allowed, preserve_notification_secrets, preserve_storage_secrets,
+    product_app_data_dir, product_default_export_dir, product_default_export_dirs,
+    product_result_library_dir, product_storage_fallback_dir, read_keychain_secret,
     redact_app_config, restore_deleted_history_job, run_json, save_app_config, shared_config_dir,
-    show_history_job, soft_delete_history_job, upsert_history_job, write_keychain_secret,
+    show_history_job, soft_delete_history_job, upload_job_outputs_to_storage, upsert_history_job,
+    write_keychain_secret,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -27,11 +31,38 @@ fn app_error(error: gpt_image_2_core::AppError) -> String {
 }
 
 fn load_config() -> Result<AppConfig, String> {
-    load_app_config(&default_config_path()).map_err(app_error)
+    let mut config = load_app_config(&default_config_path()).map_err(app_error)?;
+    normalize_product_storage_defaults(&mut config);
+    Ok(config)
 }
 
 fn save_config(config: &AppConfig) -> Result<(), String> {
     save_app_config(&default_config_path(), config).map_err(app_error)
+}
+
+fn normalize_product_storage_defaults(config: &mut AppConfig) {
+    let fallback_dir = product_storage_fallback_dir(Some(config), ProductRuntime::Tauri);
+    if let Some(StorageTargetConfig::Local { directory, .. }) =
+        config.storage.targets.get_mut("local-default")
+    {
+        if *directory == shared_config_dir().join("storage").join("fallback")
+            || directory.as_os_str().is_empty()
+        {
+            *directory = fallback_dir;
+        }
+    }
+}
+
+fn load_config_or_default() -> AppConfig {
+    load_config().unwrap_or_default()
+}
+
+fn result_library_dir() -> PathBuf {
+    product_result_library_dir(Some(&load_config_or_default()), ProductRuntime::Tauri)
+}
+
+fn default_export_dir() -> PathBuf {
+    product_default_export_dir(Some(&load_config_or_default()), ProductRuntime::Tauri)
 }
 
 fn config_for_ui(config: &AppConfig) -> Value {
@@ -180,6 +211,10 @@ struct GenerateRequest {
     compression: Option<u8>,
     #[serde(default)]
     moderation: Option<String>,
+    #[serde(default)]
+    storage_targets: Option<Vec<String>>,
+    #[serde(default)]
+    fallback_targets: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -222,6 +257,10 @@ struct EditRequest {
     input_fidelity: Option<String>,
     #[serde(default)]
     moderation: Option<String>,
+    #[serde(default)]
+    storage_targets: Option<Vec<String>>,
+    #[serde(default)]
+    fallback_targets: Option<Vec<String>>,
     refs: Vec<UploadFile>,
     #[serde(default)]
     mask: Option<UploadFile>,
@@ -373,7 +412,7 @@ fn unique_job_dir() -> Result<(String, PathBuf), String> {
         .unwrap_or_default()
         .as_millis();
     let id = format!("app-{millis}-{}", std::process::id());
-    let dir = jobs_dir().join(&id);
+    let dir = result_library_dir().join(&id);
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     Ok((id, dir))
 }
@@ -997,6 +1036,8 @@ fn edit_request_metadata(request: &EditRequest) -> Value {
         "compression": request.compression,
         "input_fidelity": request.input_fidelity,
         "moderation": request.moderation,
+        "storage_targets": request.storage_targets,
+        "fallback_targets": request.fallback_targets,
         "ref_count": request.refs.len(),
         "has_mask": request.mask.is_some(),
         "selection_hint": request.selection_hint.is_some(),
@@ -1231,11 +1272,29 @@ fn emit_queue_event(app: &tauri::AppHandle, job_id: &str, event: &Value) {
 
 #[tauri::command]
 fn config_path() -> Value {
+    let config = load_config_or_default();
+    let app_data_dir = product_app_data_dir(Some(&config), ProductRuntime::Tauri);
+    let result_library_dir = product_result_library_dir(Some(&config), ProductRuntime::Tauri);
+    let default_export_dir = product_default_export_dir(Some(&config), ProductRuntime::Tauri);
+    let default_export_dirs = product_default_export_dirs(&config, ProductRuntime::Tauri)
+        .into_iter()
+        .map(|(mode, path)| (mode, path.display().to_string()))
+        .collect::<BTreeMap<_, _>>();
+    let legacy_codex_config_dir = legacy_shared_codex_dir(Some(&config));
+    let legacy_jobs_dir = legacy_jobs_dir(Some(&config));
+    let storage_fallback_dir = product_storage_fallback_dir(Some(&config), ProductRuntime::Tauri);
     json!({
         "config_dir": shared_config_dir().display().to_string(),
         "config_file": default_config_path().display().to_string(),
         "history_file": history_db_path().display().to_string(),
-        "jobs_dir": jobs_dir().display().to_string(),
+        "jobs_dir": result_library_dir.display().to_string(),
+        "app_data_dir": app_data_dir.display().to_string(),
+        "result_library_dir": result_library_dir.display().to_string(),
+        "default_export_dir": default_export_dir.display().to_string(),
+        "default_export_dirs": default_export_dirs,
+        "storage_fallback_dir": storage_fallback_dir.display().to_string(),
+        "legacy_codex_config_dir": legacy_codex_config_dir.display().to_string(),
+        "legacy_jobs_dir": legacy_jobs_dir.display().to_string(),
     })
 }
 
@@ -1252,6 +1311,48 @@ fn update_notifications(mut config: NotificationConfig) -> Result<Value, String>
     app_config.notifications = config;
     save_config(&app_config)?;
     Ok(config_for_ui(&app_config))
+}
+
+#[tauri::command]
+fn update_paths(config: PathConfig) -> Result<Value, String> {
+    let mut app_config = load_config()?;
+    app_config.paths = config;
+    save_config(&app_config)?;
+    Ok(config_for_ui(&app_config))
+}
+
+#[tauri::command]
+fn update_storage(mut config: StorageConfig) -> Result<Value, String> {
+    let mut app_config = load_config()?;
+    preserve_storage_secrets(&mut config, &app_config.storage);
+    app_config.storage = config;
+    save_config(&app_config)?;
+    Ok(config_for_ui(&app_config))
+}
+
+#[tauri::command]
+fn test_storage_target(name: String, target: Option<StorageTargetConfig>) -> Result<Value, String> {
+    let config = load_config()?;
+    let owned_target;
+    let target = if let Some(target) = target {
+        let mut storage = StorageConfig {
+            targets: BTreeMap::from([(name.clone(), target)]),
+            ..StorageConfig::default()
+        };
+        preserve_storage_secrets(&mut storage, &config.storage);
+        owned_target = storage
+            .targets
+            .remove(&name)
+            .ok_or_else(|| format!("Unknown storage target: {name}"))?;
+        &owned_target
+    } else {
+        config
+            .storage
+            .targets
+            .get(&name)
+            .ok_or_else(|| format!("Unknown storage target: {name}"))?
+    };
+    Ok(json!(gpt_image_2_core::test_storage_target(&name, target)))
 }
 
 #[derive(Deserialize)]
@@ -1548,6 +1649,43 @@ fn completed_job_for_queue(queued: &QueuedJob, response: &Value) -> Value {
     })
 }
 
+fn uploading_job_for_queue(queued: &QueuedJob, response: &Value) -> Value {
+    let payload = response.get("payload").unwrap_or(response);
+    let provider = payload
+        .get("provider")
+        .and_then(Value::as_str)
+        .unwrap_or(&queued.provider);
+    let outputs = payload
+        .get("output")
+        .and_then(|output| output.get("files"))
+        .cloned()
+        .or_else(|| {
+            response
+                .get("job")
+                .and_then(|job| job.get("outputs"))
+                .cloned()
+        })
+        .unwrap_or_else(|| json!([]));
+    let output_path = output_path_from_payload(payload).or_else(|| {
+        response
+            .get("job")
+            .and_then(|job| job.get("output_path"))
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+    });
+    job_snapshot(JobSnapshotInput {
+        id: &queued.id,
+        command: &queued.command,
+        provider,
+        status: "uploading",
+        created_at: &queued.created_at,
+        metadata: queued.metadata.clone(),
+        output_path,
+        outputs,
+        error: Value::Null,
+    })
+}
+
 fn failed_job_for_queue(queued: &QueuedJob, message: String) -> Value {
     job_snapshot(JobSnapshotInput {
         id: &queued.id,
@@ -1562,23 +1700,46 @@ fn failed_job_for_queue(queued: &QueuedJob, message: String) -> Value {
     })
 }
 
+fn completed_event_data(job: &Value) -> Value {
+    json!({
+        "status": "completed",
+        "output": {
+            "path": job.get("output_path").cloned().unwrap_or(Value::Null),
+            "files": job.get("outputs").cloned().unwrap_or_else(|| json!([])),
+        },
+        "job": job,
+    })
+}
+
+fn append_terminal_queue_event(
+    app: &tauri::AppHandle,
+    state: &JobQueueState,
+    job_id: &str,
+    event_type: &str,
+    event_data: Value,
+) {
+    let event = match state.inner.lock() {
+        Ok(mut inner) => append_queue_event(&mut inner, job_id, "local", event_type, event_data),
+        Err(_) => return,
+    };
+    emit_queue_event(app, job_id, &event);
+}
+
 fn finish_queued_job(
     app: tauri::AppHandle,
     state: JobQueueState,
     queued: QueuedJob,
     result: Result<Value, String>,
 ) {
-    let (job, event_type, event_data) = match result {
+    let (job, event_type, event_data, completed) = match result {
         Ok(response) => {
             let payload = response.get("payload").unwrap_or(&response);
             cleanup_child_history(payload, &queued.id);
             let job = completed_job_for_queue(&queued, &response);
-            let data = json!({
-                "status": "completed",
-                "output": payload.get("output").cloned().unwrap_or(Value::Null),
-                "job": job,
-            });
-            (job, "job.completed", data)
+            let uploading_job = uploading_job_for_queue(&queued, &response);
+            let _ = persist_job(&uploading_job);
+            let data = completed_event_data(&job);
+            (job, "job.completed", data, true)
         }
         Err(message) => {
             let job = failed_job_for_queue(&queued, message.clone());
@@ -1589,21 +1750,108 @@ fn finish_queued_job(
                     "status": "failed",
                     "error": {"message": message},
                 }),
+                false,
             )
         }
     };
-    let _ = persist_job(&job);
-    let event = {
+    if !completed {
+        let _ = persist_job(&job);
+    }
+    {
         let mut inner = match state.inner.lock() {
             Ok(inner) => inner,
             Err(_) => return,
         };
         inner.running = inner.running.saturating_sub(1);
-        append_queue_event(&mut inner, &queued.id, "local", event_type, event_data)
-    };
-    emit_queue_event(&app, &queued.id, &event);
-    spawn_notification_dispatch(app.clone(), state.clone(), queued.id, job);
+    }
+    if completed {
+        spawn_storage_upload_then_notify(app.clone(), state.clone(), queued.id, job);
+    } else {
+        append_terminal_queue_event(&app, &state, &queued.id, event_type, event_data);
+        spawn_notification_dispatch(app.clone(), state.clone(), queued.id, job);
+    }
     start_queued_jobs(app, state);
+}
+
+fn storage_overrides_from_job(job: &Value) -> StorageUploadOverrides {
+    let metadata = job.get("metadata").cloned().unwrap_or_else(|| json!({}));
+    StorageUploadOverrides {
+        targets: metadata.get("storage_targets").and_then(|targets| {
+            targets.as_array().map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+            })
+        }),
+        fallback_targets: metadata.get("fallback_targets").and_then(|targets| {
+            targets.as_array().map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+            })
+        }),
+    }
+}
+
+fn upload_completed_job_outputs(job: &Value) -> Result<Value, String> {
+    let _ = persist_job(job);
+    let config = load_config()?;
+    let overrides = storage_overrides_from_job(job);
+    upload_job_outputs_to_storage(&config.storage, job, overrides)
+        .map_err(app_error)
+        .map(|_| ())
+        .map_err(|error| format!("Storage upload failed: {error}"))?;
+    let job_id = job
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "Job id is missing.".to_string())?;
+    show_history_job(job_id).map_err(app_error)
+}
+
+fn spawn_storage_upload_then_notify(
+    app: tauri::AppHandle,
+    state: JobQueueState,
+    job_id: String,
+    job: Value,
+) {
+    thread::spawn(move || {
+        let notify_job = match upload_completed_job_outputs(&job) {
+            Ok(job) => job,
+            Err(error) => {
+                eprintln!("storage upload failed before notification dispatch: {error}");
+                job.clone()
+            }
+        };
+        let event = match state.inner.lock() {
+            Ok(mut inner) => append_queue_event(
+                &mut inner,
+                &job_id,
+                "local",
+                "job.storage",
+                json!({
+                    "status": notify_job
+                        .get("storage_status")
+                        .cloned()
+                        .unwrap_or_else(|| json!("not_configured")),
+                    "job": notify_job,
+                }),
+            ),
+            Err(_) => return,
+        };
+        emit_queue_event(&app, &job_id, &event);
+        append_terminal_queue_event(
+            &app,
+            &state,
+            &job_id,
+            "job.completed",
+            completed_event_data(&notify_job),
+        );
+        spawn_notification_dispatch(app, state, job_id, notify_job);
+    });
 }
 
 // Notification I/O (SMTP, webhooks) is blocking and may take seconds. Run it
@@ -1996,13 +2244,26 @@ fn sorted_ref_inputs(dir: &Path) -> Result<Vec<UploadFile>, String> {
         .collect()
 }
 
+fn edit_job_input_dir(job_id: &str) -> Result<(PathBuf, Vec<UploadFile>), String> {
+    let config = load_config_or_default();
+    let dirs = [
+        product_result_library_dir(Some(&config), ProductRuntime::Tauri).join(job_id),
+        legacy_jobs_dir(Some(&config)).join(job_id),
+    ];
+    let mut last_error = None;
+    for dir in dirs {
+        match sorted_ref_inputs(&dir) {
+            Ok(refs) if !refs.is_empty() => return Ok((dir, refs)),
+            Ok(_) => {}
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "这个编辑任务缺少原始参考图，无法原样重试。".to_string()))
+}
+
 fn edit_request_from_job(job_id: &str, job: &Value) -> Result<EditRequest, String> {
     let metadata = metadata_object(job);
-    let dir = jobs_dir().join(job_id);
-    let refs = sorted_ref_inputs(&dir)?;
-    if refs.is_empty() {
-        return Err("这个编辑任务缺少原始参考图，无法原样重试。".to_string());
-    }
+    let (dir, refs) = edit_job_input_dir(job_id)?;
     let mask = {
         let path = dir.join("mask.png");
         if path.is_file() {
@@ -2035,6 +2296,24 @@ fn edit_request_from_job(job_id: &str, job: &Value) -> Result<EditRequest, Strin
         compression: u8_field(&metadata, "compression"),
         input_fidelity: string_field(&metadata, "input_fidelity"),
         moderation: string_field(&metadata, "moderation"),
+        storage_targets: metadata.get("storage_targets").and_then(|targets| {
+            targets.as_array().map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+            })
+        }),
+        fallback_targets: metadata.get("fallback_targets").and_then(|targets| {
+            targets.as_array().map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+            })
+        }),
         refs,
         mask,
         selection_hint,
@@ -2136,10 +2415,20 @@ fn reveal_path(path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn export_files_to_downloads(paths: Vec<String>) -> Result<Vec<String>, String> {
+    export_files_to_configured_folder(paths)
+}
+
+#[tauri::command]
+fn export_job_to_downloads(job_id: String) -> Result<Vec<String>, String> {
+    export_job_to_configured_folder(job_id)
+}
+
+#[tauri::command]
+fn export_files_to_configured_folder(paths: Vec<String>) -> Result<Vec<String>, String> {
     if paths.is_empty() {
         return Err("没有可保存的图片。".to_string());
     }
-    let export_dir = downloads_export_dir()?;
+    let export_dir = configured_export_dir()?;
     fs::create_dir_all(&export_dir).map_err(|error| format!("无法创建保存目录：{error}"))?;
 
     let mut saved = Vec::new();
@@ -2160,13 +2449,13 @@ fn export_files_to_downloads(paths: Vec<String>) -> Result<Vec<String>, String> 
 }
 
 #[tauri::command]
-fn export_job_to_downloads(job_id: String) -> Result<Vec<String>, String> {
+fn export_job_to_configured_folder(job_id: String) -> Result<Vec<String>, String> {
     let job = show_history_job(&job_id).map_err(app_error)?;
     let paths = output_paths_from_job(&job);
     if paths.is_empty() {
         return Err("这个任务没有可保存的图片。".to_string());
     }
-    let root = downloads_export_dir()?;
+    let root = configured_export_dir()?;
     fs::create_dir_all(&root).map_err(|error| format!("无法创建保存目录：{error}"))?;
     let folder = unique_export_dir(&root, &job_export_folder_name(&job));
     fs::create_dir_all(&folder).map_err(|error| format!("无法创建任务目录：{error}"))?;
@@ -2188,27 +2477,35 @@ fn export_job_to_downloads(job_id: String) -> Result<Vec<String>, String> {
     Ok(saved)
 }
 
-fn downloads_export_dir() -> Result<PathBuf, String> {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .ok_or_else(|| "找不到下载目录。".to_string())?;
-    Ok(home.join("Downloads").join("GPT Image 2"))
+fn configured_export_dir() -> Result<PathBuf, String> {
+    let dir = default_export_dir();
+    if dir.as_os_str().is_empty() {
+        Err("找不到默认导出目录。".to_string())
+    } else {
+        Ok(dir)
+    }
 }
 
 fn jobs_trash_dir() -> PathBuf {
-    jobs_dir().join(".trash")
+    result_library_dir().join(".trash")
 }
 
 /// Resolve a raw user-supplied path against the asset-protocol scope. Reading
-/// outside `jobs_dir` or the system temp dir is rejected so a malicious
-/// `read_image_bytes` payload can't exfiltrate arbitrary files.
+/// outside the product result library, legacy jobs dir, or the system temp dir
+/// is rejected so a malicious `read_image_bytes` payload can't exfiltrate
+/// arbitrary files.
 fn resolve_within_allowed_scope(input: &Path) -> Result<PathBuf, String> {
     let canonical_target = input
         .canonicalize()
         .map_err(|error| format!("无法解析路径：{error}"))?;
-    let canonical_jobs = jobs_dir().canonicalize().unwrap_or_else(|_| jobs_dir());
-    if canonical_target.starts_with(&canonical_jobs) {
+    let library = result_library_dir();
+    let canonical_library = library.canonicalize().unwrap_or(library);
+    if canonical_target.starts_with(&canonical_library) {
+        return Ok(canonical_target);
+    }
+    let legacy = legacy_jobs_dir(Some(&load_config_or_default()));
+    let canonical_legacy = legacy.canonicalize().unwrap_or(legacy);
+    if canonical_target.starts_with(&canonical_legacy) {
         return Ok(canonical_target);
     }
     let temp = std::env::temp_dir();
@@ -2266,7 +2563,7 @@ async fn copy_image_to_clipboard(
 
 #[tauri::command]
 fn soft_delete_job(job_id: String) -> Result<(), String> {
-    let job_root = jobs_dir().join(&job_id);
+    let job_root = result_library_dir().join(&job_id);
     if job_root.exists() {
         let trash_root = jobs_trash_dir();
         fs::create_dir_all(&trash_root).map_err(|error| format!("创建回收目录失败：{error}"))?;
@@ -2286,7 +2583,7 @@ fn soft_delete_job(job_id: String) -> Result<(), String> {
 fn restore_deleted_job(job_id: String) -> Result<(), String> {
     let trash_path = jobs_trash_dir().join(&job_id);
     if trash_path.exists() {
-        let dest = jobs_dir().join(&job_id);
+        let dest = result_library_dir().join(&job_id);
         if dest.exists() {
             return Err("恢复失败：目标位置已存在同名任务。".to_string());
         }
@@ -2302,7 +2599,7 @@ fn hard_delete_job(job_id: String) -> Result<(), String> {
     if trash_path.exists() {
         fs::remove_dir_all(&trash_path).map_err(|error| format!("清空回收目录失败：{error}"))?;
     }
-    let main_path = jobs_dir().join(&job_id);
+    let main_path = result_library_dir().join(&job_id);
     if main_path.exists() {
         let _ = fs::remove_dir_all(&main_path);
     }
@@ -2312,7 +2609,7 @@ fn hard_delete_job(job_id: String) -> Result<(), String> {
 
 /// Permanently remove soft-deleted history rows whose 5-minute undo window
 /// has elapsed, deleting both the database row and the corresponding
-/// `jobs_dir/.trash/<id>` directory.
+/// `result_library_dir/.trash/<id>` directory.
 ///
 /// Cutoff is anchored to the SQLite `deleted_at` column (set by
 /// `soft_delete_history_job`), NOT the trash directory's filesystem mtime
@@ -2632,7 +2929,10 @@ pub fn run() {
             config_path,
             get_config,
             update_notifications,
+            update_paths,
+            update_storage,
             test_notifications,
+            test_storage_target,
             notification_capabilities,
             config_inspect,
             config_save,
@@ -2658,6 +2958,8 @@ pub fn run() {
             reveal_path,
             export_files_to_downloads,
             export_job_to_downloads,
+            export_files_to_configured_folder,
+            export_job_to_configured_folder,
             read_image_bytes,
             copy_image_to_clipboard,
             soft_delete_job,

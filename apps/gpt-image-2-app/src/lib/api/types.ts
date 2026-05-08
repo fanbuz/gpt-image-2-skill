@@ -7,9 +7,13 @@ import type {
   NotificationConfig,
   NotificationTestResult,
   OutputRef,
+  ExportDirMode,
+  PathConfig,
   ProviderConfig,
   QueueStatus,
   ServerConfig,
+  StorageConfig,
+  StorageTargetConfig,
   TestProviderResult,
 } from "../types";
 
@@ -22,6 +26,9 @@ export type RuntimeCapabilities = {
   canUseSystemCredentials: boolean;
   canUseCodexProvider: boolean;
   canExportToDownloadsFolder: boolean;
+  canExportToConfiguredFolder: boolean;
+  canChooseExportFolder: boolean;
+  canUsePersistentResultLibrary: boolean;
 };
 
 export type TauriJobResponse = {
@@ -44,6 +51,13 @@ export type ConfigPaths = {
   config_file: string;
   history_file: string;
   jobs_dir: string;
+  app_data_dir?: string;
+  result_library_dir?: string;
+  default_export_dir?: string;
+  default_export_dirs?: Partial<Record<ExportDirMode, string>>;
+  storage_fallback_dir?: string;
+  legacy_codex_config_dir?: string;
+  legacy_jobs_dir?: string;
 };
 
 export type EventHandler = (ev: JobEvent) => void;
@@ -64,12 +78,29 @@ export type JobListPage = {
   total: number;
 };
 
+export type StorageTestResult = {
+  ok: boolean;
+  target: string;
+  target_type?: string;
+  message: string;
+  latency_ms?: number;
+  detail?: Record<string, unknown>;
+  unsupported?: boolean;
+  local_only?: boolean;
+};
+
 export type ApiClient = RuntimeCapabilities & {
   getConfig(): Promise<ServerConfig>;
   configPaths(): Promise<ConfigPaths>;
   updateNotifications(config: NotificationConfig): Promise<ServerConfig>;
   testNotifications(status?: JobStatus): Promise<NotificationTestResult>;
   notificationCapabilities(): Promise<NotificationCapabilities>;
+  updatePaths?(config: PathConfig): Promise<ServerConfig>;
+  updateStorage?(config: StorageConfig): Promise<ServerConfig>;
+  testStorageTarget?(
+    name: string,
+    target?: StorageTargetConfig,
+  ): Promise<StorageTestResult>;
   setDefault(name: string): Promise<ServerConfig>;
   upsertProvider(name: string, cfg: ProviderConfig): Promise<ServerConfig>;
   revealProviderCredential(
@@ -86,7 +117,7 @@ export type ApiClient = RuntimeCapabilities & {
   /**
    * Soft delete: hide a job from listings but keep it recoverable for the
    * 5-second undo window. On Tauri this moves the job folder into
-   * `jobs_dir/.trash/<id>` and sets the SQLite `deleted_at` timestamp; on
+   * `result_library_dir/.trash/<id>` and sets the SQLite `deleted_at` timestamp; on
    * HTTP / Browser runtimes this falls back to a hard delete (no undo).
    */
   softDeleteJob(id: string): Promise<void>;
@@ -96,8 +127,8 @@ export type ApiClient = RuntimeCapabilities & {
    */
   restoreDeletedJob(id: string): Promise<void>;
   /**
-   * Permanently delete a job: rm `jobs_dir/<id>` and `jobs_dir/.trash/<id>`,
-   * then DELETE the history row.
+   * Permanently delete a job from the result library and then DELETE the
+   * history row. Remote uploaded objects are not deleted by default.
    */
   hardDeleteJob(id: string): Promise<void>;
   /**
@@ -118,6 +149,8 @@ export type ApiClient = RuntimeCapabilities & {
   revealPath(path: string): Promise<void>;
   exportFilesToDownloads(paths: string[]): Promise<string[]>;
   exportJobToDownloads(jobId: string): Promise<string[]>;
+  exportFilesToConfiguredFolder(paths: string[]): Promise<string[]>;
+  exportJobToConfiguredFolder(jobId: string): Promise<string[]>;
   createGenerate(body: GenerateRequest): Promise<TauriJobResponse>;
   createEdit(form: FormData): Promise<TauriJobResponse>;
   retryJob(jobId: string): Promise<TauriJobResponse>;
@@ -142,6 +175,12 @@ export const TERMINAL_JOB_STATUSES = new Set([
   "canceled",
 ]);
 
+export const ACTIVE_JOB_STATUSES = new Set(["queued", "running", "uploading"]);
+
 export function isTerminalJobStatus(status: string) {
   return TERMINAL_JOB_STATUSES.has(status);
+}
+
+export function isActiveJobStatus(status: string) {
+  return ACTIVE_JOB_STATUSES.has(status);
 }

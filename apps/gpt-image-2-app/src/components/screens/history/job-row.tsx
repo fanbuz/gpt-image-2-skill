@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { formatTime, statusLabel } from "@/lib/format";
 import { promptSummary } from "@/lib/prompt-display";
 import { api } from "@/lib/api";
+import { isActiveJobStatus } from "@/lib/api/types";
 import type { Job } from "@/lib/types";
 
 const CMD_ICON: Record<string, IconName> = {
@@ -21,7 +22,7 @@ const CMD_ICON: Record<string, IconName> = {
 function badgeTone(status: Job["status"]) {
   if (status === "completed") return "ok" as const;
   if (status === "failed" || status === "cancelled") return "err" as const;
-  if (status === "running") return "running" as const;
+  if (status === "running" || status === "uploading") return "running" as const;
   return "queued" as const;
 }
 
@@ -36,6 +37,16 @@ function plannedCount(job: Job) {
   }
   const outputs = api.jobOutputPaths(job).length;
   return outputs > 0 ? outputs : 1;
+}
+
+function storageStatusLabel(status?: string) {
+  if (status === "completed") return "已上传";
+  if (status === "fallback_completed") return "已回退";
+  if (status === "partial_failed") return "部分失败";
+  if (status === "failed") return "上传失败";
+  if (status === "running") return "上传中";
+  if (status === "pending") return "待上传";
+  return "";
 }
 
 function firstAvailablePath(job: Job) {
@@ -59,7 +70,7 @@ function JobAvatar({ job, promptTitle }: { job: Job; promptTitle: string }) {
   }, [firstUrl]);
 
   const isFailure = job.status === "failed" || job.status === "cancelled";
-  const isRunning = job.status === "running" || job.status === "queued";
+  const isRunning = isActiveJobStatus(job.status);
   const showBadge = planned > 1 && !isFailure;
   const badgeText =
     job.status === "completed" || doneCount >= planned
@@ -240,6 +251,8 @@ export function JobRow({
   const planned = plannedCount(job);
   const doneCount = api.jobOutputPaths(job).length;
   const grouped = planned > 1;
+  const storageLabel =
+    job.status === "completed" ? storageStatusLabel(job.storage_status) : "";
 
   return (
     <Fragment>
@@ -319,10 +332,13 @@ export function JobRow({
           <Badge tone={badgeTone(job.status)}>
             <StatusDot
               status={job.status}
-              pulse={job.status === "running" || job.status === "queued"}
+              pulse={isActiveJobStatus(job.status)}
             />
             {statusLabel(job.status)}
           </Badge>
+          {storageLabel && (
+            <div className="mt-1 text-[10.5px] text-faint">{storageLabel}</div>
+          )}
         </div>
         <div className="flex justify-end gap-0.5">
           {grouped && (

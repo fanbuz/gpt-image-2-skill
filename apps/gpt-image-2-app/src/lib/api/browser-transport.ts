@@ -1,4 +1,5 @@
 import type {
+  CredentialRef,
   GenerateRequest,
   Job,
   JobEvent,
@@ -7,22 +8,30 @@ import type {
   NotificationConfig,
   NotificationTestResult,
   OutputRef,
+  PathConfig,
   ProviderConfig,
   QueueStatus,
   ServerConfig,
+  StorageConfig,
+  StorageTargetConfig,
   TestProviderResult,
 } from "../types";
 import {
   defaultNotificationConfig,
+  defaultPathConfig,
+  defaultStorageConfig,
   jobOutputPath,
   jobOutputPaths,
   normalizeConfig,
   normalizeNotificationConfig,
+  normalizePathConfig,
   normalizeJob,
   normalizeJobResponse,
+  normalizeStorageConfig,
   outputPath,
   outputPaths,
   rememberJobOutputs,
+  storageTargetType,
 } from "./shared";
 import type {
   ApiClient,
@@ -33,7 +42,7 @@ import type {
   JobUpdateHandler,
   TauriJobResponse,
 } from "./types";
-import { isTerminalJobStatus } from "./types";
+import { isActiveJobStatus, isTerminalJobStatus } from "./types";
 import { jobExportBaseName, outputFileName } from "@/lib/job-export";
 import { createStoredZip } from "@/lib/zip";
 
@@ -165,13 +174,14 @@ async function readConfigRecord() {
   const record = await requestToPromise<KvRecord<ServerConfig> | undefined>(
     tx.objectStore("kv").get(CONFIG_KEY),
   );
-  return (
-    record?.value ??
-    ({
+  return normalizeConfig(
+    record?.value ?? {
       version: 1,
       providers: {},
       notifications: defaultNotificationConfig(),
-    } satisfies ServerConfig)
+      storage: defaultStorageConfig(),
+      paths: defaultPathConfig(),
+    },
   );
 }
 
@@ -237,9 +247,7 @@ function filterJobs(
 ) {
   let filtered = jobs;
   if (filter === "running") {
-    filtered = filtered.filter(
-      (job) => job.status === "queued" || job.status === "running",
-    );
+    filtered = filtered.filter((job) => isActiveJobStatus(job.status));
   }
   if (filter === "completed") {
     filtered = filtered.filter((job) => job.status === "completed");
@@ -415,6 +423,157 @@ function scrubFileCredentialSecret<
   return credential;
 }
 
+function scrubStorageCredential(credential?: CredentialRef | null) {
+  return scrubFileCredentialSecret(credential ?? null);
+}
+
+function scrubStorageTargetSecrets(
+  target: StorageTargetConfig,
+): StorageTargetConfig {
+  const type = storageTargetType(target);
+  if (type === "s3") {
+    return {
+      ...target,
+      type,
+      access_key_id:
+        "access_key_id" in target
+          ? scrubStorageCredential(target.access_key_id)
+          : null,
+      secret_access_key:
+        "secret_access_key" in target
+          ? scrubStorageCredential(target.secret_access_key)
+          : null,
+      session_token:
+        "session_token" in target
+          ? scrubStorageCredential(target.session_token)
+          : null,
+    } as StorageTargetConfig;
+  }
+  if (type === "webdav") {
+    return {
+      ...target,
+      type,
+      password:
+        "password" in target ? scrubStorageCredential(target.password) : null,
+    } as StorageTargetConfig;
+  }
+  if (type === "http") {
+    return {
+      ...target,
+      type,
+      headers:
+        "headers" in target
+          ? Object.fromEntries(
+              Object.entries(target.headers ?? {}).map(([name, credential]) => [
+                name,
+                scrubStorageCredential(credential)!,
+              ]),
+            )
+          : {},
+    } as StorageTargetConfig;
+  }
+  if (type === "sftp") {
+    return {
+      ...target,
+      type,
+      password:
+        "password" in target ? scrubStorageCredential(target.password) : null,
+      private_key:
+        "private_key" in target
+          ? scrubStorageCredential(target.private_key)
+          : null,
+    } as StorageTargetConfig;
+  }
+  return { ...target, type: "local" } as StorageTargetConfig;
+}
+
+function sanitizeStorageTargetConfig(
+  target: StorageTargetConfig,
+): StorageTargetConfig {
+  const scrubbed = scrubStorageTargetSecrets(target);
+  const type = storageTargetType(scrubbed);
+  if (type === "s3") {
+    return {
+      ...scrubbed,
+      access_key_id:
+        "access_key_id" in scrubbed
+          ? sanitizeNotificationCredential(scrubbed.access_key_id)
+          : null,
+      secret_access_key:
+        "secret_access_key" in scrubbed
+          ? sanitizeNotificationCredential(scrubbed.secret_access_key)
+          : null,
+      session_token:
+        "session_token" in scrubbed
+          ? sanitizeNotificationCredential(scrubbed.session_token)
+          : null,
+    } as StorageTargetConfig;
+  }
+  if (type === "webdav") {
+    return {
+      ...scrubbed,
+      password:
+        "password" in scrubbed
+          ? sanitizeNotificationCredential(scrubbed.password)
+          : null,
+    } as StorageTargetConfig;
+  }
+  if (type === "http") {
+    return {
+      ...scrubbed,
+      headers:
+        "headers" in scrubbed
+          ? Object.fromEntries(
+              Object.entries(scrubbed.headers ?? {}).map(
+                ([name, credential]) => [
+                  name,
+                  sanitizeNotificationCredential(credential)!,
+                ],
+              ),
+            )
+          : {},
+    } as StorageTargetConfig;
+  }
+  if (type === "sftp") {
+    return {
+      ...scrubbed,
+      password:
+        "password" in scrubbed
+          ? sanitizeNotificationCredential(scrubbed.password)
+          : null,
+      private_key:
+        "private_key" in scrubbed
+          ? sanitizeNotificationCredential(scrubbed.private_key)
+          : null,
+    } as StorageTargetConfig;
+  }
+  return scrubbed;
+}
+
+function sanitizeStorageConfig(config: StorageConfig): StorageConfig {
+  const normalized = normalizeStorageConfig(config);
+  const localTargetNames = new Set(
+    Object.entries(normalized.targets)
+      .filter(([, target]) => storageTargetType(target) === "local")
+      .map(([name]) => name),
+  );
+  return {
+    ...normalized,
+    default_targets: normalized.default_targets.filter((name) =>
+      localTargetNames.has(name),
+    ),
+    fallback_targets: normalized.fallback_targets.filter((name) =>
+      localTargetNames.has(name),
+    ),
+    targets: Object.fromEntries(
+      Object.entries(normalized.targets).map(([name, target]) => [
+        name,
+        sanitizeStorageTargetConfig(target),
+      ]),
+    ),
+  };
+}
+
 function sanitizeNotificationCredential(
   credential: NotificationConfig["email"]["password"],
 ) {
@@ -490,6 +649,8 @@ function browserConfigForUi(config: ServerConfig): ServerConfig {
     notifications: sanitizeNotificationConfig(
       normalizeNotificationConfig(config.notifications),
     ),
+    storage: sanitizeStorageConfig(config.storage),
+    paths: normalizePathConfig(config.paths),
   });
 }
 
@@ -503,6 +664,8 @@ function browserStoredConfig(config: ServerConfig): ServerConfig {
         : Object.keys(providers)[0],
     providers,
     notifications: normalizeNotificationConfig(config.notifications),
+    storage: normalizeStorageConfig(config.storage),
+    paths: normalizePathConfig(config.paths),
   };
 }
 
@@ -1141,7 +1304,7 @@ function browserJobId() {
 async function markInterruptedJobs() {
   const jobs = await readStoredJobs();
   const interrupted = jobs.filter(
-    (job) => job.status === "queued" || job.status === "running",
+    (job) => isActiveJobStatus(job.status),
   );
   for (const job of interrupted) {
     await writeJob({
@@ -1248,6 +1411,9 @@ export const browserApi: ApiClient = {
   canUseSystemCredentials: false,
   canUseCodexProvider: false,
   canExportToDownloadsFolder: false,
+  canExportToConfiguredFolder: false,
+  canChooseExportFolder: false,
+  canUsePersistentResultLibrary: false,
   async getConfig() {
     await prepareBrowserRuntime();
     return browserConfigForUi(await readConfigRecord());
@@ -1259,6 +1425,19 @@ export const browserApi: ApiClient = {
       config_file: "IndexedDB: kv/config",
       history_file: "IndexedDB: jobs",
       jobs_dir: "IndexedDB: outputs",
+      app_data_dir: "IndexedDB: gpt-image-2-web",
+      result_library_dir: "IndexedDB: outputs",
+      default_export_dir: "浏览器默认下载位置",
+      default_export_dirs: {
+        browser_default: "浏览器默认下载位置",
+        downloads: "浏览器默认下载位置",
+        documents: "浏览器默认下载位置",
+        pictures: "浏览器默认下载位置",
+        result_library: "IndexedDB: outputs",
+      },
+      storage_fallback_dir: "IndexedDB: outputs",
+      legacy_codex_config_dir: "",
+      legacy_jobs_dir: "",
     };
   },
   async updateNotifications(config: NotificationConfig) {
@@ -1334,6 +1513,62 @@ export const browserApi: ApiClient = {
         browser: typeof window !== "undefined" && "Notification" in window,
       },
       server: { email: false, webhook: false },
+    };
+  },
+  async updatePaths(config: PathConfig) {
+    await prepareBrowserRuntime();
+    const current = await readConfigRecord();
+    current.paths = normalizePathConfig(config);
+    current.paths.default_export_dir = {
+      mode: "browser_default",
+      path: null,
+    };
+    await writeStoredConfig(browserStoredConfig(current));
+    return browserConfigForUi(current);
+  },
+  async updateStorage(config: StorageConfig) {
+    await prepareBrowserRuntime();
+    const current = await readConfigRecord();
+    const normalized = normalizeStorageConfig(config);
+    current.storage = {
+      ...normalized,
+      default_targets: normalized.default_targets.filter((name) => {
+        const target = normalized.targets[name];
+        return target && storageTargetType(target) === "local";
+      }),
+      fallback_targets: normalized.fallback_targets.filter((name) => {
+        const target = normalized.targets[name];
+        return target && storageTargetType(target) === "local";
+      }),
+      targets: Object.fromEntries(
+        Object.entries(normalized.targets).map(([name, target]) => [
+          name,
+          scrubStorageTargetSecrets(target),
+        ]),
+      ),
+    };
+    await writeStoredConfig(browserStoredConfig(current));
+    return browserConfigForUi(current);
+  },
+  async testStorageTarget(name: string, target?: StorageTargetConfig) {
+    const targetType = storageTargetType(target);
+    if (targetType === "local") {
+      return {
+        ok: true,
+        target: name,
+        target_type: targetType,
+        message:
+          "静态 Web 仅会把结果保存在当前浏览器数据中，不会写入服务器或本机目录。",
+        local_only: true,
+      };
+    }
+    return {
+      ok: false,
+      target: name,
+      target_type: targetType,
+      message:
+        "远端存储上传需要桌面 App 或服务端 Web；静态 Web 不会保存远端密钥。",
+      unsupported: true,
     };
   },
   async setDefault(name: string) {
@@ -1534,6 +1769,12 @@ export const browserApi: ApiClient = {
     throw new Error("Web 不能打开文件夹，请使用桌面 App 查看文件位置。");
   },
   async exportFilesToDownloads(paths: string[]) {
+    return browserApi.exportFilesToConfiguredFolder(paths);
+  },
+  async exportJobToDownloads(jobId: string) {
+    return browserApi.exportJobToConfiguredFolder(jobId);
+  },
+  async exportFilesToConfiguredFolder(paths: string[]) {
     await prepareBrowserRuntime();
     const saved: string[] = [];
     for (const [index, path] of paths.entries()) {
@@ -1545,7 +1786,7 @@ export const browserApi: ApiClient = {
     }
     return saved;
   },
-  async exportJobToDownloads(jobId: string) {
+  async exportJobToConfiguredFolder(jobId: string) {
     await prepareBrowserRuntime();
     const { job } = await browserApi.getJob(jobId);
     return downloadJobZip(job);

@@ -8,9 +8,12 @@ import type {
   NotificationCapabilities,
   NotificationConfig,
   NotificationTestResult,
+  PathConfig,
   ProviderConfig,
   QueueStatus,
   ServerConfig,
+  StorageConfig,
+  StorageTargetConfig,
   TestProviderResult,
 } from "../types";
 import {
@@ -29,6 +32,7 @@ import type {
   JobListOptions,
   JobListPage,
   JobUpdateHandler,
+  StorageTestResult,
   TauriJobResponse,
 } from "./types";
 import { isTerminalJobStatus } from "./types";
@@ -90,6 +94,9 @@ export const tauriApi: ApiClient = {
   canUseSystemCredentials: true,
   canUseCodexProvider: true,
   canExportToDownloadsFolder: true,
+  canExportToConfiguredFolder: true,
+  canChooseExportFolder: false,
+  canUsePersistentResultLibrary: true,
   async getConfig() {
     return normalizeConfig(await invoke<ServerConfig>("get_config"));
   },
@@ -108,6 +115,15 @@ export const tauriApi: ApiClient = {
   },
   async notificationCapabilities() {
     return invoke<NotificationCapabilities>("notification_capabilities");
+  },
+  async updatePaths(config: PathConfig) {
+    return normalizeConfig(await invoke<ServerConfig>("update_paths", { config }));
+  },
+  async updateStorage(config: StorageConfig) {
+    return normalizeConfig(await invoke<ServerConfig>("update_storage", { config }));
+  },
+  async testStorageTarget(name: string, target?: StorageTargetConfig) {
+    return invoke<StorageTestResult>("test_storage_target", { name, target });
   },
   async setDefault(name: string) {
     return normalizeConfig(
@@ -206,10 +222,16 @@ export const tauriApi: ApiClient = {
     await invoke("reveal_path", { path });
   },
   async exportFilesToDownloads(paths: string[]) {
-    return invoke<string[]>("export_files_to_downloads", { paths });
+    return tauriApi.exportFilesToConfiguredFolder(paths);
   },
   async exportJobToDownloads(jobId: string) {
-    return invoke<string[]>("export_job_to_downloads", { jobId });
+    return tauriApi.exportJobToConfiguredFolder(jobId);
+  },
+  async exportFilesToConfiguredFolder(paths: string[]) {
+    return invoke<string[]>("export_files_to_configured_folder", { paths });
+  },
+  async exportJobToConfiguredFolder(jobId: string) {
+    return invoke<string[]>("export_job_to_configured_folder", { jobId });
   },
   async createGenerate(body: GenerateRequest) {
     const result = await invoke<TauriJobResponse>("enqueue_generate_image", {
