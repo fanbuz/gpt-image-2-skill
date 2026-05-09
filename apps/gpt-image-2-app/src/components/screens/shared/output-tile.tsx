@@ -108,7 +108,7 @@ export function OutputTile({
         // border + shadow follow the same project quint as the scale motion
         // above; previously plain `transition-all` snapped them in 150ms
         // while the tile scaled over 180ms — visible misalignment on select.
-        "motion-safe:transition-[border-color,box-shadow] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "motion-safe:transition-[border-color,box-shadow] motion-safe:duration-200 motion-safe:ease-out-quint",
         output.selected
           ? "border-accent shadow-[0_0_0_3px_var(--accent-faint)]"
           : "border-border shadow-sm",

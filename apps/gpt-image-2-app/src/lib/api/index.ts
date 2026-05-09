@@ -101,6 +101,20 @@ export const api: ApiClient = {
       }
       return client.updatePaths(config);
     }),
+  updateStorage: (config) =>
+    loadClient().then((client) => {
+      if (!client.updateStorage) {
+        throw new Error("当前运行环境不支持修改存储配置。");
+      }
+      return client.updateStorage(config);
+    }),
+  testStorageTarget: (name, target) =>
+    loadClient().then((client) => {
+      if (!client.testStorageTarget) {
+        throw new Error("当前运行环境不支持测试存储目标。");
+      }
+      return client.testStorageTarget(name, target);
+    }),
   setDefault: (name) =>
     invokeClient("setDefault", name) as ReturnType<ApiClient["setDefault"]>,
   upsertProvider: (name, cfg) =>

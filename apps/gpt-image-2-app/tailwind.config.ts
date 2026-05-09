@@ -76,6 +76,14 @@ const config: Config = {
         "d-pad": "var(--d-pad)",
         "d-gap": "var(--d-gap)",
       },
+      transitionDuration: {
+        180: "180ms",
+        220: "220ms",
+      },
+      transitionTimingFunction: {
+        "out-quint": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "spring-soft": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+      },
       keyframes: {
         "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
         "fade-up": {

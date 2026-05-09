@@ -199,9 +199,9 @@ function MobileParamsSheet(props: Omit<CreationParamsBarProps, "action">) {
         <RadixDialog.Content
           className={cn(
             "fixed inset-x-0 bottom-0 z-50 rounded-t-2xl border border-border-faint p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-popover outline-none sm:hidden",
-            "ease-[cubic-bezier(0.22,1,0.36,1)]",
-            "data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom data-[state=open]:fade-in-0 data-[state=open]:duration-[220ms]",
-            "data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=closed]:fade-out-0 data-[state=closed]:duration-[180ms]",
+            "ease-out-quint",
+            "data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom data-[state=open]:fade-in-0 data-[state=open]:duration-220",
+            "data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=closed]:fade-out-0 data-[state=closed]:duration-180",
           )}
           style={{
             background: "var(--surface-floating)",
