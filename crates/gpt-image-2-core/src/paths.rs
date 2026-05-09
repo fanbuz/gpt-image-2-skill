@@ -224,7 +224,7 @@ pub fn product_default_export_dir(config: Option<&AppConfig>, runtime: ProductRu
     let app_data_dir = product_app_data_dir(config, runtime);
     let result_library_dir = product_result_library_dir(config, runtime);
     let Some(export_dir) = config.map(|config| &config.paths.default_export_dir) else {
-        return default_product_export_dir(runtime, &app_data_dir);
+        return result_library_dir;
     };
     match export_dir.mode {
         ExportDirMode::Custom => export_dir
@@ -239,9 +239,11 @@ pub fn product_default_export_dir(config: Option<&AppConfig>, runtime: ProductRu
         ExportDirMode::Pictures => dirs::picture_dir()
             .unwrap_or_else(|| app_data_dir.join(EXPORTS_DIR_NAME))
             .join("GPT Image 2"),
-        ExportDirMode::ResultLibrary => result_library_dir,
-        ExportDirMode::BrowserDefault | ExportDirMode::Downloads => {
+        ExportDirMode::BrowserDefault if runtime == ProductRuntime::DockerWeb => {
             default_product_export_dir(runtime, &app_data_dir)
+        }
+        ExportDirMode::ResultLibrary | ExportDirMode::BrowserDefault | ExportDirMode::Downloads => {
+            result_library_dir
         }
     }
 }

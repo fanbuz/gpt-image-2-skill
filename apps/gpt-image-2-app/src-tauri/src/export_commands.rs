@@ -36,14 +36,18 @@ pub(crate) fn export_files_to_configured_folder(paths: Vec<String>) -> Result<Ve
         return Err("没有可保存的图片。".to_string());
     }
     let export_dir = configured_export_dir()?;
+    export_files_into_dir(paths, &export_dir)
+}
+
+pub(crate) fn export_files_into_dir(paths: Vec<String>, export_dir: &Path) -> Result<Vec<String>, String> {
+    let sources = validate_source_paths(paths)?;
     fs::create_dir_all(&export_dir).map_err(|error| format!("无法创建保存目录：{error}"))?;
+    if all_sources_within_dir(&sources, &export_dir) {
+        return Ok(display_paths(&sources));
+    }
 
     let mut saved = Vec::new();
-    for path in paths {
-        let source = PathBuf::from(path);
-        if !source.is_file() {
-            return Err("图片文件不存在，可能已被移动或删除。".to_string());
-        }
+    for source in sources {
         let file_name = source
             .file_name()
             .and_then(|name| name.to_str())
@@ -62,17 +66,17 @@ pub(crate) fn export_job_to_configured_folder(job_id: String) -> Result<Vec<Stri
     if paths.is_empty() {
         return Err("这个任务没有可保存的图片。".to_string());
     }
+    let sources = validate_source_paths(paths)?;
     let root = configured_export_dir()?;
     fs::create_dir_all(&root).map_err(|error| format!("无法创建保存目录：{error}"))?;
+    if all_sources_within_dir(&sources, &root) {
+        return Ok(display_paths(&sources));
+    }
     let folder = unique_export_dir(&root, &job_export_folder_name(&job));
     fs::create_dir_all(&folder).map_err(|error| format!("无法创建任务目录：{error}"))?;
 
     let mut saved = Vec::new();
-    for path in paths {
-        let source = PathBuf::from(path);
-        if !source.is_file() {
-            return Err("图片文件不存在，可能已被移动或删除。".to_string());
-        }
+    for source in sources {
         let file_name = source
             .file_name()
             .and_then(|name| name.to_str())
@@ -91,4 +95,32 @@ pub(crate) fn configured_export_dir() -> Result<PathBuf, String> {
     } else {
         Ok(dir)
     }
+}
+
+fn validate_source_paths(paths: Vec<String>) -> Result<Vec<PathBuf>, String> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let source = PathBuf::from(path);
+            if !source.is_file() {
+                return Err("图片文件不存在，可能已被移动或删除。".to_string());
+            }
+            Ok(source)
+        })
+        .collect()
+}
+
+fn all_sources_within_dir(sources: &[PathBuf], dir: &Path) -> bool {
+    let canonical_dir = canonical_or_original(dir);
+    sources
+        .iter()
+        .all(|source| canonical_or_original(source).starts_with(&canonical_dir))
+}
+
+fn canonical_or_original(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn display_paths(paths: &[PathBuf]) -> Vec<String> {
+    paths.iter().map(|path| path.display().to_string()).collect()
 }

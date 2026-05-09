@@ -63,3 +63,35 @@ fn builtin_openai_capabilities_are_fallback_when_config_absent() {
         "native-mask"
     );
 }
+
+#[test]
+fn tauri_storage_defaults_migrate_downloads_to_result_directory() {
+    let mut config = AppConfig::default();
+    config.paths.default_export_dir.mode = gpt_image_2_core::ExportDirMode::Downloads;
+
+    normalize_product_storage_defaults(&mut config);
+
+    assert_eq!(
+        config.paths.default_export_dir.mode,
+        gpt_image_2_core::ExportDirMode::ResultLibrary
+    );
+    assert!(config.paths.default_export_dir.path.is_none());
+}
+
+#[test]
+fn export_skips_copy_when_source_is_already_saved_under_destination() {
+    let root = std::env::temp_dir().join(format!(
+        "gpt-image-2-export-test-{}",
+        std::process::id()
+    ));
+    let nested = root.join("job");
+    fs::create_dir_all(&nested).unwrap();
+    let source = nested.join("out.png");
+    fs::write(&source, b"png").unwrap();
+
+    let exported = export_files_into_dir(vec![source.display().to_string()], &root).unwrap();
+
+    assert_eq!(exported, vec![source.display().to_string()]);
+    assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+    let _ = fs::remove_dir_all(root);
+}

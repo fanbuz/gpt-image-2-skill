@@ -2,6 +2,20 @@
 
 use super::*;
 
+pub(crate) fn default_result_library_mode() -> gpt_image_2_core::ExportDirMode {
+    gpt_image_2_core::ExportDirMode::ResultLibrary
+}
+
+pub(crate) fn allow_result_library_asset_scope(app: &tauri::AppHandle) {
+    let path = result_library_dir();
+    if let Err(error) = app.asset_protocol_scope().allow_directory(&path, true) {
+        eprintln!(
+            "failed to allow result directory asset scope {}: {error}",
+            path.display()
+        );
+    }
+}
+
 pub(crate) fn app_error(error: gpt_image_2_core::AppError) -> String {
     format!("{}: {}", error.code, error.message)
 }
@@ -26,6 +40,14 @@ pub(crate) fn normalize_product_storage_defaults(config: &mut AppConfig) {
         {
             *directory = fallback_dir;
         }
+    }
+    if matches!(
+        config.paths.default_export_dir.mode,
+        gpt_image_2_core::ExportDirMode::Downloads
+            | gpt_image_2_core::ExportDirMode::BrowserDefault
+    ) {
+        config.paths.default_export_dir.mode = default_result_library_mode();
+        config.paths.default_export_dir.path = None;
     }
 }
 
@@ -56,18 +78,21 @@ pub(crate) fn validate_path_config_for_save(config: &PathConfig) -> Result<(), S
     if config.paths_app_data_custom() {
         return Err("应用数据目录暂不支持在界面中修改。".to_string());
     }
-    if config.paths_result_library_custom() {
-        return Err(
-            "结果库位置暂不支持直接修改；请先使用默认结果库，避免本地预览权限失效。".to_string(),
-        );
-    }
     if config.default_export_dir.mode == gpt_image_2_core::ExportDirMode::Custom {
         let path = config
             .default_export_dir
             .path
             .as_ref()
             .ok_or_else(|| "自定义保存文件夹不能为空。".to_string())?;
-        validate_writable_dir(path, "保存文件夹")?;
+        validate_writable_dir(path, "图片保存位置")?;
+    }
+    if config.paths_result_library_custom() {
+        let path = config
+            .result_library_dir
+            .path
+            .as_ref()
+            .ok_or_else(|| "自定义图片保存位置不能为空。".to_string())?;
+        validate_writable_dir(path, "图片保存位置")?;
     }
     Ok(())
 }

@@ -81,7 +81,8 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .setup(|_app| {
+        .setup(|app| {
+            allow_result_library_asset_scope(app.handle());
             // Off-thread so a slow filesystem walk can't delay startup, and
             // periodic so undo windows that elapse mid-session still get
             // finalized without waiting for the next app launch.
