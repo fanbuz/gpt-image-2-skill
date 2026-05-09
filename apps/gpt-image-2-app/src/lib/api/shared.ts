@@ -97,9 +97,7 @@ function safeHttpUrl(value: unknown) {
 function normalizeOutputs(value: unknown[]): OutputRef[] {
   return value.map((item, index) => {
     const raw =
-      item && typeof item === "object"
-        ? (item as Record<string, unknown>)
-        : {};
+      item && typeof item === "object" ? (item as Record<string, unknown>) : {};
     return {
       index: Number.isFinite(Number(raw.index)) ? Number(raw.index) : index,
       path: String(raw.path ?? ""),
@@ -123,11 +121,8 @@ function normalizeOutputUpload(value: unknown): OutputUploadRef {
     url: safeHttpUrl(raw.url),
     error: typeof raw.error === "string" ? raw.error : null,
     bytes: Number.isFinite(Number(raw.bytes)) ? Number(raw.bytes) : null,
-    attempts: Number.isFinite(Number(raw.attempts))
-      ? Number(raw.attempts)
-      : 0,
-    updated_at:
-      typeof raw.updated_at === "string" ? raw.updated_at : undefined,
+    attempts: Number.isFinite(Number(raw.attempts)) ? Number(raw.attempts) : 0,
+    updated_at: typeof raw.updated_at === "string" ? raw.updated_at : undefined,
     metadata:
       raw.metadata && typeof raw.metadata === "object"
         ? (raw.metadata as Record<string, unknown>)
@@ -168,15 +163,9 @@ export function defaultNotificationConfig(): NotificationConfig {
 
 export function defaultStorageConfig(): StorageConfig {
   return {
-    targets: {
-      "local-default": {
-        type: "local",
-        directory: "",
-        public_base_url: null,
-      },
-    },
+    targets: {},
     default_targets: [],
-    fallback_targets: ["local-default"],
+    fallback_targets: [],
     fallback_policy: "on_failure",
     upload_concurrency: 4,
     target_concurrency: 2,
@@ -187,7 +176,7 @@ export function defaultPathConfig(): PathConfig {
   return {
     app_data_dir: { mode: "default", path: null },
     result_library_dir: { mode: "default", path: null },
-    default_export_dir: { mode: "downloads", path: null },
+    default_export_dir: { mode: "result_library", path: null },
     legacy_shared_codex_dir: {
       path: "~/.codex/gpt-image-2-skill",
       enabled_for_read: true,
@@ -219,7 +208,8 @@ function credentialHasReference(value: unknown) {
   };
   if (credential.source === "file") {
     return (
-      (typeof credential.value === "string" && credential.value.trim() !== "") ||
+      (typeof credential.value === "string" &&
+        credential.value.trim() !== "") ||
       Boolean(credential.present)
     );
   }
@@ -230,7 +220,9 @@ function credentialHasReference(value: unknown) {
   return false;
 }
 
-function normalizeStorageTarget(target: StorageTargetConfig): StorageTargetConfig {
+function normalizeStorageTarget(
+  target: StorageTargetConfig,
+): StorageTargetConfig {
   const type = storageTargetType(target);
   if (type === "s3") {
     return {
@@ -363,10 +355,12 @@ export function normalizeStorageConfig(
 ): StorageConfig {
   const defaults = defaultStorageConfig();
   const targets = Object.fromEntries(
-    Object.entries(config?.targets ?? defaults.targets).map(([name, target]) => [
-      name,
-      normalizeStorageTarget(target as StorageTargetConfig),
-    ]),
+    Object.entries(config?.targets ?? defaults.targets).map(
+      ([name, target]) => [
+        name,
+        normalizeStorageTarget(target as StorageTargetConfig),
+      ],
+    ),
   );
   const fallbackPolicy = String(
     config?.fallback_policy ?? defaults.fallback_policy,
@@ -384,11 +378,15 @@ export function normalizeStorageConfig(
       : defaults.fallback_policy,
     upload_concurrency: Math.max(
       1,
-      Math.round(Number(config?.upload_concurrency ?? defaults.upload_concurrency)),
+      Math.round(
+        Number(config?.upload_concurrency ?? defaults.upload_concurrency),
+      ),
     ),
     target_concurrency: Math.max(
       1,
-      Math.round(Number(config?.target_concurrency ?? defaults.target_concurrency)),
+      Math.round(
+        Number(config?.target_concurrency ?? defaults.target_concurrency),
+      ),
     ),
   };
 }

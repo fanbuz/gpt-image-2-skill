@@ -51,7 +51,7 @@ pub enum ExportDirMode {
 
 impl Default for ExportDirMode {
     fn default() -> Self {
-        Self::Downloads
+        Self::ResultLibrary
     }
 }
 
@@ -66,7 +66,7 @@ pub struct ExportDirConfig {
 impl Default for ExportDirConfig {
     fn default() -> Self {
         Self {
-            mode: ExportDirMode::Downloads,
+            mode: ExportDirMode::ResultLibrary,
             path: None,
         }
     }

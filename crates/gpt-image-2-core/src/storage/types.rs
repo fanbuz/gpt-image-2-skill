@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CredentialRef, default_storage_fallback_dir};
+use crate::CredentialRef;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -176,7 +176,7 @@ pub struct StorageConfig {
 }
 
 fn default_storage_fallback_targets() -> Vec<String> {
-    vec!["local-default".to_string()]
+    Vec::new()
 }
 
 fn default_storage_upload_concurrency() -> usize {
@@ -190,13 +190,7 @@ fn default_storage_target_concurrency() -> usize {
 impl Default for StorageConfig {
     fn default() -> Self {
         Self {
-            targets: BTreeMap::from([(
-                "local-default".to_string(),
-                StorageTargetConfig::Local {
-                    directory: default_storage_fallback_dir(),
-                    public_base_url: None,
-                },
-            )]),
+            targets: BTreeMap::new(),
             default_targets: Vec::new(),
             fallback_targets: default_storage_fallback_targets(),
             fallback_policy: StorageFallbackPolicy::default(),

@@ -7,7 +7,12 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { runtimeCopy } from "@/lib/runtime-copy";
 import { copyText, openPath, revealPath } from "@/lib/user-actions";
-import { NAV, TAB_TITLES, type SettingsTab } from "./constants";
+import {
+  BROWSER_HIDDEN_TABS,
+  NAV,
+  TAB_TITLES,
+  type SettingsTab,
+} from "./constants";
 
 export function Section({
   title,
@@ -149,13 +154,18 @@ export function SettingsNav({
   setTab: (t: SettingsTab) => void;
 }) {
   const reducedMotion = useReducedMotion();
+  const copy = runtimeCopy();
+  const visibleNav =
+    copy.kind === "browser"
+      ? NAV.filter((item) => !BROWSER_HIDDEN_TABS.includes(item.id))
+      : NAV;
   return (
     <aside className="flex min-w-0 shrink-0 flex-col gap-2">
       <div className="px-2 pt-1 pb-1 sm:pb-2">
         <div className="t-title text-foreground">设置</div>
       </div>
       <div className="surface-panel flex gap-1.5 overflow-x-auto p-1.5 scrollbar-none [mask-image:linear-gradient(to_right,black_calc(100%-32px),transparent_100%)] md:flex-col md:gap-0.5 md:overflow-visible md:[mask-image:none]">
-        {NAV.map((n) => {
+        {visibleNav.map((n) => {
           const I = n.icon;
           const active = n.id === tab;
           return (

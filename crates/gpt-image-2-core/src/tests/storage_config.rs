@@ -1,23 +1,21 @@
 use super::*;
 
 #[test]
-fn storage_config_defaults_to_local_fallback_target() {
+fn storage_config_defaults_to_no_archive_targets() {
     let _guard = CODEX_HOME_TEST_LOCK.lock().unwrap();
     let temp_dir = tempfile::tempdir().unwrap();
     let _home = TestCodexHome::set(temp_dir.path());
     let config = AppConfig::default();
 
-    assert_eq!(config.storage.fallback_targets, vec!["local-default"]);
+    assert!(config.storage.targets.is_empty());
+    assert!(config.storage.default_targets.is_empty());
+    assert!(config.storage.fallback_targets.is_empty());
     assert_eq!(
         config.storage.fallback_policy,
         StorageFallbackPolicy::OnFailure
     );
     assert_eq!(config.storage.upload_concurrency, 4);
     assert_eq!(config.storage.target_concurrency, 2);
-    assert!(matches!(
-        config.storage.targets.get("local-default"),
-        Some(StorageTargetConfig::Local { directory, public_base_url: None }) if directory == &shared_config_dir().join("storage").join("fallback")
-    ));
 }
 
 fn s3_test_target(
@@ -112,7 +110,11 @@ fn product_paths_default_by_runtime() {
             .ends_with("com.wangnov.gpt-image-2")
     );
     assert!(
-        product_result_library_dir(Some(&config), ProductRuntime::Tauri).ends_with(JOBS_DIR_NAME)
+        product_result_library_dir(Some(&config), ProductRuntime::Tauri).ends_with("GPT Image 2")
+    );
+    assert_eq!(
+        product_default_export_dir(Some(&config), ProductRuntime::Tauri),
+        product_result_library_dir(Some(&config), ProductRuntime::Tauri)
     );
     assert_eq!(
         product_app_data_dir(Some(&config), ProductRuntime::DockerWeb),

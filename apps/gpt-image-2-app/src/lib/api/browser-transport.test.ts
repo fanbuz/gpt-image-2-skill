@@ -218,7 +218,7 @@ describe("browserApi", () => {
     const saved = await browserApi.updateStorage!(storage);
 
     expect(saved.storage.default_targets).toEqual([]);
-    expect(saved.storage.fallback_targets).toEqual(["local-default"]);
+    expect(saved.storage.fallback_targets).toEqual([]);
     expect(saved.storage.targets.archive).toMatchObject({
       type: "s3",
       bucket: "images",
@@ -248,7 +248,7 @@ describe("browserApi", () => {
 
     const reloaded = await browserApi.getConfig();
     expect(reloaded.storage.default_targets).toEqual([]);
-    expect(reloaded.storage.fallback_targets).toEqual(["local-default"]);
+    expect(reloaded.storage.fallback_targets).toEqual([]);
     expect(JSON.stringify(reloaded.storage)).not.toContain("ak-test");
     expect(JSON.stringify(reloaded.storage)).not.toContain("sk-test");
     expect(JSON.stringify(reloaded.storage)).not.toContain("session-test");

@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { normalizeStorageConfig } from "./shared";
+import { defaultPathConfig, normalizeStorageConfig } from "./shared";
 
 describe("normalizeStorageConfig", () => {
+  it("does not create archive targets by default", () => {
+    const normalized = normalizeStorageConfig();
+
+    expect(normalized.targets).toEqual({});
+    expect(normalized.default_targets).toEqual([]);
+    expect(normalized.fallback_targets).toEqual([]);
+    expect(normalized.fallback_policy).toBe("on_failure");
+  });
+
   it("infers netdisk auth modes from saved credential fields", () => {
     const normalized = normalizeStorageConfig({
       targets: {
@@ -28,6 +37,15 @@ describe("normalizeStorageConfig", () => {
     expect(normalized.targets.pan123).toMatchObject({
       type: "pan123_open",
       auth_mode: "access_token",
+    });
+  });
+});
+
+describe("defaultPathConfig", () => {
+  it("exports to the result library by default", () => {
+    expect(defaultPathConfig().default_export_dir).toEqual({
+      mode: "result_library",
+      path: null,
     });
   });
 });

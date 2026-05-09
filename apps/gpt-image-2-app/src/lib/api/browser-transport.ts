@@ -19,11 +19,7 @@ import {
   outputPath,
   storageTargetType,
 } from "./shared";
-import type {
-  ApiClient,
-  EventHandler,
-  JobUpdateHandler,
-} from "./types";
+import type { ApiClient, EventHandler, JobUpdateHandler } from "./types";
 import { isTerminalJobStatus } from "./types";
 import * as browser from "./browser";
 
@@ -60,7 +56,9 @@ export const browserApi: ApiClient = {
       email: {
         ...notifications.email,
         enabled: false,
-        password: browser.scrubFileCredentialSecret(notifications.email.password),
+        password: browser.scrubFileCredentialSecret(
+          notifications.email.password,
+        ),
       },
       webhooks: notifications.webhooks.map((webhook) => ({
         ...webhook,
@@ -97,14 +95,8 @@ export const browserApi: ApiClient = {
     const normalized = normalizeStorageConfig(config);
     current.storage = {
       ...normalized,
-      default_targets: normalized.default_targets.filter((name) => {
-        const target = normalized.targets[name];
-        return target && storageTargetType(target) === "local";
-      }),
-      fallback_targets: normalized.fallback_targets.filter((name) => {
-        const target = normalized.targets[name];
-        return target && storageTargetType(target) === "local";
-      }),
+      default_targets: [],
+      fallback_targets: [],
       targets: Object.fromEntries(
         Object.entries(normalized.targets).map(([name, target]) => [
           name,
@@ -281,12 +273,15 @@ export const browserApi: ApiClient = {
     await browser.prepareBrowserRuntime();
     const queuedIndex = browser.queue.findIndex((task) => task.job.id === id);
     const task =
-      queuedIndex >= 0 ? browser.queue.splice(queuedIndex, 1)[0] : browser.running.get(id);
+      queuedIndex >= 0
+        ? browser.queue.splice(queuedIndex, 1)[0]
+        : browser.running.get(id);
     if (!task)
       throw new Error("Only queued or running browser jobs can be cancelled.");
     task.cancelled = true;
     task.abort.abort();
-    if (queuedIndex >= 0) await browser.failTask(task, new Error("任务已取消。"));
+    if (queuedIndex >= 0)
+      await browser.failTask(task, new Error("任务已取消。"));
     const job = (await browser.readStoredJob(id)) ?? task.job;
     return normalizeJobResponse({
       job_id: id,
@@ -301,7 +296,9 @@ export const browserApi: ApiClient = {
     return browser.queueSnapshot();
   },
   async setQueueConcurrency(nextMaxParallel: number) {
-    browser.setMaxParallel(Math.min(8, Math.max(1, Math.round(nextMaxParallel))));
+    browser.setMaxParallel(
+      Math.min(8, Math.max(1, Math.round(nextMaxParallel))),
+    );
     void browser.startQueuedJobs();
     return browser.queueSnapshot();
   },
@@ -352,7 +349,9 @@ export const browserApi: ApiClient = {
       error: null,
     };
     await browser.writeJobInput({ jobId: job.id, kind: "generate", request });
-    return browser.enqueueBrowserTask(job, (task) => browser.runGenerateTask(task, request));
+    return browser.enqueueBrowserTask(job, (task) =>
+      browser.runGenerateTask(task, request),
+    );
   },
   async createEdit(form: FormData) {
     const metaRaw = form.get("meta");
@@ -373,12 +372,19 @@ export const browserApi: ApiClient = {
       status: "queued",
       created_at: browser.nowIso(),
       updated_at: browser.nowIso(),
-      metadata: { ...meta, ref_count: browser.sortedFiles(form, "ref_").length },
+      metadata: {
+        ...meta,
+        ref_count: browser.sortedFiles(form, "ref_").length,
+      },
       outputs: [],
       error: null,
     };
-    await browser.writeJobInput(await browser.storedEditInputFromForm(job.id, form));
-    return browser.enqueueBrowserTask(job, (task) => browser.runEditTask(task, form));
+    await browser.writeJobInput(
+      await browser.storedEditInputFromForm(job.id, form),
+    );
+    return browser.enqueueBrowserTask(job, (task) =>
+      browser.runEditTask(task, form),
+    );
   },
   async retryJob(jobId: string) {
     await browser.prepareBrowserRuntime();
@@ -424,7 +430,8 @@ export const browserApi: ApiClient = {
     onEvent: EventHandler,
     onDone?: () => void,
   ) {
-    const handlers = browser.jobSubscribers.get(jobId) ?? new Set<EventHandler>();
+    const handlers =
+      browser.jobSubscribers.get(jobId) ?? new Set<EventHandler>();
     const wrapped: EventHandler = (event) => {
       onEvent(event);
       if (event.kind === "local" && isTerminalJobStatus(event.type.slice(4))) {

@@ -105,10 +105,6 @@ pub fn jobs_dir() -> PathBuf {
     shared_config_dir().join(JOBS_DIR_NAME)
 }
 
-pub(crate) fn default_storage_fallback_dir() -> PathBuf {
-    shared_config_dir().join("storage").join("fallback")
-}
-
 pub(crate) fn default_legacy_shared_codex_path() -> PathBuf {
     shared_config_dir()
 }
@@ -212,7 +208,13 @@ pub fn initialize_product_runtime_paths(runtime: ProductRuntime) -> (PathBuf, Pa
 
 pub fn product_result_library_dir(config: Option<&AppConfig>, runtime: ProductRuntime) -> PathBuf {
     let app_data_dir = product_app_data_dir(config, runtime);
-    let default = app_data_dir.join(JOBS_DIR_NAME);
+    let default = match runtime {
+        ProductRuntime::Tauri => dirs::picture_dir()
+            .or_else(|| dirs::home_dir().map(|home| home.join("Pictures")))
+            .unwrap_or_else(|| app_data_dir.join(JOBS_DIR_NAME))
+            .join("GPT Image 2"),
+        ProductRuntime::DockerWeb => app_data_dir.join(JOBS_DIR_NAME),
+    };
     config
         .map(|config| resolve_path_ref(default.clone(), &config.paths.result_library_dir))
         .unwrap_or(default)

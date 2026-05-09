@@ -52,6 +52,8 @@ export const NAV: { id: SettingsTab; label: string; icon: LucideIcon }[] = [
   { id: "about", label: "关于", icon: Info },
 ];
 
+export const BROWSER_HIDDEN_TABS: SettingsTab[] = ["storage"];
+
 export const PARALLEL_OPTIONS = [1, 2, 3, 4, 6, 8].map((n) => ({
   value: String(n),
   label: String(n),
@@ -129,7 +131,10 @@ export const EXPORT_DIR_MODE_OPTIONS = [
   { value: "custom", label: "其他文件夹" },
 ] as const;
 
-export const TAB_TITLES: Record<SettingsTab, { title: string; subtitle: string }> = {
+export const TAB_TITLES: Record<
+  SettingsTab,
+  { title: string; subtitle: string }
+> = {
   creds: {
     title: "凭证配置",
     subtitle: "管理用于图像生成的供应商和 API Key",
@@ -143,8 +148,8 @@ export const TAB_TITLES: Record<SettingsTab, { title: string; subtitle: string }
     subtitle: "同时执行几个任务、结束后怎么提醒",
   },
   storage: {
-    title: "保存与上传",
-    subtitle: "保存到本机的位置，以及是否自动上传",
+    title: "结果库与归档",
+    subtitle: "结果保存位置，以及是否自动归档到其他存储",
   },
   prompts: {
     title: "提示词模板",

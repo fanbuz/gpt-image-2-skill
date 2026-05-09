@@ -118,8 +118,8 @@ pub use paths::{
 };
 pub(crate) use paths::{
     cli_config_path, default_legacy_shared_codex_path, default_product_app_data_dir,
-    default_product_export_dir, default_storage_fallback_dir, expand_pathbuf_tilde, expand_tilde,
-    resolve_codex_home, resolve_path_ref,
+    default_product_export_dir, expand_pathbuf_tilde, expand_tilde, resolve_codex_home,
+    resolve_path_ref,
 };
 pub(crate) use provider_selection::*;
 pub use provider_types::ProviderConfig;

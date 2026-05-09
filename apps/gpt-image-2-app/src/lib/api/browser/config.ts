@@ -1,8 +1,23 @@
-import type { CredentialRef, NotificationConfig, ProviderConfig, ServerConfig, StorageConfig, StorageTargetConfig } from "../../types";
-import { normalizeConfig, normalizeNotificationConfig, normalizePathConfig, normalizeStorageConfig, storageTargetType } from "../shared";
+import type {
+  CredentialRef,
+  NotificationConfig,
+  ProviderConfig,
+  ServerConfig,
+  StorageConfig,
+  StorageTargetConfig,
+} from "../../types";
+import {
+  normalizeConfig,
+  normalizeNotificationConfig,
+  normalizePathConfig,
+  normalizeStorageConfig,
+  storageTargetType,
+} from "../shared";
 import { readConfigRecord } from "./store";
 
-export function sanitizeCredential(credential: ProviderConfig["credentials"][string]) {
+export function sanitizeCredential(
+  credential: ProviderConfig["credentials"][string],
+) {
   if (credential.source === "file") {
     return {
       source: "file" as const,
@@ -219,19 +234,10 @@ export function sanitizeStorageTargetConfig(
 
 export function sanitizeStorageConfig(config: StorageConfig): StorageConfig {
   const normalized = normalizeStorageConfig(config);
-  const localTargetNames = new Set(
-    Object.entries(normalized.targets)
-      .filter(([, target]) => storageTargetType(target) === "local")
-      .map(([name]) => name),
-  );
   return {
     ...normalized,
-    default_targets: normalized.default_targets.filter((name) =>
-      localTargetNames.has(name),
-    ),
-    fallback_targets: normalized.fallback_targets.filter((name) =>
-      localTargetNames.has(name),
-    ),
+    default_targets: [],
+    fallback_targets: [],
     targets: Object.fromEntries(
       Object.entries(normalized.targets).map(([name, target]) => [
         name,

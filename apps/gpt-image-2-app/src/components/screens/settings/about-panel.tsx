@@ -266,11 +266,11 @@ export function AboutPanel() {
           </Section>
 
           <Section
-            title={copy.kind === "http" ? "服务端数据" : "浏览器数据"}
+            title={copy.kind === "http" ? "服务端数据" : "结果下载"}
             description={
               copy.kind === "http"
                 ? "任务历史和结果由后端服务维护，网页只提供预览和下载入口。"
-                : "历史、凭证、草稿和结果保留在当前浏览器数据中。"
+                : "需要长期保留的图片，请使用下载按钮。"
             }
           >
             <Row
@@ -278,7 +278,7 @@ export function AboutPanel() {
               description={
                 copy.kind === "http"
                   ? "单图可直接下载，多图任务会打包为 ZIP 下载。"
-                  : "单图可直接下载，多图任务会从当前浏览器数据打包为 ZIP 下载。"
+                  : "单图可直接下载，多图任务会打包为 ZIP 下载。"
               }
               control={
                 <span className="inline-flex h-8 items-center rounded-full border border-border-faint px-3 text-[11px] font-semibold text-muted">
@@ -297,7 +297,7 @@ export function AboutPanel() {
             ? "偏好保存在桌面 App 配置里；并发上限会实时同步到后台队列。"
             : copy.kind === "http"
               ? "网页不会显示服务器目录；需要结果文件时请使用下载按钮。"
-              : "网页不会显示内部存储路径；需要结果文件时请使用下载按钮。"}
+              : "需要结果文件时请使用下载按钮。"}
         </span>
       </div>
     </div>
