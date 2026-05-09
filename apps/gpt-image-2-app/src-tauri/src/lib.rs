@@ -105,7 +105,7 @@ fn dispatch_notifications_for_job(job: &Value) -> Vec<Value> {
             return Vec::new();
         }
     };
-    let deliveries = dispatch_task_notifications(&config, job);
+    let deliveries = dispatch_task_notifications(&config.notifications, job);
     for delivery in &deliveries {
         if !delivery.ok {
             eprintln!(
@@ -1377,7 +1377,7 @@ fn test_notifications(input: NotificationTestInput) -> Result<Value, String> {
         "output_path": Value::Null,
         "error": if status == "failed" { json!({"message": "Notification test failure"}) } else { Value::Null },
     });
-    let deliveries = dispatch_task_notifications(&config, &job);
+    let deliveries = dispatch_task_notifications(&config.notifications, &job);
     // dispatch_task_notifications only fires server channels (email/webhook).
     // Toast and system notifications are delivered client-side, so a wholly
     // empty deliveries vec is OK as long as the config still has a local
@@ -1798,13 +1798,16 @@ fn storage_overrides_from_job(job: &Value) -> StorageUploadOverrides {
 }
 
 fn upload_completed_job_outputs(job: &Value) -> Result<Value, String> {
-    let _ = persist_job(job);
-    let config = load_config()?;
-    let overrides = storage_overrides_from_job(job);
-    upload_job_outputs_to_storage(&config.storage, job, overrides)
-        .map_err(app_error)
-        .map(|_| ())
-        .map_err(|error| format!("Storage upload failed: {error}"))?;
+    let upload_result = load_config()
+        .and_then(|config| {
+            let overrides = storage_overrides_from_job(job);
+            upload_job_outputs_to_storage(&config.storage, job, overrides)
+                .map_err(app_error)
+                .map(|_| ())
+        })
+        .map_err(|error| format!("Storage upload failed: {error}"));
+    persist_job(job)?;
+    upload_result?;
     let job_id = job
         .get("id")
         .and_then(Value::as_str)
