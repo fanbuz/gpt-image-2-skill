@@ -7,6 +7,18 @@ import {
   type RefObject,
 } from "react";
 import { PlaceholderImage } from "@/components/screens/shared/placeholder-image";
+import { exportMaskPayload } from "./mask-export";
+import {
+  canvasPointerPosition,
+  canvasSnapshot,
+  clearCanvas,
+  drawLine,
+  drawPoint,
+  drawShape,
+  type MaskPoint,
+  type MaskSnapshot,
+} from "./mask-canvas-drawing";
+import { useMaskImageSize } from "./use-mask-image-size";
 
 export type MaskMode = "paint" | "erase";
 export type MaskTool = "brush" | "erase" | "rect" | "ellipse";
@@ -20,7 +32,6 @@ export type MaskHistoryState = {
   canUndo: boolean;
   canRedo: boolean;
 };
-type MaskSnapshot = string | null;
 
 export function MaskCanvas({
   imageUrl,
@@ -67,11 +78,11 @@ export function MaskCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const undoStackRef = useRef<MaskSnapshot[]>([]);
   const redoStackRef = useRef<MaskSnapshot[]>([]);
-  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const lastPointRef = useRef<MaskPoint | null>(null);
   const lastClearKeyRef = useRef(clearKey);
   const lastUndoKeyRef = useRef(undoKey);
   const lastRedoKeyRef = useRef(redoKey);
-  const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const shapeStartRef = useRef<MaskPoint | null>(null);
   const shapeBaseRef = useRef<ImageData | null>(null);
   const panStartRef = useRef<{
     x: number;
@@ -86,7 +97,7 @@ export function MaskCanvas({
     canRedo: false,
   });
   const [cursor, setCursor] = useState({ x: 512, y: 512 });
-  const [imageSize, setImageSize] = useState({ width: 1024, height: 1024 });
+  const imageSize = useMaskImageSize({ imageUrl, onImageSizeChange });
   const W = imageSize.width;
   const H = imageSize.height;
   const activeTool = tool ?? (mode === "erase" ? "erase" : "brush");
@@ -94,61 +105,10 @@ export function MaskCanvas({
   const displayWidth = Math.max(1, Math.round(W * zoom));
   const displayHeight = Math.max(1, Math.round(H * zoom));
 
-  useEffect(() => {
-    if (!imageUrl) {
-      const fallback = { width: 1024, height: 1024 };
-      setImageSize(fallback);
-      onImageSizeChange?.(fallback);
-      return;
-    }
-    let cancelled = false;
-    loadImage(imageUrl)
-      .then((image) => {
-        if (cancelled) return;
-        const next = {
-          width: Math.max(1, image.naturalWidth),
-          height: Math.max(1, image.naturalHeight),
-        };
-        setImageSize(next);
-        onImageSizeChange?.(next);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          const fallback = { width: 1024, height: 1024 };
-          setImageSize(fallback);
-          onImageSizeChange?.(fallback);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [imageUrl, onImageSizeChange]);
-
   const commitSnapshot = () => {
     const c = canvasRef.current;
     if (!c) return;
     onSnapshotChange?.(canvasSnapshot(c));
-  };
-
-  const hasMaskPixels = (
-    c: HTMLCanvasElement,
-    ctx: CanvasRenderingContext2D,
-  ) => {
-    try {
-      const data = ctx.getImageData(0, 0, c.width, c.height).data;
-      for (let i = 3; i < data.length; i += 4) {
-        if (data[i] > 8) return true;
-      }
-    } catch {
-      return true;
-    }
-    return false;
-  };
-
-  const canvasSnapshot = (c: HTMLCanvasElement) => {
-    const ctx = c.getContext("2d");
-    if (!ctx || !hasMaskPixels(c, ctx)) return null;
-    return c.toDataURL("image/png");
   };
 
   const syncHistoryState = () => {
@@ -189,8 +149,7 @@ export function MaskCanvas({
     if (!c) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
-    ctx.globalCompositeOperation = "source-over";
-    ctx.clearRect(0, 0, W, H);
+    clearCanvas(ctx, W, H);
     if (!nextSnapshot) {
       onSnapshotChange?.(null);
       onClear?.();
@@ -198,8 +157,7 @@ export function MaskCanvas({
     }
     const image = new Image();
     image.onload = () => {
-      ctx.globalCompositeOperation = "source-over";
-      ctx.clearRect(0, 0, W, H);
+      clearCanvas(ctx, W, H);
       ctx.drawImage(image, 0, 0, W, H);
       onSnapshotChange?.(nextSnapshot);
     };
@@ -244,8 +202,7 @@ export function MaskCanvas({
     const ctx = c.getContext("2d");
     if (!ctx) return;
     pushUndoSnapshot({ skipEmpty: true });
-    ctx.globalCompositeOperation = "source-over";
-    ctx.clearRect(0, 0, c.width, c.height);
+    clearCanvas(ctx, c.width, c.height);
     onClear?.();
     onSnapshotChange?.(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -256,15 +213,13 @@ export function MaskCanvas({
     if (!c) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
-    ctx.globalCompositeOperation = "source-over";
-    ctx.clearRect(0, 0, W, H);
+    clearCanvas(ctx, W, H);
     if (!snapshot) return;
     let cancelled = false;
     const image = new Image();
     image.onload = () => {
       if (cancelled) return;
-      ctx.globalCompositeOperation = "source-over";
-      ctx.clearRect(0, 0, W, H);
+      clearCanvas(ctx, W, H);
       ctx.drawImage(image, 0, 0, W, H);
     };
     image.src = snapshot;
@@ -310,11 +265,7 @@ export function MaskCanvas({
   }, [exportKey]);
 
   const getPos = (e: PointerEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) * (W / rect.width),
-      y: (e.clientY - rect.top) * (H / rect.height),
-    };
+    return canvasPointerPosition(canvasRef.current!, e, W, H);
   };
 
   const context = () => {
@@ -323,78 +274,22 @@ export function MaskCanvas({
     return c && ctx ? { c, ctx } : null;
   };
 
-  const configureStroke = (ctx: CanvasRenderingContext2D) => {
-    ctx.globalCompositeOperation =
-      activeTool === "erase" ? "destination-out" : "source-over";
-    ctx.fillStyle = "rgba(16,160,108,0.85)";
-    ctx.strokeStyle = "rgba(16,160,108,0.88)";
-    ctx.lineWidth = Math.max(1, strokeWidth);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-  };
-
   const drawAt = (x: number, y: number) => {
     const target = context();
     if (!target) return;
-    const { ctx } = target;
-    ctx.save();
-    configureStroke(ctx);
-    ctx.beginPath();
-    ctx.arc(x, y, Math.max(1, strokeWidth / 2), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    drawPoint(target.ctx, activeTool, strokeWidth, { x, y });
   };
 
-  const drawLine = (
-    from: { x: number; y: number },
-    to: { x: number; y: number },
-  ) => {
+  const drawStrokeLine = (from: MaskPoint, to: MaskPoint) => {
     const target = context();
     if (!target) return;
-    const { ctx } = target;
-    ctx.save();
-    configureStroke(ctx);
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
-    ctx.stroke();
-    ctx.restore();
+    drawLine(target.ctx, activeTool, strokeWidth, from, to);
   };
 
-  const drawShape = (
-    from: { x: number; y: number },
-    to: { x: number; y: number },
-  ) => {
+  const drawStrokeShape = (from: MaskPoint, to: MaskPoint) => {
     const target = context();
     if (!target) return;
-    const { ctx } = target;
-    ctx.save();
-    configureStroke(ctx);
-    ctx.globalCompositeOperation = "source-over";
-    const x = Math.min(from.x, to.x);
-    const y = Math.min(from.y, to.y);
-    const width = Math.abs(to.x - from.x);
-    const height = Math.abs(to.y - from.y);
-    if (width < 1 || height < 1) {
-      ctx.restore();
-      return;
-    }
-    ctx.beginPath();
-    if (activeTool === "rect") {
-      ctx.rect(x, y, width, height);
-    } else {
-      ctx.ellipse(
-        x + width / 2,
-        y + height / 2,
-        width / 2,
-        height / 2,
-        0,
-        0,
-        Math.PI * 2,
-      );
-    }
-    ctx.stroke();
-    ctx.restore();
+    drawShape(target.ctx, activeTool, strokeWidth, from, to);
   };
 
   const draw = (e: PointerEvent<HTMLCanvasElement>) => {
@@ -407,11 +302,11 @@ export function MaskCanvas({
       const base = shapeBaseRef.current;
       if (!target || !start || !base) return;
       target.ctx.putImageData(base, 0, 0);
-      drawShape(start, p);
+      drawStrokeShape(start, p);
       return;
     }
     const last = lastPointRef.current;
-    if (last) drawLine(last, p);
+    if (last) drawStrokeLine(last, p);
     else drawAt(p.x, p.y);
     lastPointRef.current = p;
   };
@@ -454,8 +349,7 @@ export function MaskCanvas({
       const ctx = c?.getContext("2d");
       if (c && ctx) {
         pushUndoSnapshot({ skipEmpty: true });
-        ctx.globalCompositeOperation = "source-over";
-        ctx.clearRect(0, 0, W, H);
+        clearCanvas(ctx, W, H);
         onSnapshotChange?.(null);
         onClear?.();
       }
@@ -601,78 +495,4 @@ export function MaskCanvas({
       />
     </div>
   );
-}
-
-function canvasToBlob(canvas: HTMLCanvasElement) {
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => {
-      if (blob) resolve(blob);
-      else reject(new Error("Canvas export failed"));
-    }, "image/png");
-  });
-}
-
-function loadImage(src?: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    if (!src) {
-      reject(new Error("Missing image"));
-      return;
-    }
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = reject;
-    image.src = src;
-  });
-}
-
-async function exportMaskPayload(
-  selectionCanvas: HTMLCanvasElement,
-  imageUrl?: string,
-): Promise<MaskExport> {
-  const width = selectionCanvas.width;
-  const height = selectionCanvas.height;
-  const image = await loadImage(imageUrl);
-
-  const targetCanvas = document.createElement("canvas");
-  targetCanvas.width = width;
-  targetCanvas.height = height;
-  const targetCtx = targetCanvas.getContext("2d");
-  if (!targetCtx) throw new Error("Canvas unavailable");
-  targetCtx.drawImage(image, 0, 0, width, height);
-
-  const selectionCtx = selectionCanvas.getContext("2d");
-  if (!selectionCtx) throw new Error("Canvas unavailable");
-  const selectionData = selectionCtx.getImageData(0, 0, width, height);
-
-  const nativeMaskCanvas = document.createElement("canvas");
-  nativeMaskCanvas.width = width;
-  nativeMaskCanvas.height = height;
-  const nativeMaskCtx = nativeMaskCanvas.getContext("2d");
-  if (!nativeMaskCtx) throw new Error("Canvas unavailable");
-  const nativeMask = nativeMaskCtx.createImageData(width, height);
-  let selectedPixels = 0;
-  for (let i = 0; i < nativeMask.data.length; i += 4) {
-    const selected = selectionData.data[i + 3] > 8;
-    if (selected) selectedPixels += 1;
-    nativeMask.data[i] = 255;
-    nativeMask.data[i + 1] = 255;
-    nativeMask.data[i + 2] = 255;
-    nativeMask.data[i + 3] = selected ? 0 : 255;
-  }
-  nativeMaskCtx.putImageData(nativeMask, 0, 0);
-
-  const hintCanvas = document.createElement("canvas");
-  hintCanvas.width = width;
-  hintCanvas.height = height;
-  const hintCtx = hintCanvas.getContext("2d");
-  if (!hintCtx) throw new Error("Canvas unavailable");
-  hintCtx.drawImage(targetCanvas, 0, 0);
-  hintCtx.drawImage(selectionCanvas, 0, 0);
-
-  return {
-    targetImage: await canvasToBlob(targetCanvas),
-    nativeMask: await canvasToBlob(nativeMaskCanvas),
-    selectionHint: await canvasToBlob(hintCanvas),
-    hasSelection: selectedPixels > 0,
-  };
 }
