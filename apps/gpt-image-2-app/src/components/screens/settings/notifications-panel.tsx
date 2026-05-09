@@ -7,6 +7,10 @@ import {
   useTestNotifications,
   useUpdateNotifications,
 } from "@/hooks/use-config";
+import {
+  ensureSystemNotificationPermission,
+  sendSystemNotification,
+} from "@/lib/system-notifications";
 import type {
   CredentialRef,
   JobStatus,
@@ -128,6 +132,16 @@ export function NotificationCenterPanel({
 
   const save = async () => {
     try {
+      if (draft.enabled && draft.system.enabled) {
+        const permission = await ensureSystemNotificationPermission();
+        if (!permission.ok) {
+          toast.warning("系统通知权限未开启", {
+            description:
+              permission.message ||
+              "请在系统设置中允许 GPT Image 2 发送通知。",
+          });
+        }
+      }
       const saved = await updateNotifications.mutateAsync(
         prepareNotificationConfigForSave(draft),
       );
@@ -147,21 +161,59 @@ export function NotificationCenterPanel({
       const message =
         failed[0]?.message ||
         result.deliveries.map((item) => item.message).filter(Boolean)[0];
+      const localEnabled =
+        draft.enabled &&
+        ((status === "completed" && draft.on_completed) ||
+          (status === "failed" && draft.on_failed) ||
+          (status === "cancelled" && draft.on_cancelled));
+      const localMessages: string[] = [];
+      let localFailure = false;
+      if (localEnabled && draft.toast.enabled) {
+        const title =
+          status === "failed"
+            ? "测试通知失败"
+            : status === "cancelled"
+              ? "测试通知已取消"
+              : "测试通知完成";
+        toast(status === "failed" ? "测试通知失败" : title, {
+          description: "应用内通知已触发。",
+        });
+        localMessages.push("应用内通知已触发");
+      }
+      if (localEnabled && draft.system.enabled) {
+        const system = await sendSystemNotification(
+          "GPT Image 2 测试通知",
+          status === "failed"
+            ? "这是一条失败状态的系统通知测试。"
+            : status === "cancelled"
+              ? "这是一条取消状态的系统通知测试。"
+              : "这是一条完成状态的系统通知测试。",
+        );
+        if (system.ok) {
+          localMessages.push("系统通知已发送");
+        } else {
+          localFailure = true;
+          localMessages.push(system.message || "系统通知未发送");
+        }
+      }
       if (result.reason === "no_eligible_channel") {
         toast.info("没有可发送的方式", {
           description: "通知中心已关或未选任何状态 / 方式，不会发出。",
         });
         return;
       }
-      if (result.ok) {
+      if (result.ok && !localFailure) {
         const description =
           message ||
+          localMessages.join("；") ||
           (result.reason === "local_only"
-            ? "未配置邮件 / 回调；真实任务结束时仍会弹应用内 / 系统通知。"
+            ? "未配置邮件 / 回调；已试发本地通知。"
             : undefined);
         toast.success("试发已完成", { description });
       } else {
-        toast.warning("试发未全部成功", { description: message });
+        toast.warning("试发未全部成功", {
+          description: message || localMessages.join("；"),
+        });
       }
     } catch (error) {
       toast.error("试发失败", {

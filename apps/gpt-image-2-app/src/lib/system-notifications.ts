@@ -7,6 +7,13 @@ type NativeNotificationModule = {
   sendNotification: (options: { title: string; body?: string }) => void;
 };
 
+export type SystemNotificationResult = {
+  ok: boolean;
+  channel?: "tauri" | "browser";
+  reason?: "unsupported" | "permission_denied" | "send_failed";
+  message?: string;
+};
+
 function commandLabel(job: Job) {
   return job.command === "images edit" ? "编辑" : "生成";
 }
@@ -55,34 +62,107 @@ async function loadTauriNotification() {
   }
 }
 
-async function sendTauriNotification(title: string, body: string) {
+async function ensureTauriNotificationPermission() {
   const notifications = await loadTauriNotification();
-  if (!notifications) return false;
+  if (!notifications) return null;
   let granted = await notifications.isPermissionGranted();
   if (!granted) {
     granted = (await notifications.requestPermission()) === "granted";
   }
-  if (!granted) return false;
-  notifications.sendNotification({ title, body });
-  return true;
+  return granted;
 }
 
-async function sendBrowserNotification(title: string, body: string) {
+async function ensureBrowserNotificationPermission() {
   if (typeof window === "undefined" || !("Notification" in window)) {
-    return false;
+    return null;
   }
   let permission = window.Notification.permission;
   if (permission === "default") {
     permission = await window.Notification.requestPermission();
   }
-  if (permission !== "granted") return false;
-  new window.Notification(title, { body });
-  return true;
+  return permission === "granted";
+}
+
+export async function ensureSystemNotificationPermission(): Promise<SystemNotificationResult> {
+  const tauriPermission = await ensureTauriNotificationPermission();
+  if (tauriPermission === true) return { ok: true, channel: "tauri" };
+  if (tauriPermission === false) {
+    return {
+      ok: false,
+      channel: "tauri",
+      reason: "permission_denied",
+      message: "系统通知权限未开启。",
+    };
+  }
+
+  const browserPermission = await ensureBrowserNotificationPermission();
+  if (browserPermission === true) return { ok: true, channel: "browser" };
+  if (browserPermission === false) {
+    return {
+      ok: false,
+      channel: "browser",
+      reason: "permission_denied",
+      message: "浏览器通知权限未开启。",
+    };
+  }
+
+  return {
+    ok: false,
+    reason: "unsupported",
+    message: "当前环境不支持系统通知。",
+  };
+}
+
+export async function sendSystemNotification(
+  title: string,
+  body: string,
+): Promise<SystemNotificationResult> {
+  const notifications = await loadTauriNotification();
+  if (notifications) {
+    const permission = await ensureTauriNotificationPermission();
+    if (!permission) {
+      return {
+        ok: false,
+        channel: "tauri",
+        reason: "permission_denied",
+        message: "系统通知权限未开启。",
+      };
+    }
+    try {
+      notifications.sendNotification({ title, body });
+      return { ok: true, channel: "tauri" };
+    } catch (error) {
+      return {
+        ok: false,
+        channel: "tauri",
+        reason: "send_failed",
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  const browserPermission = await ensureBrowserNotificationPermission();
+  if (browserPermission === true) {
+    new window.Notification(title, { body });
+    return { ok: true, channel: "browser" };
+  }
+  if (browserPermission === false) {
+    return {
+      ok: false,
+      channel: "browser",
+      reason: "permission_denied",
+      message: "浏览器通知权限未开启。",
+    };
+  }
+  return {
+    ok: false,
+    reason: "unsupported",
+    message: "当前环境不支持系统通知。",
+  };
 }
 
 export async function sendSystemJobNotification(job: Job) {
   const title = jobNotificationTitle(job);
   const body = jobNotificationBody(job);
-  if (await sendTauriNotification(title, body)) return true;
-  return sendBrowserNotification(title, body);
+  return sendSystemNotification(title, body);
 }
