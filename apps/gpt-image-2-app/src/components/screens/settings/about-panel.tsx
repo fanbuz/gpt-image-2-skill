@@ -218,18 +218,13 @@ export function AboutPanel() {
 
           <Section
             title="数据位置"
-            description="本地配置、历史、应用内结果库和保存位置。只读信息。"
+            description="本地配置、历史和图片保存位置。只读信息。"
           >
             <PathRow title="配置文件" path={paths?.config_file} />
             <PathRow title="历史数据库" path={paths?.history_file} />
             <PathRow
-              title="应用内结果库"
-              path={paths?.result_library_dir ?? paths?.jobs_dir}
-              isFolder
-            />
-            <PathRow
-              title="当前保存位置"
-              path={paths?.default_export_dir}
+              title="图片保存位置"
+              path={paths?.default_export_dir ?? paths?.result_library_dir}
               isFolder
             />
             <PathRow

@@ -127,7 +127,6 @@ export const EXPORT_DIR_MODE_OPTIONS = [
   { value: "downloads", label: "下载" },
   { value: "documents", label: "文稿" },
   { value: "pictures", label: "图片" },
-  { value: "result_library", label: "应用内结果库" },
   { value: "custom", label: "其他文件夹" },
 ] as const;
 
@@ -148,8 +147,8 @@ export const TAB_TITLES: Record<
     subtitle: "同时执行几个任务、结束后怎么提醒",
   },
   storage: {
-    title: "结果库与归档",
-    subtitle: "结果保存位置，以及是否自动归档到其他存储",
+    title: "保存与归档",
+    subtitle: "图片保存位置，以及是否自动归档到其他存储",
   },
   prompts: {
     title: "提示词模板",

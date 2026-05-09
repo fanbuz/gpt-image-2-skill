@@ -240,7 +240,7 @@ export function StoragePanel({
         description={
           copy.kind === "browser"
             ? "网页版只存在浏览器本地，要上传云端请用桌面 App 或自建后端。"
-            : "先存进 App 历史，再按下方设置自动上传。"
+            : "图片保存后，再按下方设置自动上传。"
         }
       >
         <Row

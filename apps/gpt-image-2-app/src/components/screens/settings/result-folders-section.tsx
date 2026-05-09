@@ -5,13 +5,26 @@ import { Input } from "@/components/ui/input";
 import { GlassSelect } from "@/components/ui/select";
 import { useUpdatePaths } from "@/hooks/use-config";
 import { api, type ConfigPaths } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import type { PathConfig } from "@/lib/types";
+import { copyText } from "@/lib/user-actions";
 import { EXPORT_DIR_MODE_OPTIONS } from "./constants";
-import { PathRow, Row, Section } from "./layout";
+import { Row, Section } from "./layout";
 import {
   clonePathConfig,
   preparePathConfigForSave,
 } from "./settings-utils";
+
+type VisibleExportDirMode = (typeof EXPORT_DIR_MODE_OPTIONS)[number]["value"];
+
+function visibleExportDirMode(
+  mode: PathConfig["default_export_dir"]["mode"],
+): VisibleExportDirMode {
+  if (mode === "downloads" || mode === "documents" || mode === "custom") {
+    return mode;
+  }
+  return "pictures";
+}
 
 export function ResultFoldersSection({
   paths,
@@ -22,10 +35,11 @@ export function ResultFoldersSection({
 }) {
   const [draft, setDraft] = useState(() => clonePathConfig(paths));
   const updatePaths = useUpdatePaths();
-  const customExport = draft.default_export_dir.mode === "custom";
+  const selectExportMode = visibleExportDirMode(draft.default_export_dir.mode);
+  const customExport = selectExportMode === "custom";
   const previewExportDir = customExport
     ? (draft.default_export_dir.path ?? "")
-    : (configPaths?.default_export_dirs?.[draft.default_export_dir.mode] ??
+    : (configPaths?.default_export_dirs?.[selectExportMode] ??
       configPaths?.default_export_dir ??
       "");
   const canSave = Boolean(api.updatePaths) && api.canExportToConfiguredFolder;
@@ -46,8 +60,16 @@ export function ResultFoldersSection({
 
   const save = async () => {
     try {
+      const nextDraft = {
+        ...draft,
+        default_export_dir: {
+          ...draft.default_export_dir,
+          mode: selectExportMode,
+          path: customExport ? draft.default_export_dir.path : null,
+        },
+      };
       const saved = await updatePaths.mutateAsync(
-        preparePathConfigForSave(draft),
+        preparePathConfigForSave(nextDraft),
       );
       setDraft(clonePathConfig(saved.paths));
       toast.success("保存位置已更新");
@@ -60,11 +82,11 @@ export function ResultFoldersSection({
 
   return (
     <Section
-      title="保存到本机"
+      title="保存位置"
       description={
         canSave
-          ? "点「保存图片」时，会复制到哪个文件夹。"
-          : "网页版会用浏览器下载位置，无法指定本机文件夹。"
+          ? "生成后的图片会保存在这里。"
+          : "当前运行环境会使用浏览器下载位置，无法指定本机文件夹。"
       }
       headerAction={
         <Button
@@ -78,21 +100,20 @@ export function ResultFoldersSection({
       }
     >
       <Row
-        title="默认文件夹"
-        description="App 历史保留所有图；这里只决定「保存图片」复制到哪里。"
+        title="默认保存到"
+        description="生成完成后，图片会放到这个文件夹。"
         control={
           <div className="grid w-full gap-2 sm:w-[520px] sm:grid-cols-[170px_minmax(0,1fr)]">
             <GlassSelect
-              value={draft.default_export_dir.mode}
+              value={selectExportMode}
               onValueChange={(mode) => {
-                const nextMode =
-                  mode as PathConfig["default_export_dir"]["mode"];
+                const nextMode = mode as VisibleExportDirMode;
                 patchExportDir({
                   mode: nextMode,
                   path:
                     nextMode === "custom"
                       ? (draft.default_export_dir.path ??
-                        configPaths?.default_export_dir ??
+                        previewExportDir ??
                         "")
                       : null,
                 });
@@ -112,24 +133,32 @@ export function ResultFoldersSection({
                   ? "/Users/you/Pictures/GPT Image 2"
                   : "按所选模式自动决定"
               }
-              disabled={!canSave || !customExport}
+              readOnly={!canSave || !customExport}
+              wrapperClassName={cn(
+                (!customExport || !canSave) &&
+                  "bg-[color:var(--w-02)] border-border text-muted",
+              )}
+              className={cn(
+                (!customExport || !canSave) && "text-muted cursor-default",
+              )}
+              suffix={
+                <Button
+                  variant="ghost"
+                  size="iconSm"
+                  icon="copy"
+                  className="h-6 w-6 shrink-0 text-foreground"
+                  title="复制默认保存位置"
+                  aria-label="复制默认保存位置"
+                  onClick={() => void copyText(previewExportDir, "默认保存位置")}
+                >
+                  <span className="sr-only">复制默认保存位置</span>
+                </Button>
+              }
               size="sm"
               aria-label="自定义保存文件夹"
             />
           </div>
         }
-      />
-      <PathRow
-        title="当前保存位置"
-        path={configPaths?.default_export_dir}
-        isFolder
-        dim
-      />
-      <PathRow
-        title="App 历史目录"
-        path={configPaths?.result_library_dir ?? configPaths?.jobs_dir}
-        isFolder
-        dim
       />
     </Section>
   );

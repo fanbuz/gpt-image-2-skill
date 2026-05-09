@@ -97,7 +97,7 @@ const copyPathOrLink: ImageAction = {
 const saveAs: ImageAction = {
   id: "save-as",
   label: ({ runtime }) =>
-    runtime === "tauri" ? "导出到默认文件夹" : "下载图片",
+    runtime === "tauri" ? "保存图片" : "下载图片",
   icon: "download",
   shortcut: "⌘S",
   group: "export",

@@ -61,7 +61,7 @@ export function completedEvent(response: TauriJobResponse): JobEvent {
       data: {
         status,
         output: { path: responseOutputPath(response) },
-        message: "图片已保存在应用内结果库，可以继续查看或保存到本机。",
+        message: "图片已保存，可以继续查看。",
       },
     }
   );
