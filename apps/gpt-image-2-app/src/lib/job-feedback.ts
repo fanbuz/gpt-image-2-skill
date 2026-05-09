@@ -17,7 +17,11 @@ export function responseOutputCount(response: TauriJobResponse) {
 }
 
 export function responseOutputPath(response: TauriJobResponse) {
-  return response.job?.output_path ?? response.payload?.output?.path ?? response.payload?.output?.files?.[0]?.path;
+  return (
+    response.job?.output_path ??
+    response.payload?.output?.path ??
+    response.payload?.output?.files?.[0]?.path
+  );
 }
 
 export function outputCountDescription(actual: number, requested: number) {
@@ -47,16 +51,20 @@ export function submittedEvent(message: string): JobEvent {
 }
 
 export function completedEvent(response: TauriJobResponse): JobEvent {
-  return response.events?.[0] ?? {
-    seq: 2,
-    kind: "local",
-    type: "job.completed",
-    data: {
-      status: "completed",
-      output: { path: responseOutputPath(response) },
-      message: "图片已保存在应用内结果库，可以继续查看或保存到本机。",
-    },
-  };
+  const status = response.job?.status ?? "completed";
+  return (
+    response.events?.[0] ?? {
+      seq: 2,
+      kind: "local",
+      type:
+        status === "partial_failed" ? "job.partial_failed" : "job.completed",
+      data: {
+        status,
+        output: { path: responseOutputPath(response) },
+        message: "图片已保存在应用内结果库，可以继续查看或保存到本机。",
+      },
+    }
+  );
 }
 
 export function failedEvent(message: string): JobEvent {

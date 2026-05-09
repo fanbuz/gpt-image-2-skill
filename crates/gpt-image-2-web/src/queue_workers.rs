@@ -30,12 +30,15 @@ pub(crate) fn completed_job_for_queue(queued: &QueuedJob, response: &Value) -> V
         id: &queued.id,
         command: &queued.command,
         provider,
-        status: "completed",
+        status: payload
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("completed"),
         created_at: &queued.created_at,
         metadata: queued.metadata.clone(),
         output_path,
         outputs,
-        error: Value::Null,
+        error: payload.get("error").cloned().unwrap_or(Value::Null),
     })
 }
 
@@ -91,8 +94,12 @@ pub(crate) fn failed_job_for_queue(queued: &QueuedJob, message: String) -> Value
 }
 
 pub(crate) fn completed_event_data(job: &Value) -> Value {
+    let status = job
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or("completed");
     json!({
-        "status": "completed",
+        "status": status,
         "output": {
             "path": job.get("output_path").cloned().unwrap_or(Value::Null),
             "files": job.get("outputs").cloned().unwrap_or_else(|| json!([])),
@@ -125,7 +132,11 @@ pub(crate) fn finish_queued_job(
             let uploading_job = uploading_job_for_queue(&queued, &response);
             let _ = persist_job(&uploading_job);
             let data = completed_event_data(&job);
-            (job, "job.completed", data, true)
+            let event_type = match job.get("status").and_then(Value::as_str) {
+                Some("partial_failed") => "job.partial_failed",
+                _ => "job.completed",
+            };
+            (job, event_type, data, true)
         }
         Err(message) => {
             let job = failed_job_for_queue(&queued, message.clone());

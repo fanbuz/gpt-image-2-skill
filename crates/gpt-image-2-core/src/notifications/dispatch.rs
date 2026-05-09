@@ -7,7 +7,7 @@ use super::webhook::send_webhook_notification;
 
 pub fn notification_status_allowed(config: &NotificationConfig, status: &str) -> bool {
     match normalize_notification_status(status).as_str() {
-        "completed" => config.on_completed,
+        "completed" | "partial_failed" => config.on_completed,
         "failed" => config.on_failed,
         "cancelled" => config.on_cancelled,
         _ => false,

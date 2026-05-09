@@ -1,6 +1,6 @@
-import { type CSSProperties } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronDown, Clock, Loader2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, Clock, Loader2, X } from "lucide-react";
 import SpotlightCard from "@/components/reactbits/components/SpotlightCard";
 import { Button } from "@/components/ui/button";
 import { ImageContextMenu } from "@/components/ui/image-context-menu";
@@ -16,15 +16,26 @@ import {
   jobOutputUrl,
 } from "@/lib/job-outputs";
 import { isDesktopRuntime, runtimeCopy } from "@/lib/runtime-copy";
-import { revealPath, saveImages, saveJobImages } from "@/lib/user-actions";
+import {
+  copyText,
+  revealPath,
+  saveImages,
+  saveJobImages,
+} from "@/lib/user-actions";
 import type { Job } from "@/lib/types";
 import { JobPreviewImage } from "./job-preview-image";
 import { StatusChip } from "./status-chip";
 import {
+  jobErrorDetailText,
+  jobErrorMessage,
+  jobMetaItems,
+  jobOutputErrors,
   jobPrompt,
   jobRatio,
+  jobStatusLabel,
   jobThumbPath,
   jobThumbUrl,
+  plannedOutputCount,
   totalBytes,
 } from "./shared";
 
@@ -49,19 +60,41 @@ export function JobRowExpandable({
 }) {
   const confirm = useConfirm();
   const reducedMotion = useReducedMotion();
+  const [promptExpanded, setPromptExpanded] = useState(false);
   const thumbUrl = jobThumbUrl(job);
   const thumbPath = jobThumbPath(job);
   const ratio = jobRatio(job);
   const prompt = jobPrompt(job);
   const status = job.status;
   const showCancel = isActiveJobStatus(status);
-  const showRetry = status === "failed" || status === "cancelled";
+  const showRetry =
+    status === "failed" ||
+    status === "partial_failed" ||
+    status === "cancelled";
   const isQueueing = status === "queued";
   const isRunning = status === "running" || status === "uploading";
   const outputIndexes = jobOutputIndexes(job);
   const outputCount = outputIndexes.length;
   const extraCount = Math.max(0, outputCount - 1);
   const copy = runtimeCopy();
+  const planned = plannedOutputCount(job);
+  const outputErrors = jobOutputErrors(job);
+  const errorsByIndex = useMemo(
+    () => new Map(outputErrors.map((error) => [error.index, error])),
+    [outputErrors],
+  );
+  const slots = useMemo(() => {
+    const indexes = new Set<number>(outputIndexes);
+    for (const error of outputErrors) indexes.add(error.index);
+    if (indexes.size === 0 && planned > 1) {
+      for (let i = 0; i < planned; i += 1) indexes.add(i);
+    }
+    return Array.from(indexes).sort((a, b) => a - b);
+  }, [outputIndexes, outputErrors, planned]);
+  const metaItems = jobMetaItems(job);
+  const errorMessage = jobErrorMessage(job);
+  const errorDetail = jobErrorDetailText(job);
+  const showPromptToggle = prompt.length > 240 || prompt.split("\n").length > 6;
 
   const saveResult = () => {
     if (outputCount > 1) {
@@ -155,24 +188,18 @@ export function JobRowExpandable({
         <div className="min-w-0 self-center sm:flex-1">
           <div className="text-[13px] text-foreground truncate">{prompt}</div>
           <div className="text-[11px] text-faint mt-0.5 font-mono flex items-center gap-1.5">
-            {ratio && <span>{ratio}</span>}
-            {ratio && outputCount > 0 && <span aria-hidden>·</span>}
-            {outputCount > 0 && <span>{outputCount} 张</span>}
-            {job.command === "images edit" && (
-              <>
-                <span aria-hidden>·</span>
-                <span>编辑</span>
-              </>
-            )}
-            {job.command === "request create" && (
-              <>
-                <span aria-hidden>·</span>
-                <span>请求</span>
-              </>
-            )}
+            {metaItems.map((item, itemIndex) => (
+              <span
+                key={`${item}-${itemIndex}`}
+                className="inline-flex items-center gap-1.5"
+              >
+                {itemIndex > 0 && <span aria-hidden>·</span>}
+                <span>{item}</span>
+              </span>
+            ))}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden">
-            <StatusChip status={status} />
+            <StatusChip status={status} label={jobStatusLabel(job)} />
             <span className="font-mono text-[11px] text-faint">
               {formatTime(job.updated_at || job.created_at)}
             </span>
@@ -185,7 +212,7 @@ export function JobRowExpandable({
         </div>
 
         <div className="hidden w-[120px] shrink-0 sm:block">
-          <StatusChip status={status} />
+          <StatusChip status={status} label={jobStatusLabel(job)} />
         </div>
 
         <div className="hidden w-[140px] shrink-0 text-right sm:block">
@@ -256,24 +283,108 @@ export function JobRowExpandable({
             <div className="min-h-0 overflow-hidden">
               <div className="px-3 pb-4 pt-1 sm:px-4 sm:pl-[calc(16px+24px+16px+80px)]">
                 {/* full prompt */}
-                <div className="mb-3 text-[12.5px] leading-relaxed text-muted whitespace-pre-wrap break-words pr-4">
-                  {prompt}
+                <div className="mb-3 rounded-md border border-[color:var(--w-06)] bg-[color:var(--k-10)] px-3 py-2">
+                  <div
+                    className={cn(
+                      "text-[12.5px] leading-relaxed text-muted whitespace-pre-wrap break-words pr-1",
+                      !promptExpanded && "line-clamp-5",
+                    )}
+                  >
+                    {prompt}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    {showPromptToggle && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPromptExpanded((value) => !value);
+                        }}
+                        className="text-[11.5px] text-muted hover:text-foreground"
+                      >
+                        {promptExpanded ? "收起提示词" : "展开提示词"}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void copyText(prompt, "提示词");
+                      }}
+                      className="text-[11.5px] text-muted hover:text-foreground"
+                    >
+                      复制提示词
+                    </button>
+                  </div>
                 </div>
 
+                {(status === "failed" || status === "partial_failed") &&
+                  errorMessage && (
+                    <div className="mb-3 rounded-md border border-[color:var(--status-err-25)] bg-[color:var(--status-err-08)] px-3 py-2">
+                      <div className="flex items-start gap-2 text-[12.5px] text-status-err">
+                        <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                        <div className="min-w-0">
+                          <div className="font-medium">
+                            {status === "partial_failed"
+                              ? "部分图片生成失败"
+                              : "任务失败"}
+                          </div>
+                          <div className="mt-1 whitespace-pre-wrap break-words text-[12px] text-muted">
+                            {errorMessage}
+                          </div>
+                        </div>
+                      </div>
+                      {errorDetail && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void copyText(errorDetail, "错误详情");
+                          }}
+                          className="mt-2 text-[11.5px] text-muted hover:text-foreground"
+                        >
+                          复制完整错误
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                 {/* output grid */}
-                {outputCount > 0 ? (
+                {slots.length > 0 ? (
                   <div
-                    className="grid grid-cols-2 gap-2 sm:[grid-template-columns:repeat(var(--history-output-cols),minmax(0,1fr))]"
+                    className={cn(
+                      "grid gap-2",
+                      slots.length === 1
+                        ? "grid-cols-1"
+                        : "grid-cols-2 sm:[grid-template-columns:repeat(var(--history-output-cols),minmax(0,1fr))]",
+                    )}
                     style={
                       {
-                        "--history-output-cols": Math.min(outputCount, 4),
+                        "--history-output-cols": Math.min(slots.length, 4),
                       } as CSSProperties
                     }
                   >
-                    {outputIndexes.map((outputIndex, i) => {
+                    {slots.map((outputIndex, i) => {
                       const url = jobOutputUrl(job, outputIndex);
                       const path = jobOutputPath(job, outputIndex);
+                      const slotError = errorsByIndex.get(outputIndex);
                       const letter = String.fromCharCode(65 + i);
+                      if (!path && slotError) {
+                        return (
+                          <div
+                            key={`error-${outputIndex}`}
+                            className="min-h-[112px] rounded-lg border border-[color:var(--status-err-25)] bg-[color:var(--status-err-08)] p-3 text-left"
+                          >
+                            <div className="flex items-center gap-1.5 text-[12px] font-medium text-status-err">
+                              <AlertTriangle size={14} />
+                              候选 {letter} 失败
+                            </div>
+                            <div className="mt-2 line-clamp-4 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-muted">
+                              {slotError.message}
+                            </div>
+                          </div>
+                        );
+                      }
                       const asset = imageAssetFromOutput({
                         jobId: job.id,
                         outputIndex,
@@ -291,32 +402,37 @@ export function JobRowExpandable({
                               e.stopPropagation();
                               onOpenDetail(outputIndex);
                             }}
-                            className="group relative aspect-square w-full rounded-lg overflow-hidden ring-1 ring-[color:var(--w-08)] hover:ring-[color:var(--accent-45)] transition-all hover:scale-[1.015]"
+                            className={cn(
+                              "group relative w-full rounded-lg overflow-hidden ring-1 ring-[color:var(--w-08)] hover:ring-[color:var(--accent-45)] transition-all hover:scale-[1.008]",
+                              slots.length === 1
+                                ? "h-[min(42vh,420px)] min-h-[220px]"
+                                : "h-[168px]",
+                            )}
                             title={`查看第 ${letter} 张`}
                             aria-label={`查看第 ${letter} 张`}
                           >
-                          <SpotlightCard
-                            spotlightColor="rgba(var(--accent-rgb), 0.30)"
-                            className="!rounded-lg !p-0 !bg-transparent !border-0 !w-full !h-full absolute inset-0"
-                          >
-                            <JobPreviewImage
-                              url={url}
-                              seed={index * 37 + outputIndex + i}
-                              variant={`history-output-${job.id}-${outputIndex}`}
-                              imageClassName="absolute inset-0 h-full w-full object-cover"
-                              placeholderClassName="absolute inset-0"
-                            />
-                            <span
-                              className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10.5px] font-mono font-semibold text-foreground"
-                              style={{
-                                background: "var(--k-55)",
-                                backdropFilter: "blur(4px)",
-                                WebkitBackdropFilter: "blur(4px)",
-                              }}
+                            <SpotlightCard
+                              spotlightColor="rgba(var(--accent-rgb), 0.30)"
+                              className="!rounded-lg !p-0 !bg-transparent !border-0 !w-full !h-full absolute inset-0"
                             >
-                              {letter}
-                            </span>
-                          </SpotlightCard>
+                              <JobPreviewImage
+                                url={url}
+                                seed={index * 37 + outputIndex + i}
+                                variant={`history-output-${job.id}-${outputIndex}`}
+                                imageClassName="absolute inset-0 h-full w-full object-contain bg-[color:var(--k-18)]"
+                                placeholderClassName="absolute inset-0"
+                              />
+                              <span
+                                className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded text-[10.5px] font-mono font-semibold text-foreground"
+                                style={{
+                                  background: "var(--k-55)",
+                                  backdropFilter: "blur(4px)",
+                                  WebkitBackdropFilter: "blur(4px)",
+                                }}
+                              >
+                                {letter}
+                              </span>
+                            </SpotlightCard>
                           </button>
                         </ImageContextMenu>
                       );

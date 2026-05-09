@@ -125,15 +125,20 @@ pub(crate) fn run_edit_request(
         let partials = Arc::new(Mutex::new(Vec::<Value>::new()));
         let partials_for_cb = partials.clone();
         let stream_for_cb = stream.clone();
-        let payloads = run_payloads_concurrently_streaming(arg_sets, move |index, payload| {
+        let batch = run_payloads_concurrently_streaming(arg_sets, move |index, payload| {
             if let Some(ctx) = &stream_for_cb {
                 let mut list = partials_for_cb
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 apply_partial_output(ctx, &mut list, index, payload);
             }
-        })?;
-        merge_batch_payloads("images edit", payloads)
+        });
+        merge_batch_payloads(
+            "images edit",
+            output_count.into(),
+            batch.payloads,
+            batch.errors,
+        )
     };
     let request_meta = edit_request_metadata(&request);
     let job = job_from_payload(&payload, &fallback_id, "images edit", request_meta);
@@ -143,8 +148,8 @@ pub(crate) fn run_edit_request(
         "events": [{
             "seq": 1,
             "kind": "local",
-            "type": "job.completed",
-            "data": {"status": "completed", "output": payload.get("output")}
+            "type": if job.get("status").and_then(Value::as_str) == Some("partial_failed") { "job.partial_failed" } else { "job.completed" },
+            "data": {"status": job.get("status"), "output": payload.get("output"), "error": payload.get("error")}
         }],
         "payload": payload,
     }))

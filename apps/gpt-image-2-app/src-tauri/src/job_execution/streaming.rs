@@ -13,13 +13,28 @@ pub(crate) struct StreamContext {
     pub(crate) metadata: Value,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct BatchItemError {
+    pub(crate) index: usize,
+    pub(crate) message: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct BatchRunResult {
+    pub(crate) payloads: Vec<Value>,
+    pub(crate) errors: Vec<BatchItemError>,
+}
+
 pub(crate) fn run_payloads_concurrently_streaming(
     arg_sets: Vec<Vec<String>>,
     mut on_partial: impl FnMut(usize, &Value),
-) -> Result<Vec<Value>, String> {
+) -> BatchRunResult {
     let total = arg_sets.len();
     if total == 0 {
-        return Ok(Vec::new());
+        return BatchRunResult {
+            payloads: Vec::new(),
+            errors: Vec::new(),
+        };
     }
     let (tx, rx) = mpsc::channel::<(usize, Result<Value, String>)>();
     for (index, args) in arg_sets.into_iter().enumerate() {
@@ -39,15 +54,18 @@ pub(crate) fn run_payloads_concurrently_streaming(
                 on_partial(index, &payload);
                 results[index] = Some(payload);
             }
-            Ok((_, Err(error))) => errors.push(error),
+            Ok((index, Err(error))) => errors.push(BatchItemError {
+                index,
+                message: error,
+            }),
             Err(_) => break,
         }
         received += 1;
     }
-    if !errors.is_empty() {
-        return Err(errors.join("; "));
+    BatchRunResult {
+        payloads: results.into_iter().flatten().collect(),
+        errors,
     }
-    Ok(results.into_iter().flatten().collect())
 }
 
 pub(crate) fn apply_partial_output(

@@ -11,6 +11,7 @@ type OpenJob = (jobId: string) => void;
 
 const terminalStatuses = new Set<JobStatus>([
   "completed",
+  "partial_failed",
   "failed",
   "cancelled",
 ]);
@@ -75,12 +76,16 @@ function notifyTerminal(job: Job, onOpen: OpenJob) {
     action: { label: "查看", onClick: open },
   } as const;
 
-  if (job.status === "completed") {
+  if (job.status === "completed" || job.status === "partial_failed") {
     // Thumbnail of the freshly produced image so the toast is itself a
     // glance-able reveal — not just "task done" text. Click → open detail.
     const firstPath = job.outputs?.[0]?.path ?? job.output_path;
     const thumbUrl = firstPath ? api.fileUrl(firstPath) : null;
-    toast.success(`${commandLabel(job)}完成`, {
+    const title =
+      job.status === "partial_failed"
+        ? `${commandLabel(job)}部分完成`
+        : `${commandLabel(job)}完成`;
+    toast[job.status === "partial_failed" ? "warning" : "success"](title, {
       ...common,
       description: successDescription(job),
       classNames: thumbUrl
@@ -130,9 +135,11 @@ export function useJobNotifications(jobs: Job[] | undefined, onOpen: OpenJob) {
   const notifyAllowed = (job: Job) =>
     job.status === "completed"
       ? notifyOnComplete
-      : job.status === "failed"
-        ? notifyOnFailure
-        : notifyOnCancelled;
+      : job.status === "partial_failed"
+        ? notifyOnComplete
+        : job.status === "failed"
+          ? notifyOnFailure
+          : notifyOnCancelled;
 
   const notify = (job: Job) => {
     if (!notifyAllowed(job)) return;

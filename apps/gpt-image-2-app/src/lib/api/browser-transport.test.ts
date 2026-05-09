@@ -45,6 +45,7 @@ async function waitForJob(jobId: string) {
     const payload = await browserApi.getJob(jobId);
     if (
       payload.job.status === "completed" ||
+      payload.job.status === "partial_failed" ||
       payload.job.status === "failed" ||
       payload.job.status === "cancelled"
     ) {
@@ -407,6 +408,44 @@ describe("browserApi", () => {
     );
     expect(bodies).toHaveLength(3);
     expect(bodies.every((body) => !("n" in body))).toBe(true);
+  });
+
+  it("keeps successful browser outputs when one fallback request fails", async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls += 1;
+        if (calls === 2) {
+          return new Response(
+            JSON.stringify({
+              error: { message: "upstream rejected candidate B" },
+            }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        return okJson({ data: [{ b64_json: tinyPng }] });
+      }),
+    );
+    await addProvider({ supports_n: false });
+
+    const result = await browserApi.createGenerate({
+      prompt: "partial fallback",
+      provider: "mock",
+      format: "png",
+      n: 3,
+    });
+    const job = await waitForJob(result.job_id);
+
+    expect(job.status).toBe("partial_failed");
+    expect(job.outputs.map((output) => output.index)).toEqual([0, 2]);
+    expect(job.error?.message).toContain("upstream rejected candidate B");
+    expect(job.error?.items).toEqual([
+      { index: 1, message: "400 upstream rejected candidate B" },
+    ]);
   });
 
   it("sends edit references, selection hints, and masks as multipart data", async () => {

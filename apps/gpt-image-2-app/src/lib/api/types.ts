@@ -170,6 +170,7 @@ export type ApiClient = RuntimeCapabilities & {
 
 export const TERMINAL_JOB_STATUSES = new Set([
   "completed",
+  "partial_failed",
   "failed",
   "cancelled",
   "canceled",

@@ -72,7 +72,41 @@ pub(crate) fn normalize_batch_output(files: Vec<Value>) -> Value {
     })
 }
 
-pub(crate) fn merge_batch_payloads(command: &str, payloads: Vec<Value>) -> Value {
+pub(crate) fn batch_errors_json(errors: &[BatchItemError]) -> Value {
+    Value::Array(
+        errors
+            .iter()
+            .map(|error| {
+                json!({
+                    "index": error.index,
+                    "message": error.message,
+                })
+            })
+            .collect(),
+    )
+}
+
+pub(crate) fn batch_error_summary(errors: &[BatchItemError]) -> Option<String> {
+    if errors.is_empty() {
+        return None;
+    }
+    let first = errors
+        .first()
+        .map(|error| error.message.as_str())
+        .unwrap_or("Unknown batch error.");
+    if errors.len() == 1 {
+        Some(first.to_string())
+    } else {
+        Some(format!("{} 个子任务失败：{first}", errors.len()))
+    }
+}
+
+pub(crate) fn merge_batch_payloads(
+    command: &str,
+    request_count: usize,
+    payloads: Vec<Value>,
+    errors: Vec<BatchItemError>,
+) -> Value {
     let first = payloads.first().cloned().unwrap_or_else(|| json!({}));
     let files = payloads
         .iter()
@@ -104,13 +138,23 @@ pub(crate) fn merge_batch_payloads(command: &str, payloads: Vec<Value>) -> Value
     let mut response = first.get("response").cloned().unwrap_or_else(|| json!({}));
     if let Value::Object(response) = &mut response {
         response.insert("image_count".to_string(), json!(image_count));
-        response.insert("batch_count".to_string(), json!(payloads.len()));
-        response.insert("batch_request_count".to_string(), json!(payloads.len()));
+        response.insert("batch_count".to_string(), json!(request_count));
+        response.insert("batch_request_count".to_string(), json!(request_count));
         response.insert("revised_prompts".to_string(), json!(revised_prompts));
     }
+    let error_summary = batch_error_summary(&errors);
+    let ok = image_count > 0;
+    let status = if ok && errors.is_empty() {
+        "completed"
+    } else if ok {
+        "partial_failed"
+    } else {
+        "failed"
+    };
 
-    json!({
+    let mut payload = json!({
         "ok": true,
+        "status": status,
         "command": command,
         "provider": first.get("provider").cloned().unwrap_or(Value::Null),
         "provider_selection": first.get("provider_selection").cloned().unwrap_or(Value::Null),
@@ -124,12 +168,28 @@ pub(crate) fn merge_batch_payloads(command: &str, payloads: Vec<Value>) -> Value
         },
         "batch": {
             "mode": "parallel-single-output",
-            "request_count": payloads.len(),
+            "request_count": request_count,
+            "success_count": image_count,
+            "failure_count": errors.len(),
+            "errors": batch_errors_json(&errors),
         },
         "events": {
-            "count": payloads.len(),
+            "count": request_count,
         }
-    })
+    });
+    if !errors.is_empty()
+        && let Value::Object(object) = &mut payload
+    {
+        object.insert(
+            "error".to_string(),
+            json!({
+                "code": if ok { "batch_partial_failed" } else { "batch_failed" },
+                "message": error_summary.unwrap_or_else(|| "Batch request failed.".to_string()),
+                "items": batch_errors_json(&errors),
+            }),
+        );
+    }
+    payload
 }
 
 pub(crate) fn cleanup_child_history(payload: &Value, app_job_id: &str) {
@@ -164,7 +224,10 @@ pub(crate) fn job_from_payload(
         "id": job_id,
         "command": command,
         "provider": payload.get("provider").cloned().unwrap_or(Value::Null),
-        "status": if payload.get("ok").and_then(Value::as_bool).unwrap_or(false) { "completed" } else { "failed" },
+        "status": payload
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| if payload.get("ok").and_then(Value::as_bool).unwrap_or(false) { "completed" } else { "failed" }),
         "created_at": chrono_like_now(),
         "updated_at": chrono_like_now(),
         "metadata": request,
@@ -180,4 +243,47 @@ pub(crate) fn chrono_like_now() -> String {
         .unwrap_or_default()
         .as_secs();
     format!("{secs}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn payload(path: &str) -> Value {
+        json!({
+            "ok": true,
+            "provider": "mock",
+            "output": {
+                "path": path,
+                "bytes": 10,
+            },
+            "history": {
+                "job_id": format!("child-{path}"),
+            },
+            "response": {
+                "revised_prompts": [],
+            },
+        })
+    }
+
+    #[test]
+    fn merge_batch_payloads_keeps_successful_outputs_with_failed_items() {
+        let merged = merge_batch_payloads(
+            "images generate",
+            3,
+            vec![payload("/tmp/a.png"), payload("/tmp/c.png")],
+            vec![BatchItemError {
+                index: 1,
+                message: "upstream rejected candidate B".to_string(),
+            }],
+        );
+
+        assert_eq!(merged["status"], "partial_failed");
+        assert_eq!(merged["output"]["files"].as_array().unwrap().len(), 2);
+        assert_eq!(merged["batch"]["request_count"], 3);
+        assert_eq!(merged["batch"]["success_count"], 2);
+        assert_eq!(merged["batch"]["failure_count"], 1);
+        assert_eq!(merged["batch"]["errors"][0]["index"], 1);
+        assert_eq!(merged["error"]["message"], "upstream rejected candidate B");
+    }
 }

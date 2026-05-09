@@ -262,6 +262,7 @@ export type JobStatus =
   | "running"
   | "uploading"
   | "completed"
+  | "partial_failed"
   | "failed"
   | "cancelled";
 

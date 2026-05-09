@@ -2,11 +2,48 @@ import type { GenerateRequest, Job, OutputRef, QueueStatus } from "../../types";
 import { normalizeJobResponse, outputPaths } from "../shared";
 import { isActiveJobStatus } from "../types";
 import { appendEvent, nowIso } from "./events";
-import { getStoredProvider, requireApiKey, selectedProviderName } from "./config";
-import { cloneGenerateRequest, runEditRequest, runGenerationRequest } from "./openai";
+import {
+  getStoredProvider,
+  requireApiKey,
+  selectedProviderName,
+} from "./config";
+import {
+  cloneGenerateRequest,
+  runEditRequest,
+  runGenerationRequest,
+} from "./openai";
 import { deleteDatabase, readStoredJobs, storeOutput, writeJob } from "./store";
-import { dbPromise, eventLog, blobsByPath, jobSubscribers, maxParallel, nextSeq, objectUrls, prepared, queue, running, setMaxParallel, setPrepared, updateSubscribers } from "./state";
+import {
+  dbPromise,
+  eventLog,
+  blobsByPath,
+  jobSubscribers,
+  maxParallel,
+  nextSeq,
+  objectUrls,
+  prepared,
+  queue,
+  running,
+  setMaxParallel,
+  setPrepared,
+  updateSubscribers,
+} from "./state";
 import type { BrowserQueuedTask } from "./state";
+
+type BrowserBatchError = {
+  index: number;
+  message: string;
+};
+
+function errorText(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function batchErrorMessage(errors: BrowserBatchError[]) {
+  if (errors.length === 0) return "";
+  if (errors.length === 1) return errors[0].message;
+  return `${errors.length} 个子任务失败：${errors[0].message}`;
+}
 
 export async function storagePressureWarning() {
   const estimate = await navigator.storage?.estimate?.().catch(() => undefined);
@@ -54,7 +91,10 @@ export async function saveBlobOutputs(
   return saved;
 }
 
-export async function completeTask(task: BrowserQueuedTask, outputs: OutputRef[]) {
+export async function completeTask(
+  task: BrowserQueuedTask,
+  outputs: OutputRef[],
+) {
   const completed = {
     ...task.job,
     status: "completed" as const,
@@ -77,6 +117,49 @@ export async function completeTask(task: BrowserQueuedTask, outputs: OutputRef[]
   });
 }
 
+export async function completePartialTask(
+  task: BrowserQueuedTask,
+  outputs: OutputRef[],
+  errors: BrowserBatchError[],
+) {
+  const message = batchErrorMessage(errors);
+  const partial = {
+    ...task.job,
+    status: "partial_failed" as const,
+    updated_at: nowIso(),
+    outputs,
+    output_path: outputs[0]?.path,
+    metadata: {
+      ...task.job.metadata,
+      output: {
+        path: outputs[0]?.path ?? null,
+        files: outputs,
+      },
+      batch: {
+        request_count:
+          typeof task.job.metadata.n === "number"
+            ? task.job.metadata.n
+            : outputs.length + errors.length,
+        success_count: outputs.length,
+        failure_count: errors.length,
+        errors,
+      },
+    },
+    error: {
+      code: "batch_partial_failed",
+      message,
+      items: errors,
+    },
+  };
+  await writeJob(partial);
+  appendEvent(task.job.id, "job.partial_failed", {
+    status: "partial_failed",
+    output: { path: outputs[0]?.path, files: outputs },
+    error: partial.error,
+    job: partial,
+  });
+}
+
 export async function failTask(task: BrowserQueuedTask, error: unknown) {
   const aborted = task.cancelled || task.abort.signal.aborted;
   const message = aborted
@@ -88,12 +171,15 @@ export async function failTask(task: BrowserQueuedTask, error: unknown) {
     ...task.job,
     status: aborted ? ("cancelled" as const) : ("failed" as const),
     updated_at: nowIso(),
-    error: { message },
+    error:
+      error && typeof error === "object" && "items" in error
+        ? (error as Record<string, unknown>)
+        : { message },
   };
   await writeJob(failed);
   appendEvent(task.job.id, aborted ? "job.cancelled" : "job.failed", {
     status: failed.status,
-    error: { message },
+    error: failed.error,
     job: failed,
   });
 }
@@ -117,18 +203,35 @@ export async function runGenerateTask(
     );
     await saveBlobOutputs(task, blobs, partials);
   } else {
+    const errors: BrowserBatchError[] = [];
     await Promise.all(
       Array.from({ length: planned }).map(async (_, index) => {
-        const blobs = await runGenerationRequest(
-          request,
-          provider,
-          apiKey,
-          undefined,
-          task.abort.signal,
-        );
-        await saveBlobOutputs(task, blobs.slice(0, 1), partials, index);
+        try {
+          const blobs = await runGenerationRequest(
+            request,
+            provider,
+            apiKey,
+            undefined,
+            task.abort.signal,
+          );
+          await saveBlobOutputs(task, blobs.slice(0, 1), partials, index);
+        } catch (error) {
+          errors.push({ index, message: errorText(error) });
+        }
       }),
     );
+    if (errors.length > 0) {
+      errors.sort((a, b) => a.index - b.index);
+      if (partials.length > 0) {
+        await completePartialTask(task, partials, errors);
+        return;
+      }
+      throw {
+        code: "batch_failed",
+        message: batchErrorMessage(errors),
+        items: errors,
+      };
+    }
   }
   await completeTask(task, partials);
 }
@@ -154,18 +257,35 @@ export async function runEditTask(task: BrowserQueuedTask, form: FormData) {
     );
     await saveBlobOutputs(task, blobs, partials);
   } else {
+    const errors: BrowserBatchError[] = [];
     await Promise.all(
       Array.from({ length: planned }).map(async (_, index) => {
-        const blobs = await runEditRequest(
-          form,
-          provider,
-          apiKey,
-          undefined,
-          task.abort.signal,
-        );
-        await saveBlobOutputs(task, blobs.slice(0, 1), partials, index);
+        try {
+          const blobs = await runEditRequest(
+            form,
+            provider,
+            apiKey,
+            undefined,
+            task.abort.signal,
+          );
+          await saveBlobOutputs(task, blobs.slice(0, 1), partials, index);
+        } catch (error) {
+          errors.push({ index, message: errorText(error) });
+        }
       }),
     );
+    if (errors.length > 0) {
+      errors.sort((a, b) => a.index - b.index);
+      if (partials.length > 0) {
+        await completePartialTask(task, partials, errors);
+        return;
+      }
+      throw {
+        code: "batch_failed",
+        message: batchErrorMessage(errors),
+        items: errors,
+      };
+    }
   }
   await completeTask(task, partials);
 }
@@ -204,7 +324,10 @@ export async function startQueuedJobs() {
   }
 }
 
-export async function enqueueBrowserTask(job: Job, run: BrowserQueuedTask["run"]) {
+export async function enqueueBrowserTask(
+  job: Job,
+  run: BrowserQueuedTask["run"],
+) {
   await prepareBrowserRuntime();
   await writeJob(job);
   const task: BrowserQueuedTask = {
@@ -235,9 +358,7 @@ export function browserJobId() {
 
 export async function markInterruptedJobs() {
   const jobs = await readStoredJobs();
-  const interrupted = jobs.filter(
-    (job) => isActiveJobStatus(job.status),
-  );
+  const interrupted = jobs.filter((job) => isActiveJobStatus(job.status));
   for (const job of interrupted) {
     await writeJob({
       ...job,

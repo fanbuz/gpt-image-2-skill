@@ -83,8 +83,8 @@ pub(crate) fn normalize_history_limit(limit: Option<usize>) -> usize {
 pub(crate) fn history_status_values(status: Option<&str>) -> Vec<&'static str> {
     match status.unwrap_or("all") {
         "active" | "running" => vec!["queued", "running", "uploading"],
-        "completed" => vec!["completed"],
-        "failed" => vec!["failed", "cancelled", "canceled"],
+        "completed" => vec!["completed", "partial_failed"],
+        "failed" => vec!["failed", "partial_failed", "cancelled", "canceled"],
         "queued" => vec!["queued"],
         "all" | "" => Vec::new(),
         _ => Vec::new(),

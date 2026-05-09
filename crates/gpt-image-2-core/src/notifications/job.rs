@@ -74,6 +74,7 @@ impl NotificationJob {
         };
         match self.status.as_str() {
             "completed" => format!("{action}完成"),
+            "partial_failed" => format!("{action}部分完成"),
             "failed" => format!("{action}失败"),
             "cancelled" => "任务已取消".to_string(),
             _ => format!("任务{}", self.status),
@@ -87,7 +88,7 @@ impl NotificationJob {
         {
             parts.push(size.to_string());
         }
-        if self.status == "completed" {
+        if self.status == "completed" || self.status == "partial_failed" {
             let count = if self.outputs.is_empty() {
                 usize::from(self.output_path.is_some())
             } else {
@@ -99,6 +100,11 @@ impl NotificationJob {
                 } else {
                     "1 张图片".to_string()
                 });
+            }
+            if self.status == "partial_failed"
+                && let Some(message) = &self.error_message
+            {
+                parts.push(message.clone());
             }
         } else if let Some(message) = &self.error_message {
             parts.push(message.clone());

@@ -25,17 +25,22 @@ function outputCount(job: Job) {
 
 export function jobNotificationTitle(job: Job) {
   if (job.status === "completed") return `${commandLabel(job)}完成`;
+  if (job.status === "partial_failed") return `${commandLabel(job)}部分完成`;
   if (job.status === "failed") return `${commandLabel(job)}失败`;
   return "任务已取消";
 }
 
 export function jobNotificationBody(job: Job) {
-  if (job.status === "completed") {
+  if (job.status === "completed" || job.status === "partial_failed") {
     const parts = [job.provider];
     const size = job.metadata.size;
     if (typeof size === "string" && size) parts.push(size);
     const count = outputCount(job);
     if (count > 0) parts.push(count > 1 ? `${count} 张图片` : "1 张图片");
+    if (job.status === "partial_failed") {
+      const error = job.error as { message?: string } | null | undefined;
+      if (error?.message) parts.push(promptSummary(error.message, 64, ""));
+    }
     return parts.join(" · ");
   }
 

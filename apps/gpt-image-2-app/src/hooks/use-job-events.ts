@@ -38,6 +38,7 @@ export function useJobEvents(jobId: string | null) {
         if (
           ev.kind === "local" &&
           (ev.type === "job.completed" ||
+            ev.type === "job.partial_failed" ||
             ev.type === "job.failed" ||
             ev.type === "job.cancelled" ||
             ev.type === "job.canceled")
