@@ -39,7 +39,10 @@ pub(crate) fn export_files_to_configured_folder(paths: Vec<String>) -> Result<Ve
     export_files_into_dir(paths, &export_dir)
 }
 
-pub(crate) fn export_files_into_dir(paths: Vec<String>, export_dir: &Path) -> Result<Vec<String>, String> {
+pub(crate) fn export_files_into_dir(
+    paths: Vec<String>,
+    export_dir: &Path,
+) -> Result<Vec<String>, String> {
     let sources = validate_source_paths(paths)?;
     fs::create_dir_all(&export_dir).map_err(|error| format!("无法创建保存目录：{error}"))?;
     if all_sources_within_dir(&sources, &export_dir) {
@@ -122,5 +125,8 @@ fn canonical_or_original(path: &Path) -> PathBuf {
 }
 
 fn display_paths(paths: &[PathBuf]) -> Vec<String> {
-    paths.iter().map(|path| path.display().to_string()).collect()
+    paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect()
 }
