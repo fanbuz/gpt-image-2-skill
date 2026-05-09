@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { GlassSelect } from "@/components/ui/select";
 import { Segmented } from "@/components/ui/segmented";
 import { Tooltip } from "@/components/ui/tooltip";
+import { Toggle } from "@/components/ui/toggle";
 import { storageTargetType } from "@/lib/api/shared";
 import type { StorageFieldIssue } from "@/lib/storage-validation";
 import type {
@@ -52,19 +53,32 @@ function issueForField(issues: StorageFieldIssue[], field: string) {
 }
 
 function StorageField({
+  label,
+  hint,
   error,
   required,
   children,
 }: {
+  label?: string;
+  hint?: ReactNode;
   error?: string;
   required?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className="space-y-1">
-      {required && (
-        <div className="text-right text-[11px] font-semibold leading-none text-[color:var(--accent-70)]">
-          *
+      {(label || required || hint) && (
+        <div className="flex min-h-5 items-center gap-1.5 text-[11.5px] font-medium text-muted">
+          {label && <span>{label}</span>}
+          {required && (
+            <span
+              className="text-[color:var(--accent-70)]"
+              aria-label="必填"
+            >
+              *
+            </span>
+          )}
+          {hint}
         </div>
       )}
       {children}
@@ -130,25 +144,26 @@ export function StorageTargetCard({
 
   return (
     <div className="space-y-2 rounded-lg border border-border bg-[color:var(--w-03)] p-3">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="grid gap-2 sm:grid-cols-[minmax(180px,220px)_minmax(180px,1fr)_auto] sm:items-center">
         <input
           defaultValue={name}
           onBlur={(event) => onRename(name, event.target.value)}
           aria-label="上传位置名称"
-          className="h-7 w-full rounded-md border border-border bg-[color:var(--w-04)] px-2.5 font-mono text-[13px] outline-none transition-colors placeholder:text-faint focus:border-[color:var(--accent-55)] focus:bg-[color:var(--accent-06)] focus:shadow-[0_0_0_3px_var(--accent-14)] sm:w-[160px]"
+          className="h-7 w-full rounded-md border border-border bg-[color:var(--w-04)] px-2.5 font-mono text-[13px] outline-none transition-colors placeholder:text-faint focus:border-[color:var(--accent-55)] focus:bg-[color:var(--accent-06)] focus:shadow-[0_0_0_3px_var(--accent-14)]"
         />
-        <GlassSelect
-          value={type}
-          onValueChange={(value) => onSetType(name, value as StorageTargetKind)}
-          options={STORAGE_TARGET_TYPE_OPTIONS}
-          size="sm"
-          ariaLabel="上传位置类型"
-        />
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center">
+        <div className="flex min-w-0 items-center gap-2">
+          <GlassSelect
+            value={type}
+            onValueChange={(value) => onSetType(name, value as StorageTargetKind)}
+            options={STORAGE_TARGET_TYPE_OPTIONS}
+            size="sm"
+            ariaLabel="上传位置类型"
+            className="w-full"
+          />
           {type === "baidu_netdisk" && <HintButton text={BAIDU_NETDISK_HINT} />}
           {type === "pan123_open" && <HintButton text={PAN123_OPEN_HINT} />}
         </div>
-        <div className="ml-auto flex gap-1">
+        <div className="flex justify-end gap-1">
           <Button
             variant="ghost"
             size="sm"
@@ -168,8 +183,12 @@ export function StorageTargetCard({
         </div>
       </div>
       {type === "local" && "directory" in target && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <StorageField error={fieldError("directory")} required>
+        <div className="grid gap-3 md:grid-cols-2">
+          <StorageField
+            label="本地目录"
+            error={fieldError("directory")}
+            required
+          >
             <Input
               value={target.directory}
               onChange={(event) =>
@@ -181,28 +200,27 @@ export function StorageTargetCard({
               aria-invalid={Boolean(fieldError("directory"))}
             />
           </StorageField>
-          <StorageField>
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 text-[11.5px] font-medium text-muted">
-                <span>公开访问前缀（可选）</span>
-                <HintButton
-                  text={LOCAL_PUBLIC_BASE_URL_HINT}
-                  ariaLabel="查看公开访问前缀说明"
-                />
-              </div>
-              <Input
-                value={target.public_base_url ?? ""}
-                onChange={(event) =>
-                  onPatch(name, { public_base_url: event.target.value })
-                }
-                placeholder="https://cdn.example.com/images"
-                size="sm"
-                aria-label="公开访问前缀"
+          <StorageField
+            label="公开访问前缀"
+            hint={
+              <HintButton
+                text={LOCAL_PUBLIC_BASE_URL_HINT}
+                ariaLabel="查看公开访问前缀说明"
               />
-              <p className="text-[11px] leading-snug text-muted">
-                用于生成可访问图片 URL；没有静态访问服务时留空。
-              </p>
-            </div>
+            }
+          >
+            <Input
+              value={target.public_base_url ?? ""}
+              onChange={(event) =>
+                onPatch(name, { public_base_url: event.target.value })
+              }
+              placeholder="https://cdn.example.com/images"
+              size="sm"
+              aria-label="公开访问前缀"
+            />
+            <p className="text-[11px] leading-snug text-muted">
+              用于生成可访问图片 URL；没有静态访问服务时留空。
+            </p>
           </StorageField>
         </div>
       )}
@@ -606,17 +624,16 @@ export function StorageTargetCard({
             size="sm"
             aria-label="123 网盘父目录 ID"
           />
-          <label className="flex items-center gap-2 rounded-md border border-border bg-[color:var(--w-04)] px-2.5 py-1.5 text-[12px] text-muted">
-            <input
-              type="checkbox"
+          <div className="flex items-center gap-2 rounded-md border border-border bg-[color:var(--w-04)] px-3 py-2 text-[12px] text-muted">
+            <Toggle
               checked={pan123Target.use_direct_link}
-              onChange={(event) =>
-                onPatch(name, { use_direct_link: event.target.checked })
+              onChange={(use_direct_link) =>
+                onPatch(name, { use_direct_link })
               }
+              label="上传后尝试获取直链"
             />
-            <span>上传后尝试获取直链</span>
             <HintButton text={PAN123_OPEN_HINT} />
-          </label>
+          </div>
           {pan123AuthMode === "client" && (
             <div className="space-y-2">
               <StorageField error={fieldError("client_id")} required>

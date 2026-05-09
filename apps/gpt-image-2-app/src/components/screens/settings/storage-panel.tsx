@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GlassSelect } from "@/components/ui/select";
+import { Toggle } from "@/components/ui/toggle";
 import {
   useTestStorageTarget,
   useUpdateStorage,
 } from "@/hooks/use-config";
 import { api, type ConfigPaths } from "@/lib/api";
 import { storageTargetType } from "@/lib/api/shared";
+import { cn } from "@/lib/cn";
 import { runtimeCopy } from "@/lib/runtime-copy";
 import {
   storageConfigIssue,
@@ -35,6 +37,40 @@ import {
   storageTargetLabel,
 } from "./settings-utils";
 import { StorageTargetCard } from "./storage-target-card";
+
+function ControlRail({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <div className={cn("w-full sm:w-[520px]", className)}>{children}</div>;
+}
+
+function TargetToggle({
+  name,
+  checked,
+  onChange,
+}: {
+  name: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <Toggle
+      checked={checked}
+      onChange={onChange}
+      label={name}
+      className={cn(
+        "h-9 rounded-md border px-3 text-[12.5px] transition-colors",
+        checked
+          ? "border-[color:var(--accent-45)] bg-[color:var(--accent-10)] text-foreground"
+          : "border-border bg-[color:var(--w-04)] text-muted hover:bg-[color:var(--w-07)] hover:text-foreground",
+      )}
+    />
+  );
+}
 
 export function StoragePanel({
   storage,
@@ -251,25 +287,16 @@ export function StoragePanel({
               : "任务完成后优先上传到这里。"
           }
           control={
-            <div className="flex w-full flex-wrap gap-2 sm:w-[520px]">
+            <ControlRail className="flex flex-wrap items-center gap-2">
               {strategyTargetEntries.map(([name]) => (
-                <label
+                <TargetToggle
                   key={`default-${name}`}
-                  className="flex items-center gap-2 rounded-md border border-border bg-[color:var(--w-04)] px-2.5 py-1.5 text-[12px]"
-                >
-                  <input
-                    type="checkbox"
-                    checked={draft.default_targets.includes(name)}
-                    onChange={(event) =>
-                      toggleTargetList(
-                        "default_targets",
-                        name,
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  <span>{name}</span>
-                </label>
+                  name={name}
+                  checked={draft.default_targets.includes(name)}
+                  onChange={(checked) =>
+                    toggleTargetList("default_targets", name, checked)
+                  }
+                />
               ))}
               {strategyTargetEntries.length === 0 && (
                 <span className="text-[12px] text-muted">暂无上传位置。</span>
@@ -279,7 +306,7 @@ export function StoragePanel({
                   {remoteDraftCount} 个云端位置已配置但不启用。
                 </span>
               )}
-            </div>
+            </ControlRail>
           }
         />
         <Row
@@ -290,84 +317,81 @@ export function StoragePanel({
               : "上传失败时改存到这里，建议保留一个本机位置。"
           }
           control={
-            <div className="flex w-full flex-wrap gap-2 sm:w-[520px]">
+            <ControlRail className="flex flex-wrap items-center gap-2">
               {strategyTargetEntries.map(([name]) => (
-                <label
+                <TargetToggle
                   key={`fallback-${name}`}
-                  className="flex items-center gap-2 rounded-md border border-border bg-[color:var(--w-04)] px-2.5 py-1.5 text-[12px]"
-                >
-                  <input
-                    type="checkbox"
-                    checked={draft.fallback_targets.includes(name)}
-                    onChange={(event) =>
-                      toggleTargetList(
-                        "fallback_targets",
-                        name,
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  <span>{name}</span>
-                </label>
+                  name={name}
+                  checked={draft.fallback_targets.includes(name)}
+                  onChange={(checked) =>
+                    toggleTargetList("fallback_targets", name, checked)
+                  }
+                />
               ))}
               {strategyTargetEntries.length === 0 && (
                 <span className="text-[12px] text-muted">暂无备用位置。</span>
               )}
-            </div>
+            </ControlRail>
           }
         />
         <Row
           title="备用启用时机"
           description="主位置不可用时改用备用。"
           control={
-            <GlassSelect
-              value={draft.fallback_policy}
-              onValueChange={(fallback_policy) =>
-                patch({
-                  fallback_policy: fallback_policy as StorageFallbackPolicy,
-                })
-              }
-              options={STORAGE_FALLBACK_POLICY_OPTIONS}
-              size="sm"
-              ariaLabel="备用启用时机"
-              className="w-full sm:w-[160px]"
-            />
+            <ControlRail>
+              <GlassSelect
+                value={draft.fallback_policy}
+                onValueChange={(fallback_policy) =>
+                  patch({
+                    fallback_policy: fallback_policy as StorageFallbackPolicy,
+                  })
+                }
+                options={STORAGE_FALLBACK_POLICY_OPTIONS}
+                size="sm"
+                ariaLabel="备用启用时机"
+                className="w-full sm:w-[180px]"
+              />
+            </ControlRail>
           }
         />
         <Row
           title="并行上传图片数"
           description="一次最多同时上传几张图。"
           control={
-            <Input
-              value={String(draft.upload_concurrency)}
-              onChange={(event) =>
-                patch({
-                  upload_concurrency: Number(event.target.value) || 1,
-                })
-              }
-              inputMode="numeric"
-              size="sm"
-              aria-label="并行上传图片数"
-              className="w-full sm:w-[100px]"
-            />
+            <ControlRail>
+              <Input
+                value={String(draft.upload_concurrency)}
+                onChange={(event) =>
+                  patch({
+                    upload_concurrency: Number(event.target.value) || 1,
+                  })
+                }
+                inputMode="numeric"
+                size="sm"
+                aria-label="并行上传图片数"
+                wrapperClassName="w-full sm:w-[120px]"
+              />
+            </ControlRail>
           }
         />
         <Row
           title="同图并行位置数"
           description="同一张图最多同时传到几个位置。"
           control={
-            <Input
-              value={String(draft.target_concurrency)}
-              onChange={(event) =>
-                patch({
-                  target_concurrency: Number(event.target.value) || 1,
-                })
-              }
-              inputMode="numeric"
-              size="sm"
-              aria-label="同图并行位置数"
-              className="w-full sm:w-[100px]"
-            />
+            <ControlRail>
+              <Input
+                value={String(draft.target_concurrency)}
+                onChange={(event) =>
+                  patch({
+                    target_concurrency: Number(event.target.value) || 1,
+                  })
+                }
+                inputMode="numeric"
+                size="sm"
+                aria-label="同图并行位置数"
+                wrapperClassName="w-full sm:w-[120px]"
+              />
+            </ControlRail>
           }
         />
       </Section>
