@@ -79,11 +79,40 @@ fn tauri_storage_defaults_migrate_downloads_to_result_directory() {
 }
 
 #[test]
+fn tauri_storage_defaults_keep_explicit_downloads_save_directory() {
+    let mut config = AppConfig::default();
+    config.paths.default_export_dir.mode = gpt_image_2_core::ExportDirMode::Downloads;
+    config.paths.result_library_dir.mode = gpt_image_2_core::PathMode::Custom;
+    config.paths.result_library_dir.path = Some(PathBuf::from("/tmp/GPT Image 2"));
+
+    normalize_product_storage_defaults(&mut config);
+
+    assert_eq!(
+        config.paths.default_export_dir.mode,
+        gpt_image_2_core::ExportDirMode::Downloads
+    );
+}
+
+#[test]
+fn sync_result_library_uses_selected_standard_save_folder() {
+    let mut paths = AppConfig::default().paths;
+    paths.default_export_dir.mode = gpt_image_2_core::ExportDirMode::Downloads;
+    let mut preview = AppConfig::default();
+    preview.paths = paths.clone();
+    let expected = product_default_export_dir(Some(&preview), ProductRuntime::Tauri);
+
+    sync_result_library_to_default_export_dir(&mut paths);
+
+    assert_eq!(
+        paths.result_library_dir.mode,
+        gpt_image_2_core::PathMode::Custom
+    );
+    assert_eq!(paths.result_library_dir.path, Some(expected));
+}
+
+#[test]
 fn export_skips_copy_when_source_is_already_saved_under_destination() {
-    let root = std::env::temp_dir().join(format!(
-        "gpt-image-2-export-test-{}",
-        std::process::id()
-    ));
+    let root = std::env::temp_dir().join(format!("gpt-image-2-export-test-{}", std::process::id()));
     let nested = root.join("job");
     fs::create_dir_all(&nested).unwrap();
     let source = nested.join("out.png");

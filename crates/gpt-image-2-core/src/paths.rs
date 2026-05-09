@@ -242,9 +242,8 @@ pub fn product_default_export_dir(config: Option<&AppConfig>, runtime: ProductRu
         ExportDirMode::BrowserDefault if runtime == ProductRuntime::DockerWeb => {
             default_product_export_dir(runtime, &app_data_dir)
         }
-        ExportDirMode::ResultLibrary | ExportDirMode::BrowserDefault | ExportDirMode::Downloads => {
-            result_library_dir
-        }
+        ExportDirMode::Downloads => default_product_export_dir(runtime, &app_data_dir),
+        ExportDirMode::ResultLibrary | ExportDirMode::BrowserDefault => result_library_dir,
     }
 }
 

@@ -6,6 +6,14 @@ pub(crate) fn default_result_library_mode() -> gpt_image_2_core::ExportDirMode {
     gpt_image_2_core::ExportDirMode::ResultLibrary
 }
 
+pub(crate) fn sync_result_library_to_default_export_dir(config: &mut PathConfig) {
+    let mut preview = AppConfig::default();
+    preview.paths = config.clone();
+    let save_dir = product_default_export_dir(Some(&preview), ProductRuntime::Tauri);
+    config.result_library_dir.mode = gpt_image_2_core::PathMode::Custom;
+    config.result_library_dir.path = Some(save_dir);
+}
+
 pub(crate) fn allow_result_library_asset_scope(app: &tauri::AppHandle) {
     let path = result_library_dir();
     if let Err(error) = app.asset_protocol_scope().allow_directory(&path, true) {
@@ -45,7 +53,8 @@ pub(crate) fn normalize_product_storage_defaults(config: &mut AppConfig) {
         config.paths.default_export_dir.mode,
         gpt_image_2_core::ExportDirMode::Downloads
             | gpt_image_2_core::ExportDirMode::BrowserDefault
-    ) {
+    ) && config.paths.result_library_dir.mode == gpt_image_2_core::PathMode::Default
+    {
         config.paths.default_export_dir.mode = default_result_library_mode();
         config.paths.default_export_dir.path = None;
     }

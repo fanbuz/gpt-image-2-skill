@@ -50,11 +50,7 @@ pub(crate) fn update_paths(config: PathConfig, app: tauri::AppHandle) -> Result<
     validate_path_config_for_save(&config)?;
     let mut app_config = load_config()?;
     let mut next_config = config;
-    next_config.result_library_dir.mode = match next_config.default_export_dir.mode {
-        gpt_image_2_core::ExportDirMode::Custom => gpt_image_2_core::PathMode::Custom,
-        _ => gpt_image_2_core::PathMode::Default,
-    };
-    next_config.result_library_dir.path = next_config.default_export_dir.path.clone();
+    sync_result_library_to_default_export_dir(&mut next_config);
     app_config.paths = next_config;
     save_config(&app_config)?;
     allow_result_library_asset_scope(&app);
